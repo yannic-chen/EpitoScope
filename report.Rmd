@@ -1,0 +1,351 @@
+---
+title: "EpitoScope report"
+runtime: shiny
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: united
+    number_sections: true
+    self_contained: true
+    fig_width: 12
+    fig_height: 6
+params:
+  data_info: NULL
+  data_list: NULL
+  processed_data_list: NULL
+---
+
+<style>
+/* Remove bootstrap offsets so TOC can be at absolute left */
+.container-fluid,
+.container,
+.row-fluid {
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+  padding-right: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Left TOC */
+#toc {
+  position: fixed !important;
+  top: 80px !important;
+  left: 0 !important;
+  width: 160px !important;
+  background: #f8f8f8;
+  border-right: 1px solid #ddd;
+  padding: 10px !important;
+  margin: 0 !important;
+  max-height: calc(100% - 100px);
+  overflow-y: auto;
+}
+
+.tocify-wrapper {
+    width: 200px;   /* default might be 250-300px */
+}
+
+/* Main content shifted right of TOC */
+.main-container {
+  margin-left: 180px !important; /* slightly bigger than TOC width */
+  padding: 20px !important;
+  width: calc(100% - 180px) !important;
+  max-width: none !important;
+  box-sizing: border-box !important;
+}
+
+/* Figures full width */
+figure, img, .plot-container, .html-widget {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+@media (max-width: 900px) {
+  #toc {
+    position: relative !important;
+    width: 100% !important;
+    margin: 0 !important;
+    border-right: none !important;
+  }
+  .main-container {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+}
+</style>
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(ggpointdensity)
+library(viridis)
+library(purrr)
+library(shiny)
+library(plotly)
+library(ComplexUpset)
+library(GGally)
+library(ggrepel)
+source("global.R")
+
+data_info <- params$data_info
+data_list <- params$data_list
+processed_list <- params$processed_data_list
+```
+
+# RAW Summary {.tabset}
+
+## Column Map
+
+```{r}
+Colum_mapping_table(data_info)
+```
+
+## Unique Entries {.tabset}
+
+### Peptides
+
+```{r}
+plot_unique_counts(data_list, column = "STRIPPED", y_label = "Number of unique peptides")
+```
+
+### Peptidoforms
+
+```{r}
+plot_unique_counts(data_list, column = "PEPTIDE", y_label = "Number of unique peptidoforms")
+```
+
+### Proteins
+
+```{r}
+plot_unique_counts(data_list, column = "PROTEIN", y_label = "Number of unique proteins",
+                       transform_fn = extract_protein_prefixes)
+```
+
+## Other Numeric Columns {.tabset}
+
+### Charge
+
+```{r}
+plot_stacked_bar(data_list, column = "CHARGE", fill_label = "Charge", percentage = FALSE)
+```
+
+### Mass
+
+```{r}
+plot_density(data_list, column = "MASS", x_label = "Mass (Da)")
+```
+
+### m/z
+
+```{r}
+plot_density(data_list, column = "MZ", x_label = "m/z")
+```
+
+### Retention Time
+
+```{r}
+plot_density(data_list, column = "RT", x_label = "Retention Time (min)")
+```
+
+### ppm
+
+```{r}
+plot_density(data_list, column = "PPM", x_label = "ppm")
+```
+
+### Score
+
+```{r}
+plot_violin(data_list, column = "SCORE")
+```
+
+## Summary Table
+
+```{r}
+render_summary_pre(data_list, font_size = "8px")
+```
+
+# QC {.tabset}
+
+## Peptide Length Distribution
+
+```{r}
+plot_length_distribution(processed_list)
+```
+
+## Motif Plot {.tabset}
+
+```{r motif_grid, echo=FALSE, message=FALSE, warning=FALSE}
+library(patchwork)
+
+lst <- params$lst
+
+# Generate scatterplots
+scatter_list <- generate_scatterplots(lst)
+
+if (length(scatter_list) == 0) {
+  # Show placeholder if no plots available
+  print(
+    ggplot() +
+      annotate("text", x = 0.5, y = 0.5,
+               label = "No scatterplots available",
+               size = 6, color = "red") +
+      theme_void()
+  )
+} else {
+  # Combine all plots in a grid
+  grid_plot <- wrap_plots(scatter_list, ncol = 2)
+  print(grid_plot)
+}
+```
+## Dynamic Range {.tabset}
+
+### Individual
+
+```{r dynrange_grid, echo=FALSE, message=FALSE, warning=FALSE}
+library(patchwork)
+
+lst <- params$lst
+
+# Generate plots per sample
+dynrange_list <- generate_dynrange_grid(lst)
+
+# Remove NULL/empty plots if any
+dynrange_list <- Filter(function(p) !is.null(p), dynrange_list)
+
+if (length(dynrange_list) == 0) {
+  # Show placeholder if no plots available
+  print(
+    ggplot() +
+      annotate("text", x = 0.5, y = 0.5,
+               label = "Not enough peptides for any sample",
+               size = 6, color = "red") +
+      theme_void()
+  )
+} else {
+  # Combine all plots in a grid (e.g., 2 per row)
+  grid_plot <- wrap_plots(dynrange_list, ncol = 2)
+  print(grid_plot)
+}
+```
+
+### Combined
+
+```{r}
+dynamic_range_plot_combined(df_list = lst, data_col = "MAX_QUANTITY")
+```
+
+## 1/k0 vs m/z
+```{r k0_vs_mz_grid, echo=FALSE, message=FALSE, warning=FALSE}
+library(patchwork)
+
+lst <- params$lst
+
+# Generate scatterplots
+scatter_list <- generate_scatterplots(lst)
+
+# Remove NULL/empty plots if any
+scatter_list <- Filter(function(p) !is.null(p), scatter_list)
+
+if (length(scatter_list) == 0) {
+  print(
+    ggplot() +
+      annotate("text", x = 0.5, y = 0.5,
+               label = "No scatterplots available",
+               size = 6, color = "red") +
+      theme_void()
+  )
+} else {
+  # Combine all plots in a grid
+  grid_plot <- wrap_plots(scatter_list, ncol = 2)
+  print(grid_plot)
+}
+```
+
+# Results {.tabset}
+
+## Data Completeness {.tabset}
+
+### Absolute
+
+```{r}
+plot_completeness(processed_list)
+```
+
+### Percentage
+
+```{r}
+plot_completeness(processed_list, percent = TRUE)
+```
+
+## Upset Plot of Peptides
+
+```{r}
+plot_upset(processed_list)
+```
+
+## Pairwise Overlap Matrix
+
+```{r}
+plot_shared_peptide_matrix(processed_list)
+```
+
+## Unique Entries (Processed) {.tabset}
+
+### Peptides
+
+```{r}
+plot_unique_counts(processed_list, column = "STRIPPED", y_label = "Number of unique peptides")
+```
+
+### Peptidoforms
+
+```{r}
+plot_unique_counts(processed_list, column = "PEPTIDE", y_label = "Number of unique peptidoforms")
+```
+
+### Proteins
+
+```{r}
+plot_unique_counts(processed_list, column = "PROTEIN", y_label = "Number of unique proteins",
+                       transform_fn = extract_protein_prefixes)
+```
+
+## Other Numeric Columns {.tabset}
+
+### Charge
+
+```{r}
+plot_stacked_bar(processed_list, column = "CHARGE", fill_label = "Charge", percentage = FALSE)
+```
+
+### Mass
+
+```{r}
+plot_density(processed_list, column = "MASS", x_label = "Mass (Da)")
+```
+
+### m/z
+
+```{r}
+plot_density(processed_list, column = "MZ", x_label = "m/z")
+```
+
+### Retention Time
+
+```{r}
+plot_density(processed_list, column = "RT", x_label = "Retention Time (min)")
+```
+
+### ppm
+
+```{r}
+plot_density(processed_list, column = "PPM", x_label = "ppm")
+```
+
+### Score
+
+```{r}
+plot_violin(processed_list, column = "SCORE")
+```
