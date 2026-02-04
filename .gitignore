@@ -1,2 +1,7 @@
 *.txt
 *.csv
+*.RData
+*.RDataTmp
+*.Rhistory
+*.Rproj
+*.xlsx
