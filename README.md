@@ -20,6 +20,7 @@ The following 3 scripts are mandatory to run the shiny App:
 - global.R
 - ui.R
 - (report.Rmd for creating a report currently doesnt work)
+
 Download the 3 scripts manually to the same folder or clone the repository using Git. For this, ensure Git is installed on your system. If not, download and install it from [Git's official website](https://git-scm.com/). Then, run the following command in your terminal:
 
 ```bash
