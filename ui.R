@@ -133,7 +133,7 @@ ui <- bs4DashPage(
                              plotOutput("mz_plot")
                              ),
                     tabPanel("RT",
-                             plotOutput("RT_plot")
+                             uiOutput("RT_plot")
                              ),
                     tabPanel("Mass Error",
                              bs4Dash::tooltip(icon("info-circle"),"Either ppm (PEAKS) or delta Mass (Fragpipe). Ignore the x-axis label.", placement = "right"),
@@ -172,7 +172,7 @@ ui <- bs4DashPage(
           ### ---- Motif Plot ---
           bs4Card(title = tagList("Motif Plot", bs4Dash::tooltip(icon("info-circle"),"Minimum of 5 sequences are required for Motif generation.", placement = "right")
                                   ), width = 12, maximizable = TRUE, 
-                  h6("WIP: Could include Gibbs clustering as well.", style = "color: red;"),
+                  h6("WIP: GibbsCluster is a bash only script. Would need to covnert it to R script or call using R.", style = "color: red;"),
                   uiOutput("motif_tabs")
                   ),
           
@@ -192,7 +192,7 @@ ui <- bs4DashPage(
           
           ### ---- Composition profiling ----
           bs4Card(title = tagList("Composition profiling", bs4Dash::tooltip(icon("info-circle"),"Ideally I want to integrate the whole C.profiler from Vacic et al. 2007, but that is only written in python.", placement = "right")
-                                  ), width = 12, maximizable = TRUE,
+                                  ), width = 12, maximizable = TRUE, solidHeader = TRUE, status = "warning", collapsed = TRUE,
                   h6("WIP: If we want to compute enrichment, then we need to do it compared to a background. Either the reference proteome or the sum of peptides of all samples can be used. For reference proteome, probably just hardcode the info.", style = "color: red;"),
                   h6("WIP: Colour or number in the heatmap should represent difference to background. Is it possible to get numbers on the bargraph?", style = "color: red;"),
                   plotOutput("aa_heatmap", width = "1200", height = "auto")
@@ -291,7 +291,7 @@ ui <- bs4DashPage(
                              plotOutput("mz_plot2")
                     ),
                     tabPanel("RT",
-                             plotOutput("RT_plot2")
+                             uiOutput("RT_plot2")
                     ),
                     tabPanel("Mass Error",
                              bs4Dash::tooltip(icon("info-circle"),"Either ppm (PEAKS) or delta Mass (Fragpipe). Ignore the x-axis label.", placement = "right"),

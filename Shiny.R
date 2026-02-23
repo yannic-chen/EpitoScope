@@ -26,6 +26,7 @@
 # --- v0.2 ---
 # switched from base shiny to bs4Dash UI
 # now also works with PeaksXPro peptide.csv. -> missing charge column now temporarily assigns charge 0 to everything.
+# changed RT density plot to histogram. Density plot still exists.
 #
 # --- v0.1 ---
 # Initial version
@@ -514,17 +515,36 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     plot_density(lst, column = "MZ", x_label = "m/z", color = input$color_palette)
   })
   
-  output$RT_plot <- renderPlot({
+  output$RT_plot <- renderUI({
     lst <- data_list_r()
     req(lst)
     
-    if (!any(vapply(lst, function(df) "RT" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No RT column in data.", cex = 1.2)
-      return(invisible())
-    }
+    # Wrap plots in a grid (like motif plots)
+    layout_column_wrap(
+      width = "400px",  # each plot approx width
+      !!!lapply(names(lst), function(sample_name) {
+        plotOutput(paste0("RT_", sample_name), height = "300px")
+      })
+    )
+  })
+  
+  observe({
+    lst <- data_list_r()
+    req(lst)
     
-    plot_density(lst, column = "RT", x_label = "Retention Time (min)", color = input$color_palette)
+    for (sample_name in names(lst)) {
+      
+      local({
+        sample_local <- sample_name
+        df_local <- lst[[sample_local]]
+        
+        output[[paste0("RT_", sample_local)]] <- renderPlot({
+          plot_histogram(df = df_local, column = "RT", x_label = "Retention Time (min)", 
+                         title_name = paste("RT Histogram –", sample_local), color = input$color_palette
+          )
+        })
+      })
+    }
   })
   
   output$ppm_plot <- renderPlot({
@@ -946,17 +966,36 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     plot_density(lst, column = "MZ", x_label = "m/z", color = input$color_palette)
   })
   
-  output$RT_plot2 <- renderPlot({
+  output$RT_plot2 <- renderUI({
     lst <- processed_data_list()
     req(lst)
     
-    if (!any(vapply(lst, function(df) "RT" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No RT column in data.", cex = 1.2)
-      return(invisible())
-    }
+    # Wrap plots in a grid (like motif plots)
+    layout_column_wrap(
+      width = "400px",  # each plot approx width
+      !!!lapply(names(lst), function(sample_name) {
+        plotOutput(paste0("RT2_", sample_name), height = "300px")
+      })
+    )
+  })
+  
+  observe({
+    lst <- processed_data_list()
+    req(lst)
     
-    plot_density(lst, column = "RT", x_label = "Retention Time (min)", color = input$color_palette)
+    for (sample_name in names(lst)) {
+      
+      local({
+        sample_local <- sample_name
+        df_local <- lst[[sample_local]]
+        
+        output[[paste0("RT2_", sample_local)]] <- renderPlot({
+          plot_histogram(df = df_local, column = "RT", x_label = "Retention Time (min)", 
+                         title_name = paste("RT Histogram –", sample_local), color = input$color_palette
+          )
+        })
+      })
+    }
   })
   
   output$ppm_plot2 <- renderPlot({

@@ -399,7 +399,7 @@ peaks13 <- read.csv("C:/Users/Yannic/Downloads/PEAKS13.peptideDb.peptides.csv")
   
 common_cols <- intersect(colnames(NOA01_05_plasma), colnames(NOA01_01_tumor))
 
-data_list <- list(
+preloaded_data <- list(
   NOA01_05_plasma = NOA01_05_plasma,
   NOA01_05_serum  = NOA01_05_serum,
   NOA01_05_tumor  = NOA01_05_tumor,
@@ -488,4 +488,9 @@ plot_dynamic_range(data_list, quantity_col = "Max_Area", peptide_col = "PTMless"
 
 
 
-#--------------Collecting plots----------------
+#--------------extract peptide list-----------
+lapply(names(processed), function(nm) {
+  peptides <- as.character(processed[[nm]]$df$STRIPPED)
+  peptides <- unique(peptides)
+  writeLines(peptides, paste0(nm, ".txt"))
+})

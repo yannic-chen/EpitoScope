@@ -49,7 +49,71 @@ library(igraph)
 library(ggraph)
 library(tidyverse)
 
+#-----------Column extraction------------
+#Here we initiate all the possible column names important for us from all different input formats
+column_schema <- list(
+  #If multiple column for a stat is detected, an error will occur.
+  PEAKS = list( #Only checked for peptide.tsv
+    PEPTIDE        = c("Peptide"),                       
+    STRIPPED       = c(),                       # not present in peptide.tsv
+    LENGTH         = c("Length"),
+    MASS           = c("Mass"),
+    MZ             = c("m.z"),                  #Could also switch to Raw.M.z.
+    SCORE          = c("X.10LgP"),
+    CHARGE         = c("z"),
+    RT             = c("RT"),                   #Could also switch to Raw.RT.
+    K0             = c(),                       #PEAKS uses "X1.k0.Start" and "X1.k0.End", for which the K0 needs to be calculated from the middle value
+    PPM            = c("ppm"),
+    PROTEIN      = c("Accession"),
+    QUANTITY       = c("area"),                 # prefer area later
+    SPECTRA        = c("x.feature", "X.Spec"),  #X.Spec for PEAKS 11 Online. X.Feature for PEAKS 12 studio. PEAKS 13 returns both. Prefer x.spec over x.feature.
+    PTM            = c("PTM")
+  ),
+  
+  Fragpipe = list( #Checked psm.tsv and combined.peptide.tsv
+    PEPTIDE        = c("Peptide", "peptide.sequence"),
+    STRIPPED       = c("Modified.Peptide", "modified.sequence"), #not present in combined_peptide.tsv
+    LENGTH         = c("Peptide.Length"),                        #not present in combined_modified_peptide.tsv, combined_peptide.tsv
+    MASS           = c("Observed.Mass"),                         #can also switch to Calculated.Peptide.Mass, #not present in combined_modified_peptide.tsv, combined_peptide.tsv
+    MZ             = c("Observed.M.Z"),       #can also switch to Calibrated.Observed.M.Z or Calculated.M.Z , #not present in combined_modified_peptide.tsv, combined_peptide.tsv
+    SCORE          = c("Probability", "PeptideProphet.Probability"), #not present in combined_modified_peptide.tsv, combined_peptide.tsv
+    CHARGE         = c("Charge", "Charges"),
+    RT             = c("Retention"),                             #not present in combined_modified_peptide.tsv, combined_peptide.tsv
+    K0             = c("ion.mobility"),                          #not present in combined_modified_peptide.tsv, combined_peptide.tsv
+    PPM            = c("Delta.Mass"),                            #not present in combined_modified_peptide.tsv, combined_peptide.tsv
+    PROTEIN      = c("Protein_Mapped.Proteins"),               #This column is created later from Protein and Mapped.Protein column. #combined_modified_peptide.tsv, combined_peptide.tsv only has Protein column.
+    QUANTITY       = c("maxlfq.intensity", "Intensity"),         #prefer maxlfq.intensity (exist in peptide.tsv, but not psm.tsv).
+    SPECTRA        = c("Spectrum", "Spectral.Count"),            #However, this will be transformed anyway.
+    PTM            = c("Assigned.Modifications")                 #not present in combined_modified_peptide.tsv, combined_peptide.tsv
+  ),
+  
+  DIANN = list( #This is for report.pr_matrix.tsv from the fragpipe pipeline
+    PEPTIDE        = c("stripped.sequence"),
+    STRIPPED       = c("modified.sequence"),
+    LENGTH         = c(),                  # not present in report.pr_matrix.tsv
+    MASS           = c(),                  # not present in report.pr_matrix.tsv
+    MZ             = c(),                  # not present in report.pr_matrix.tsv
+    SCORE          = c(),                  # not present in report.pr_matrix.tsv
+    CHARGE         = c(),                  # not present in report.pr_matrix.tsv
+    RT             = c(),                  # not present in report.pr_matrix.tsv
+    K0             = c(),                  # not present in report.pr_matrix.tsv
+    PPM            = c(),                  # not present in report.pr_matrix.tsv
+    PROTEIN      = c("Protein.names"),   #Can also switch with Protein.IDs, Protein.Group or Genes (although some proteins lack gene, like the CONTAs)
+    QUANTITY       = c("D..data"), #Here NA means not found I guess
+    SPECTRA        = c("D..data"), #However, this will be transformed anyway.
+    PTM            = c("")                  # not present in report.pr_matrix.tsv
+  )
+)
+
+#these columns are used to identify software
+signature <- list(
+  PEAKS    = c("X.10LgP"),
+  Fragpipe = c("prev.aa"),
+  DIANN    = c("First.Protein.Description") #this is for report.pr_matrix.tsv. Could be different for parquet. Anyway, identify a unique column.
+)
+
 #-----------Helper functions------------------
+
 remove_ptms <- function(x) {
   gsub("\\(.*?\\)|\\[.*?\\]|\\{.*?\\}", "", x)
 }
@@ -156,6 +220,48 @@ aa_comp_from_peptides <- function(peptides) {
 }
 
 #-----------Data handling/transformation functions------------------
+build_generic_schema <- function(schema) {
+  
+  # Get all field names (peptide, peptidoform, etc.)
+  fields <- unique(unlist(lapply(schema, names)))
+  
+  generic <- list()
+  
+  for (field in fields) {
+    # Collect all candidates across software types
+    combined <- unique(unlist(lapply(schema, function(x) x[[field]])))
+    generic[[field]] <- combined
+  }
+  
+  return(generic)
+}
+column_schema$Generic <- build_generic_schema(column_schema)
+
+detect_software <- function(df, signature, fallback = "Generic") {
+  
+  df_cols <- tolower(colnames(df))
+  
+  matches <- sapply(names(signature), function(soft) {
+    any(tolower(signature[[soft]]) %in% df_cols)
+  })
+  
+  n_matches <- sum(matches)
+  
+  if (n_matches == 1) {
+    detected <- names(matches)[matches]
+    message("Detected software: ", detected)
+    return(detected)
+  }
+  
+  if (n_matches > 1) {
+    stop("Multiple software signatures detected: ",
+         paste(names(matches)[matches], collapse = ", "))
+  }
+  
+  message("No signature detected. Using fallback: ", fallback)
+  return(fallback)
+}
+
 find_transform_column <- function(df, list, name) {
   # Match independent of capitalization
   match <- which(tolower(colnames(df)) %in% tolower(list))
@@ -164,18 +270,53 @@ find_transform_column <- function(df, list, name) {
     original_name <- colnames(df)[match]
     colnames(df)[match] <- name
   } else if (length(match) > 1) {
-    stop("Multiple columns detected: ",
+    stop("Multiple columns detected: ", name, ": ",
          paste(colnames(df)[match], collapse = ", "))
   } else {
     # No match found
     print(paste0("No matching column found for: ", name))
-    original_name <- NA
+    return(NULL)
   }
   
   return(list(
     df = df,
     matched_column = original_name
   ))
+}
+
+transform_columns <- function(df, schema, software, targets = c("PEPTIDE", "STRIPPED", "LENGTH", "MASS", "MZ", "SCORE", "CHARGE", "RT", "PPM", "PROTEIN")) {
+  mapping_log <- data.frame(
+    final_name = character(),
+    original_name = character(),
+    stringsAsFactors = FALSE
+  )
+  
+  # Get the software-specific column map
+  col_map <- schema[[software]]
+  
+  # Limit to requested targets if provided
+  if (!is.null(targets)) {
+    col_map <- col_map[names(col_map) %in% targets]
+  }
+  
+  for (target_name in names(col_map)) {
+    candidates <- col_map[[target_name]]
+    
+    # Skip if no candidates defined
+    if (length(candidates) == 0) next
+    
+    res <- find_transform_column(df, candidates, target_name)
+    if (is.null(res)) next
+    df <- res$df
+    
+    # Log the mapping
+    mapping_log <- rbind(mapping_log,
+                         data.frame(final_name = target_name,
+                                    original_name = res$matched_column,
+                                    stringsAsFactors = FALSE))
+  }
+  
+  return(list(df = df, log = mapping_log))
 }
 
 log_rename <- function(log_df, res, new_name) {
@@ -234,30 +375,19 @@ aggregate_fragpipe_psm <- function(df) {
 
 normalize_df <- function(df) {
   #Here we transform the data to only contain the minimum columns required for analysis and rename column names to work with code.
-  # The columns we need are: 
-  #                    Peptide Sequence
-  #                    Some quantification like area or intensity. This will need to be calculated from sample specific columns.
-  #                    Some type of Score (i.e,. X10LgP or Probability)
-  #                    Charge
-  #                    Mass
-  #                    m/z <- this be calculated manually
-  #                    RT
-  #                    ppm (or some other uncertainty measurement)
-  #                    Protein names/Accession
-  #                    length <- this can be calculated manually.
-  #                    We also need to identify the sample specific columns.
-  # To unify columns, I make them all capitalized
+  #To unify columns, I make them all capitalized
   
+  #Initiate the dataframe used for mapping the original columns to the ones we need
   original <- data.frame(
     final_name = character(),
     original_name = character(),
     stringsAsFactors = FALSE
   )
-  #For Fragpipe, We cannot use peptide.tsv, since it contains too little information. Need to use psm.tsv.
+  
+  software <- detect_software(df, signature)
   
   #Since Fragpipe and PEAKS both contain "Peptide" column, but they mean different things, we need to differentiate them.
-  if(any(tolower(colnames(df)) == "prev.aa")) { #We assume that only Fragpipe psm.tsv and peptide.tsv has the "Prev AA" column. 
-    print("FragPipe file")
+  if(software == "Fragpipe") {
     #Since we know it is a Fragpipe file, we can select only the column we are interested in improve speed of subsequent steps.
     columns_to_keep <- c("Spectrum", "Peptide", "Peptide.Sequence", "Modified.Peptide", "Modified.Sequence", "Charge", "Charges", "Retention", "Observed.Mass", "Observed.M.Z", 
                          "PeptideProphet.Probability", "Probability", "Intensity", "Ion.Mobility", "Protein", "Mapped.Proteins","Delta.Mass",
@@ -269,7 +399,7 @@ normalize_df <- function(df) {
     
     df <- df %>% dplyr::select(any_of(columns_to_keep)) #Get the columns that actually exist.
     
-    #Fragpipe psm.tsv has "Modified Peptide" with PTM and "Peptide" without PTM 
+    #Here we detect the long format used in Frapipe psm.tsv file. So that we convert to wide format
     if(any(tolower(colnames(df)) == "modified.peptide")) { # Only psm.tsv has this column. in combined_modified_peptide.tsv this is called modified.sequence.
       #For the psm.tsv file, we need to convert from long format to wide format for the intensities and filter unique.
       df <- df %>% mutate(Modified.Peptide = coalesce(na_if(Modified.Peptide, ""), na_if(Peptide, "")))
@@ -288,7 +418,7 @@ normalize_df <- function(df) {
       
       df_wide$X.Spec <- rowSums(!is.na(df_wide[,-1])) #Add the info how many samples the peptide was found.
       
-      #Finally unique for the representative peptide, using the row with tbe best PeptideProphet.probability.
+      #Finally unique for the representative peptide, using the row with the best PeptideProphet.probability.
       df<- df %>%
         group_by(Modified.Peptide) %>%
         slice_max(
@@ -304,34 +434,7 @@ normalize_df <- function(df) {
       }
       
       df <- left_join(df, df_wide, by = "Modified.Peptide")
-
-      res <- find_transform_column(df, c("Modified.Peptide"), "PEPTIDE")
-      df <- res$df
-      df$STRIPPED <- df$Peptide
-      original <- log_rename(original, res, "PEPTIDE")
       
-      res <- find_transform_column(df, c("PeptideProphet.Probability", "Probability"), "SCORE")
-      df <- res$df
-      original <- log_rename(original, res, "SCORE")
-      
-    } else { #this is for FragPipe any peptide.tsv 
-      if(any(tolower(colnames(df)) == "modified.sequence")) { # this is for combined_modified_peptide.tsv
-        res <- find_transform_column(df, c("modified.sequence"), "PEPTIDE")
-        df <- res$df
-        original <- log_rename(original, res, "PEPTIDE")
-        
-        res <- find_transform_column(df, c("peptide.sequence"), "STRIPPED")
-        df <- res$df
-      } else { #This is for peptide.tsv and combined_peptide.tsv
-        original <- rbind(original, data.frame(final_name = "PEPTIDE", original_name = "[Peptide - no PTM]", stringsAsFactors = FALSE))
-        res <- find_transform_column(df, c("peptide.sequence", "peptide"), "PEPTIDE")
-        df <- res$df
-        df$STRIPPED <- df$PEPTIDE
-      }
-      
-      res <- find_transform_column(df, c("Probability"), "SCORE")
-      df <- res$df
-      original <- log_rename(original, res, "SCORE")
     }
     
     #Here we combine the Proteins and Mapped.Proteins together, to get all Accessions
@@ -353,12 +456,8 @@ normalize_df <- function(df) {
         Protein_Mapped.Proteins = str_replace_all(Protein_Mapped.Proteins, "sp\\|", "")
       )
     
-    res <- find_transform_column(df, c("Protein_Mapped.Proteins"), "PROTEIN")
-    df <- res$df
-    original <- log_rename(original, res, "PROTEIN")
-    
-    if(any(tolower(colnames(df)) == "assigned.modifications")) {
-      res <- find_transform_column(df, c("Assigned.Modifications"), "PTM") #PEAKS uses PTM, Fragpipe psm.tsv uses Assigned.Modifications, 
+    if(any(tolower(colnames(df)) == "assigned.modifications")) { #detect fragpipe
+      res <- find_transform_column(df, PTMCol, "PTM")
       df <- res$df
       #For Fragpipe, we need to extract the numbers
       df$PTM <- sapply(df$PTM, function(x) {
@@ -372,53 +471,47 @@ normalize_df <- function(df) {
       df$PTM <- NA
     }
     
-  } else { #WIP: currently we assume PEAKS, if not Fragpipe.
-    print("PEAKS file")
-    res <- find_transform_column(df, c("peptide", "sequence"), "PEPTIDE")
-    df <- res$df
-    df$STRIPPED <- remove_ptms(df$PEPTIDE)
-    original <- log_rename(original, res, "PEPTIDE")
-    
-    res <- find_transform_column(df, c("X.10LgP", "Score"), "SCORE")
-    df <- res$df
-    original <- log_rename(original, res, "SCORE")
-    
-    res <- find_transform_column(df, c("Accession"), "PROTEIN")
-    df <- res$df
-    original <- log_rename(original, res, "PROTEIN")
-    
-    res <- find_transform_column(df, c("PTM"), "PTM") #PEAKS is fine, but if it is FragPipe, 
-    df <- res$df
-    original <- log_rename(original, res, "PTM")
   }
   
-  res <- find_transform_column(df, c("Charge", "z", "Charges"), "CHARGE") #PEAKS = z,FragPipe = Charge (Charges for peptide.tsv)
+  res <- transform_columns(df, column_schema, software)
+  
   df <- res$df
-  if(is.na(res$matched_column)) {
-    print("charge is set to 0")
+  original <- res$log
+  
+  #These two columns are the minimum required. If there is no PTM, PEPTIDE will simply be the same as STRIPPED.
+  if (any(sapply(df, function(data) c("PEPTIDE", "STRIPPED") %in% colnames(data)))) { 
+    stop(sprintf("Either PEPTIDE or STRIPPED column missing in one or more dataframes."))
+    }
+  
+  #Fill in some missing columns.
+  #CHARGE
+  if (!"CHARGE" %in% colnames(df)) {
     df$CHARGE <- 0
+    message("Charge column missing → set to 0")
     original <- rbind(original, data.frame(final_name = "CHARGE", original_name = "[no Charge column]", stringsAsFactors = FALSE))
   } else {
-    df$CHARGE <- as.integer(df$CHARGE) #make sure it is numeric.
-    original <- log_rename(original, res, "CHARGE")
+    df$CHARGE <- as.integer(df$CHARGE)
   }
+  
+  #STRIPPED
+  if (!"STRIPPED" %in% colnames(df)) {
+    df$STRIPPED <- remove_ptms(df$PEPTIDE)
+    message("Stripped column missing: remove PTMs")
+    original <- rbind(original, data.frame(final_name = "STRIPPED", original_name = "[generated from PEPTIDE]", stringsAsFactors = FALSE))
+    }
+  #PEPTIDE
+  if (!"PEPTIDE" %in% colnames(df)) {
+    df$PEPTIDE <- df$STRIPPED
+    message("Peptidoform column missing: STRIPPED → PEPTIDE")
+    original <- rbind(original, data.frame(final_name = "PEPTIDE", original_name = "[= STRIPPED]", stringsAsFactors = FALSE))
+    }
+  #LENGTH
+  if (!"LENGTH" %in% colnames(df)) {
+    df$LENGTH <- nchar(df$STRIPPED)
+    message("Length column missing → calculated from peptide")
+    original <- rbind(original, data.frame(final_name = "LENGTH", original_name = "[Calculated]", stringsAsFactors = FALSE))
+    }
 
-  
-  res <- find_transform_column(df, c("Mass", "Observed.Mass"), "MASS") #PEAKS = Mass, FragPipe = Observed Mass (or Calculated Peptide Mass)
-  df <- res$df
-  original <- log_rename(original, res, "MASS")
-  
-  res <- find_transform_column(df, c("RT", "Retention"), "RT") #PEAKS = RT (or Raw RT), Fragpipe = Retention
-  df <- res$df
-  original <- log_rename(original, res, "RT")
-  
-  res <- find_transform_column(df, c("m.z", "mz", "Observed.M.Z"), "MZ") #PEAKS = m/z (or Raw m/z), FragPipe = Observed M/Z (or Calibrated Observed M/Z or Calculated M/Z)
-  df <- res$df
-  original <- log_rename(original, res, "MZ")
-  
-  res <- find_transform_column(df, c("ppm", "Delta.Mass"), "PPM") #PEAKS = ppm, Fragpipe = Delta Mass (need to convert to ppm = delta mass/theoretical mass * 1.000.000)
-  df <- res$df
-  original <- log_rename(original, res, "PPM")
   
   if (all(c("X1.k0.Start", "X1.k0.End") %in% colnames(df))) { #Generate the X1.k0 from two columns in PEAKS 12 and 13 Studio.
     df$K0 <- rowMeans(df[, c("X1.k0.Start", "X1.k0.End")], na.rm = TRUE)
@@ -426,31 +519,26 @@ normalize_df <- function(df) {
     df <- res$df
     original <- bind_rows(original, data.frame(final_name="K0", original_name="X1.k0.Start, X1.k0.End"))
   } else {
-    res <- find_transform_column(df, c("X1.k0.Range", "Ion.Mobility"), "K0") #WIP: need to make this more flexible, perhaps with str_detect.
-    df <- res$df
-    original <- log_rename(original, res, "K0")
-    if (is.character(df$K0)){ #This is only for PEAKS, since it returns a range.
-      df <- df %>% mutate(K0 = get_midpoint(K0))
+    res <- find_transform_column(df, column_schema[[software]][["K0"]], "K0")
+    if(!is.null(res)) {
+      df <- res$df
+      original <- log_rename(original, res, "K0")
+      if (is.character(df$K0)){ #This is only for PEAKS, since it returns a range.
+        df <- df %>% mutate(K0 = get_midpoint(K0))
+      }
+    } else {
+      df$K0 <- 0
+      message("Ion mobility column missing → set to 0")
+      original <- rbind(original, data.frame(final_name = "K0", original_name = "[no Ion Mobility column]", stringsAsFactors = FALSE))
     }
-  }
-
-  
-  #Length. If we cannot find a column, calculate from peptide column
-  res <- find_transform_column(df, c("length", "Peptide.Length"), "LENGTH") #Fragpipe Combined_peptide.tsv doesnt have length colummn. We need to calculate manually.
-  if (!is.null(res$matched_column)) {
-    df <- res$df
-    original <- log_rename(original, res, "LENGTH")
-  } else {
-    df$LENGTH <- nchar(df$STRIPPED)
-    original <- rbind(original, data.frame(final_name="LENGTH", original_name="[Calculated]", stringsAsFactors=FALSE))
   }
   
   #Area/Intensity
   sample  <- which(startsWith(tolower(colnames(df)), "area"))
   if (length(sample) == 0) {
-    sample  <- which(startsWith(tolower(colnames(df)), "intensity")) #this is for fragpipe psm.tsv
+    sample  <- which(startsWith(tolower(colnames(df)), "intensity"))
     if (length(sample) == 0) {
-      sample  <- grep("maxlfq.intensity", tolower(colnames(df))) #this is for combine_peptide.tsv
+      sample  <- grep("maxlfq.intensity", tolower(colnames(df)))
       if (length(sample) == 0) {
         stop("No Area or Intensity columns")
       }
@@ -495,13 +583,7 @@ normalize_df <- function(df) {
   #Now we can prepare the summary table since we have the columns to keep.
   original <- original %>% mutate(coalesced = do.call(coalesce, across(-1))) %>% dplyr::select(1, coalesced) %>% group_by(final_name) %>% summarise(coalesced_list = list(coalesced), .groups = "drop")
   
-  
-  if (!any(sapply(df, function(data) c("PEPTIDE", "STRIPPED") %in% colnames(data)))) { #These two columns are the minimum required. If there is no PTM, PEPTIDE will simply be the same as STRIPPED.
-    return(list(df = df %>% dplyr::select(any_of(unique(keep_cols))), table = original))
-  } else {
-    stop(sprintf("Either PEPTIDE or STRIPPED column missing in one or more dataframes."))
-  }
-  
+  return(list(df = df %>% dplyr::select(any_of(unique(keep_cols))), table = original))
 }
 
 #-----------Plotting functions------------------
@@ -536,6 +618,31 @@ plot_unique_counts <- function(lst, column, y_label, transform_fn = identity, co
     p <- p + scale_fill_manual(values = color)
   }
   p
+}
+
+plot_histogram <- function(df, column, x_label, title_name = "RT plot", color = "default") {
+  
+  # Create 1-minute bins (change to 60 if your data is in seconds)
+  breaks <- seq(
+    floor(min(df[[column]], na.rm = TRUE)),
+    ceiling(max(df[[column]], na.rm = TRUE)),
+    by = 1
+  )
+  
+  if (color == "default") color <- "steelblue"
+  
+  ggplot(df, aes_string(x = column)) +   # <- use column, not data_col
+    geom_histogram(
+      breaks = breaks,
+      fill = color,
+      color = "black"
+    ) +
+    labs(
+      title = title_name,
+      x = x_label,
+      y = "Count"
+    ) +
+    theme_minimal()
 }
 
 plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, percentage = FALSE, color = "default") {
