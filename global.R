@@ -457,7 +457,7 @@ normalize_df <- function(df) {
       )
     
     if(any(tolower(colnames(df)) == "assigned.modifications")) { #detect fragpipe
-      res <- find_transform_column(df, PTMCol, "PTM")
+      res <- find_transform_column(df, column_schema[[software]][["PTM"]], "PTM")
       df <- res$df
       #For Fragpipe, we need to extract the numbers
       df$PTM <- sapply(df$PTM, function(x) {
@@ -533,17 +533,21 @@ normalize_df <- function(df) {
     }
   }
   
-  #Area/Intensity
+  #Area/Intensity <- make this more elegant.
   sample  <- which(startsWith(tolower(colnames(df)), "area"))
   if (length(sample) == 0) {
-    sample  <- which(startsWith(tolower(colnames(df)), "intensity"))
-    if (length(sample) == 0) {
-      sample  <- grep("maxlfq.intensity", tolower(colnames(df)))
-      if (length(sample) == 0) {
-        stop("No Area or Intensity columns")
-      }
-    }
+    sample  <- which(startsWith(tolower(colnames(df)), "maxlfq.intensity"))
+  } 
+  if (length(sample) == 0) {
+    sample  <- grep("intensity", tolower(colnames(df)))
   }
+  if (length(sample) == 0) {
+    sample  <- grep("d..data.", tolower(colnames(df)))
+  }
+  if (length(sample) == 0) {
+    stop("No Area or Intensity columns")
+  }
+  
   original <- bind_rows(original, data.frame(final_name="QUANTITY", original_name=list(colnames(df[,sample, drop = FALSE]))))
   
   df$MAX_QUANTITY <- apply(df[, sample, drop = FALSE], 1, function(x) {
@@ -566,6 +570,7 @@ normalize_df <- function(df) {
     spec <- integer(0)
   }
 
+  #In case we can use Quantity columns (sample) as indicator of Spectral match
   if (length(spec) == 0) {
     original <- bind_rows(original, data.frame(final_name="SPECTRA", original_name=list(colnames(df[,sample, drop = FALSE])))) #We use the same columns as Intensity for Spectra found per sample in Fragpipe
   } else {
