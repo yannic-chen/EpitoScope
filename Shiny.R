@@ -1127,12 +1127,32 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
       pep_col <- "PEPTIDE" #WIP: need to think how to solve the PTM problem? Do I just add the same peptidoform together?
       keep_cols <- c(pep_col, quantity_cols, "PROTEIN")
       
+      get_allowed_peptides <- function(sample_names, min_fraction) {
+        
+        # Count how many samples each peptide appears in
+        peptide_counts <- table(unlist(lapply(sample_names, function(s) {
+          df <- lst[[s]]
+          if (!"PEPTIDE" %in% colnames(df)) return(character(0))
+          df[["PEPTIDE"]]
+        })))
+        
+        n_samples <- length(sample_names)
+        allowed_peptides <- names(peptide_counts[peptide_counts / n_samples >= min_fraction])
+        
+        allowed_peptides
+      }
+      
+      #Here we filter based on union-intersect criteria
+      allowed_peptides_g1 <- get_allowed_peptides(groups[[g1]], input$min_presence_fraction)
+      allowed_peptides_g2 <- get_allowed_peptides(groups[[g2]], input$min_presence_fraction)
+      
       # Combine data for each group
       df_g1 <- dplyr::bind_rows(lapply(groups[[g1]], function(s) {
         df <- lst[[s]]
         cols <- intersect(keep_cols, colnames(df))
         if (length(cols) < 2) return(NULL)  # need peptide column + ≥1 quantity column
         df[, cols, drop = FALSE]
+        df[df[["PEPTIDE"]] %in% allowed_peptides_g1, , drop = FALSE]
       }))
       
       df_g2 <- dplyr::bind_rows(lapply(groups[[g2]], function(s) {
@@ -1140,6 +1160,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
         cols <- intersect(keep_cols, colnames(df))
         if (length(cols) < 2) return(NULL)  # need peptide column + ≥1 quantity column
         df[, cols, drop = FALSE]
+        df[df[["PEPTIDE"]] %in% allowed_peptides_g2, , drop = FALSE]
       }))
       
       # Skip pair if either group is empty

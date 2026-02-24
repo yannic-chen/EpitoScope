@@ -219,6 +219,7 @@ aa_comp_from_peptides <- function(peptides) {
   100 * freq / sum(freq)
 }
 
+
 #-----------Data handling/transformation functions------------------
 build_generic_schema <- function(schema) {
   
@@ -541,8 +542,8 @@ normalize_df <- function(df) {
   if (length(sample) == 0) {
     sample  <- grep("intensity", tolower(colnames(df)))
   }
-  if (length(sample) == 0) {
-    sample  <-  which(grepl("^[a-z]\\.\\.", tolower(colnames(df)))) #this assumes that the file name is the absolute path of the file. Meaning it starts with the Drive letter e.g. D:\ -> d..
+  if (length(sample) == 0) { #For DIANN report.pr_matrix.tsv this assumes that the file name is the absolute path of the file. Meaning it starts with the Drive letter e.g. D:\ -> d..
+    sample  <-  which(grepl("^[a-z]\\.\\.", tolower(colnames(df)))) 
   }
   if (length(sample) == 0) {
     stop("No Area or Intensity columns")

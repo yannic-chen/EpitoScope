@@ -316,6 +316,22 @@ ui <- bs4DashPage(
                                                        This can be time consuming, as such the maximum number of groups is limited to 5.
                                                        Group data are combined via unionized, instead of intersected.", placement = "right")
                                   ), width = 12, maximizable = TRUE,
+                  #numericInput(
+                  #  inputId = "max_missing_per_group",
+                  #  label   = "Max missing samples per peptide (per group)",
+                  #  value   = 0,
+                  #  min     = 0,
+                  #  step    = 1
+                  #),
+                  sliderInput(
+                    "min_presence_fraction",
+                    tagList("Minimum fraction of samples present per group", bs4Dash::tooltip(icon("info-circle"),"Essentially 0 = union, 1 = intersect", placement = "right")
+                    ),
+                    min = 0,
+                    max = 1,
+                    value = 0.7,
+                    step = 0.05
+                  ),
                   numericInput("n_groups", "Number of groups (2-5):", 2, min = 2, max = 5),
                   uiOutput("group_assign_ui"),
                   actionButton("update_group_comp", "Update Groups")
