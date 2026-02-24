@@ -542,7 +542,7 @@ normalize_df <- function(df) {
     sample  <- grep("intensity", tolower(colnames(df)))
   }
   if (length(sample) == 0) {
-    sample  <- grep("d..data.", tolower(colnames(df)))
+    sample  <-  which(grepl("^[a-z]\\.\\.", tolower(colnames(df)))) #this assumes that the file name is the absolute path of the file. Meaning it starts with the Drive letter e.g. D:\ -> d..
   }
   if (length(sample) == 0) {
     stop("No Area or Intensity columns")
