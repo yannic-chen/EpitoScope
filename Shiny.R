@@ -1052,51 +1052,110 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     )
   })
   
-  # Group input check
-  observeEvent(input$update_group_comp, {
-    n <- input$n_groups
+  # Update group list
+  group_list <- eventReactive(input$update_group_comp, {
     
+    n <- input$n_groups
+    groups <- list()
     empty_groups <- c()
     
     for (i in seq_len(n)) {
-      grp <- input[[paste0("group_", i)]]
-      if (is.null(grp) || length(grp) == 0) {
+      custom_name <- input[[paste0("group_name_", i)]]
+      samples     <- input[[paste0("group_", i)]]
+      
+      # Check if the group is empty or has no name
+      if (is.null(custom_name) || nchar(custom_name) == 0 || is.null(samples) || length(samples) == 0) {
         empty_groups <- c(empty_groups, paste("Group", i))
+      } else {
+        groups[[custom_name]] <- samples
       }
     }
     
+    # If any group is empty → show error and return NULL
     if (length(empty_groups) > 0) {
       showNotification(
-        paste("The following group(s) are empty and must be filled before continuing:", 
-              paste(empty_groups, collapse = ", ")),
+        paste(
+          "The following group(s) are empty or have no name and must be filled before continuing:", 
+          paste(empty_groups, collapse = ", ")
+        ),
         type = "error",
         duration = NULL
       )
       return(NULL)
     }
     
-    # If all groups are OK → proceed
+    # If all groups are valid → success message
     showNotification("Groups updated successfully!", type = "message")
     
-    # Insert any additional code you want to run when groups are valid:
-    # e.g., store groups, refresh plots, etc.
+    groups
   })
   
-  # Update group list
-  group_list <- eventReactive(input$update_group_comp, {
-    n <- input$n_groups
-    groups <- list()
+  ## ----Group Comparison----
+  group_peptide_sets <- reactive({
+    lst <- processed_data_list()
+    groups <- group_list()
+    pep_col <- "PEPTIDE"
     
-    for (i in seq_len(n)) {
-      custom_name <- input[[paste0("group_name_", i)]]
-      samples     <- input[[paste0("group_", i)]]
+    lapply(names(groups), function(g) {
       
-      if (!is.null(custom_name) && !is.null(samples) && length(samples) > 0) {
-        groups[[custom_name]] <- samples
-      }
+      sample_names <- groups[[g]]
+      
+      peptide_counts <- table(unlist(lapply(sample_names, function(s) {
+        df <- lst[[s]]
+        if (!pep_col %in% colnames(df)) return(character(0))
+        unique(df[[pep_col]])
+      })))
+      
+      n_samples <- length(sample_names)
+      
+      names(peptide_counts[
+        peptide_counts / n_samples >= input$min_presence_fraction
+      ])
+    }) |> setNames(names(groups))
+  })
+  
+  output$group_venn_plot <- renderPlot({
+    
+    sets <- group_peptide_sets()
+    req(length(sets) >= 2)
+    
+    n_groups <- length(sets)
+    
+    p <- ggVennDiagram::ggVennDiagram(
+      sets,
+      label_alpha = 0
+    ) +
+      ggplot2::theme_void()  +
+      ggplot2::theme(
+        legend.position = "none",
+        plot.margin = margin(10,10,10,10)
+      )
+    
+    if (input$color_palette != "default") {
+      p <- p + ggplot2::scale_fill_viridis_c(
+        option = input$color_palette
+      )  
+    } else {
+      p <- p + scale_fill_distiller(palette = "RdBu")
     }
     
-    groups
+    p
+  })
+  
+  output$group_peptide_heatmap <- renderPlot({
+    lst <- processed_data_list()
+    groups <- group_list()
+    
+    quantity_cols <- data_info_r() %>%
+      filter(final_name == "QUANTITY") %>%
+      dplyr::select(-final_name) %>% 
+      unlist(recursive = TRUE, use.names = FALSE)
+    
+    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets())
+    
+    req(nrow(pep_mat) > 0)
+    
+    plot_heatmap(pep_mat, color = input$color_palette, transpose = TRUE, log_transform = TRUE)
   })
   
   ## ----Group statistical analysis----
@@ -1127,24 +1186,9 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
       pep_col <- "PEPTIDE" #WIP: need to think how to solve the PTM problem? Do I just add the same peptidoform together?
       keep_cols <- c(pep_col, quantity_cols, "PROTEIN")
       
-      get_allowed_peptides <- function(sample_names, min_fraction) {
-        
-        # Count how many samples each peptide appears in
-        peptide_counts <- table(unlist(lapply(sample_names, function(s) {
-          df <- lst[[s]]
-          if (!"PEPTIDE" %in% colnames(df)) return(character(0))
-          df[["PEPTIDE"]]
-        })))
-        
-        n_samples <- length(sample_names)
-        allowed_peptides <- names(peptide_counts[peptide_counts / n_samples >= min_fraction])
-        
-        allowed_peptides
-      }
-      
       #Here we filter based on union-intersect criteria
-      allowed_peptides_g1 <- get_allowed_peptides(groups[[g1]], input$min_presence_fraction)
-      allowed_peptides_g2 <- get_allowed_peptides(groups[[g2]], input$min_presence_fraction)
+      allowed_peptides_g1 <- group_peptide_sets()[[g1]]
+      allowed_peptides_g2 <- group_peptide_sets()[[g2]]
       
       # Combine data for each group
       df_g1 <- dplyr::bind_rows(lapply(groups[[g1]], function(s) {
@@ -1186,8 +1230,6 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
           ) %>%
           mutate(Group = g2)
       )
-      
-      #peptides <- unique(c(df_g1[[pep_col]], df_g2[[pep_col]]))
       
       #safe_mean <- function(x) if(length(x) > 0) mean(x, na.rm = TRUE) else NA_real_
       safe_ttest <- function(x, y) {
@@ -1242,8 +1284,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     
     names(pairwise_volcano) <- sapply(group_pairs, function(pair) paste(pair, collapse = "_vs_"))
     
-    # Keep only pairs with data
-    
+    #for developmental purpose
     temp <<- pairwise_volcano[sapply(pairwise_volcano, nrow) > 0]
     
     pairwise_volcano[sapply(pairwise_volcano, nrow) > 0]

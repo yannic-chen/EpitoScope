@@ -186,7 +186,7 @@ ui <- bs4DashPage(
                   ),
           
           ### ---- 1/k0 vs mz ----
-          bs4Card(title = "D1/k0 vs mz", width = 12, maximizable = TRUE,
+          bs4Card(title = "k0 vs mz", width = 12, maximizable = TRUE,
                   uiOutput("scatterplots_ui")
                   ),
           
@@ -339,13 +339,15 @@ ui <- bs4DashPage(
           
           ### ---- Group Stuff ----
           bs4Card(title = tagList("Group-based PCR plot", bs4Dash::tooltip(icon("info-circle"),"A group based PCR plot answers whether biological signals are larger than sample-specific variation to allow grouping.", placement = "right")
-                                  ), width = 4, maximizable = TRUE
+                                  ), width = 6, maximizable = TRUE
           ),
-          bs4Card(title = tagList("Group based Upset Plot", bs4Dash::tooltip(icon("info-circle"),"This is nicer to identify biological differences given multiple biological samples.", placement = "right")
-                                  ), width = 4, maximizable = TRUE
+          bs4Card(title = tagList("Group based Venn Diagram", bs4Dash::tooltip(icon("info-circle"),"This is nicer to identify biological differences given multiple biological samples.", placement = "right")
+                                  ), width = 6, maximizable = TRUE,
+                  plotOutput("group_venn_plot")
           ),
           bs4Card(title = tagList("Peptide based heatmap", bs4Dash::tooltip(icon("info-circle"),"Cluster group of peptides based on differential pattern.", placement = "right")
-                                  ), width = 4, maximizable = TRUE
+                                  ), width = 12, maximizable = TRUE,
+                  plotOutput("group_peptide_heatmap")
           ),
           
           ### ---- Statistical Plots ----

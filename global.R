@@ -20,25 +20,29 @@
 #       }
 # Perhaps check our renv::init()?
 
+#These are for Shiny UI
 library(shiny)
 library(shinyBS)
 library(bs4Dash)
 library(bslib)
+library(DT)
+#These are for general data handling
 library(dplyr)
 library(tidyr)
-library(ggplot2)
-library(ggrepel)
-library(plotly)
-library(ggseqlogo)
-library(bslib)
-library(ComplexUpset)
-library(ComplexHeatmap)
 library(purrr)
-library(circlize)
-library(DT)
-library(viridis)
 library(data.table)
 library(stringr)
+library(reshape2)
+#These are for plotting
+library(viridis)
+library(ggplot2)
+library(ggrepel)
+library(ggseqlogo)
+library(ggVennDiagram)
+library(plotly)
+library(ComplexUpset)
+library(ComplexHeatmap)
+library(circlize)
 #These are exclusive for GO-term.
 library(clusterProfiler) #this one masks a lot of dplyr and other package functions
 library(org.Hs.eg.db)
@@ -62,9 +66,9 @@ column_schema <- list(
     SCORE          = c("X.10LgP"),
     CHARGE         = c("z"),
     RT             = c("RT"),                   #Could also switch to Raw.RT.
-    K0             = c(),                       #PEAKS uses "X1.k0.Start" and "X1.k0.End", for which the K0 needs to be calculated from the middle value
+    K0             = c("X1.k0.Range"),          #PEAKS 12 and 13 uses "X1.k0.Start" and "X1.k0.End", for which the K0 needs to be calculated from the middle value. PEAKS Online returns "X1.k0.Range"
     PPM            = c("ppm"),
-    PROTEIN      = c("Accession"),
+    PROTEIN        = c("Accession"),
     QUANTITY       = c("area"),                 # prefer area later
     SPECTRA        = c("x.feature", "X.Spec"),  #X.Spec for PEAKS 11 Online. X.Feature for PEAKS 12 studio. PEAKS 13 returns both. Prefer x.spec over x.feature.
     PTM            = c("PTM")
@@ -497,7 +501,7 @@ normalize_df <- function(df) {
   #STRIPPED
   if (!"STRIPPED" %in% colnames(df)) {
     df$STRIPPED <- remove_ptms(df$PEPTIDE)
-    message("Stripped column missing: remove PTMs")
+    message("Stripped column missing: manual remove PTMs")
     original <- rbind(original, data.frame(final_name = "STRIPPED", original_name = "[generated from PEPTIDE]", stringsAsFactors = FALSE))
     }
   #PEPTIDE
@@ -590,6 +594,43 @@ normalize_df <- function(df) {
   original <- original %>% mutate(coalesced = do.call(coalesce, across(-1))) %>% dplyr::select(1, coalesced) %>% group_by(final_name) %>% summarise(coalesced_list = list(coalesced), .groups = "drop")
   
   return(list(df = df %>% dplyr::select(any_of(unique(keep_cols))), table = original))
+}
+
+#This is for creating a matrix used for the group-based peptide heatmap
+prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_sets) {
+  
+  peptides_all <- unique(unlist(group_peptide_sets))
+  pep_mat <- matrix(NA_real_, 
+                    nrow = length(peptides_all), 
+                    ncol = length(groups),
+                    dimnames = list(peptides_all, names(groups)))
+  
+  for (g in names(groups)) {
+    samples <- groups[[g]]
+    allowed_peptides <- group_peptide_sets[[g]]
+    
+    # Combine all samples in group
+    df_group <- bind_rows(lapply(samples, function(s) {
+      df <- lst[[s]]
+      cols <- intersect(c("PEPTIDE", quantity_cols), colnames(df))
+      if (length(cols) < 2) return(NULL)
+      df[, cols, drop = FALSE]
+    }))
+    
+    if (is.null(df_group) || nrow(df_group) == 0) next
+    
+    # Filter to allowed peptides
+    df_group <- df_group[df_group$PEPTIDE %in% allowed_peptides, ]
+    
+    # Aggregate: take max (or mean) per peptide across samples
+    agg <- df_group %>%
+      group_by(PEPTIDE) %>%
+      summarise(value = max(c_across(any_of(quantity_cols)), na.rm = TRUE), .groups = "drop")
+    
+    pep_mat[agg$PEPTIDE, g] <- agg$value
+  }
+  
+  pep_mat
 }
 
 #-----------Plotting functions------------------
@@ -1311,6 +1352,48 @@ plot_pairwise_peptide_quant_correlation <- function(lst, method = "pearson", min
     clustering_distance_columns = "euclidean",
     clustering_method_rows      = "complete",
     clustering_method_columns   = "complete"
+  )
+}
+
+plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster = "both", transpose = FALSE) {
+  
+  mat[is.na(mat)] <- 0
+  
+  # Log-transform if requested
+  if (log_transform) {
+    mat <- log10(mat)  # avoid log10(0)
+    mat[is.infinite(mat)] <- 0   # replace -Inf / Inf with 0
+  }
+  
+  if (transpose) {
+    mat <- t(mat)
+  }
+  
+  # Define color function
+  if (color == "default") {
+    col_fun <- colorRamp2(c(min(mat, na.rm = TRUE), max(mat, na.rm = TRUE)), c("white", "red"))
+  } else {
+    cols <- viridis(100, option = color)
+    col_fun <- colorRamp2(range(mat, na.rm = TRUE), c(cols[1], cols[100]))
+  }
+  
+  # Cluster options
+  cluster_rows <- cluster %in% c("rows", "both")
+  cluster_cols <- cluster %in% c("columns", "both")
+  
+  Heatmap(
+    mat,
+    name = if(log_transform) "log10(QUANTITY)" else "QUANTITY",
+    col = col_fun,
+    na_col = "grey90",
+    cluster_rows = cluster_rows,
+    cluster_columns = cluster_cols,
+    clustering_distance_rows    = "euclidean",
+    clustering_distance_columns = "euclidean",
+    clustering_method_rows      = "complete",
+    clustering_method_columns   = "complete",
+    row_names_gp = gpar(fontsize = 8),
+    column_names_gp = gpar(fontsize = 10)
   )
 }
 
