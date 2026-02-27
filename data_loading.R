@@ -19,6 +19,8 @@
 #Load data
 sample1_tumor <- read.csv("path to file")
 sample2_plasma <- read.delim("path to file")
+library(arrow)
+DIANN_file <- read_parquet("path to file")
 
 #generate a named list. You can name your data however you want.
 preloaded_data <- list(

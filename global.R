@@ -91,7 +91,7 @@ column_schema <- list(
     PTM            = c("Assigned.Modifications")                 #not present in combined_modified_peptide.tsv, combined_peptide.tsv
   ),
   
-  DIANN = list( #This is for report.pr_matrix.tsv from the fragpipe pipeline
+  DIANN = list( #This is for report.pr_matrix.tsv from the DIANN of the fragpipe pipeline (may be the same as original DIANN)
     PEPTIDE        = c("stripped.sequence"),
     STRIPPED       = c("modified.sequence"),
     LENGTH         = c(),                  # not present in report.pr_matrix.tsv
@@ -106,6 +106,23 @@ column_schema <- list(
     QUANTITY       = c("D..data"), #Here NA means not found I guess
     SPECTRA        = c("D..data"), #However, this will be transformed anyway.
     PTM            = c("")                  # not present in report.pr_matrix.tsv
+  ),
+  
+  DIANN_parquet = list( #This is for DIANN parquet file, which is in long format.
+    PEPTIDE        = c("stripped.sequence"),
+    STRIPPED       = c("modified.sequence"),
+    LENGTH         = c(),                  # not present in parquet
+    MASS           = c(),                  # not present in parquet
+    MZ             = c("Precursor.Mz"),
+    SCORE          = c("Q.Value"),         # this is used for FDR. But Global.Q.Value can also be used. PEP does not replace Q.value, but can be used as additional filter.
+    CHARGE         = c("Precursor.Charge"),   
+    RT             = c("RT"),              # could also use iRT, predicted.RT or predicted.iRT
+    K0             = c("IM"),              # There is also indexed and predictet and predicted.iIM
+    PPM            = c(),                  # not present in parquet
+    PROTEIN        = c("Protein.names"),     #Can also switch with Protein.IDs, Protein.Group or Genes (although some proteins lack gene, like the CONTAs)
+    QUANTITY       = c("Precursor.quantity"), #Could Use Precursor.Normalized (but values look the same to me). Transformed from long format. Why not use MS1.Area/Ms1.normalised
+    SPECTRA        = c(),                   #Transformed from long format.
+    PTM            = c()                   # not present in parquet
   )
 )
 
@@ -113,7 +130,8 @@ column_schema <- list(
 signature <- list(
   PEAKS    = c("X.10LgP"),
   Fragpipe = c("prev.aa"),
-  DIANN    = c("First.Protein.Description") #this is for report.pr_matrix.tsv. Could be different for parquet. Anyway, identify a unique column.
+  DIANN    = c("First.Protein.Description"), #this is for report.pr_matrix.tsv.
+  DIANN_parquet    = c("Run.Index")          #this is for report.pr_matrix.tsv.
 )
 
 #-----------Helper functions------------------
@@ -477,7 +495,29 @@ normalize_df <- function(df) {
     }
     
   }
-  
+  if(software == "DIANN_parquet") {
+    columns_to_keep <- c("Run", "Modified.Sequence", "Stripped.Sequence", "Precursor.Charge", "Precursor.Mz", "Protein.Names", "RT", "IM", "Precursor.Quantity", "Q.Value")
+    
+    df <- df %>% dplyr::select(any_of(columns_to_keep))
+    
+    df_wide <- df %>% dplyr::select(Modified.Sequence, Run, Precursor.Quantity) %>%
+      pivot_wider(
+        names_from  = Run,
+        values_from = Precursor.Quantity,
+        names_prefix = "Intensity.",
+        values_fn = ~ if (all(is.null(.x))) NA_real_ else max(.x, na.rm = TRUE),
+        values_fill = NA_real_
+      )
+    
+    df_top <- df %>%
+      group_by(Modified.Sequence) %>%
+      arrange(Q.Value, .by_group = TRUE) %>%
+      slice_head(n = 1) %>%
+      ungroup()
+    
+    df <- left_join(df_top %>% dplyr::select(-Run), df_wide, by = "Modified.Sequence")
+    
+  }
   res <- transform_columns(df, column_schema, software)
   
   df <- res$df
@@ -493,11 +533,10 @@ normalize_df <- function(df) {
   if (!"CHARGE" %in% colnames(df)) {
     df$CHARGE <- 0
     message("Charge column missing → set to 0")
-    original <- rbind(original, data.frame(final_name = "CHARGE", original_name = "[no Charge column]", stringsAsFactors = FALSE))
+    original <- rbind(original, data.frame(final_name = "CHARGE", original_name = "[no CHARGE column]", stringsAsFactors = FALSE))
   } else {
     df$CHARGE <- as.integer(df$CHARGE)
   }
-  
   #STRIPPED
   if (!"STRIPPED" %in% colnames(df)) {
     df$STRIPPED <- remove_ptms(df$PEPTIDE)
@@ -515,7 +554,12 @@ normalize_df <- function(df) {
     df$LENGTH <- nchar(df$STRIPPED)
     message("Length column missing → calculated from peptide")
     original <- rbind(original, data.frame(final_name = "LENGTH", original_name = "[Calculated]", stringsAsFactors = FALSE))
-    }
+  }
+  if (!"MASS" %in% colnames(df) & "CHARGE" %in% colnames(df) & "MZ" %in% colnames(df)) {
+    df$MASS <- df$MZ * df$CHARGE
+    message("Mass column missing → calculated from m/z and charge")
+    original <- rbind(original, data.frame(final_name = "MASS", original_name = "[MZ * CHARGE]", stringsAsFactors = FALSE))
+  }
 
   
   if (all(c("X1.k0.Start", "X1.k0.End") %in% colnames(df))) { #Generate the X1.k0 from two columns in PEAKS 12 and 13 Studio.

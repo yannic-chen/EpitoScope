@@ -325,7 +325,7 @@ ui <- bs4DashPage(
                   #),
                   sliderInput(
                     "min_presence_fraction",
-                    tagList("Minimum fraction of samples present per group", bs4Dash::tooltip(icon("info-circle"),"Essentially 0 = union, 1 = intersect", placement = "right")
+                    tagList("Minimum fraction of samples the peptide has to be present per group", bs4Dash::tooltip(icon("info-circle"),"0 = union, 1 = intersect", placement = "right")
                     ),
                     min = 0,
                     max = 1,
@@ -338,14 +338,14 @@ ui <- bs4DashPage(
           ),
           
           ### ---- Group Stuff ----
-          bs4Card(title = tagList("Group-based PCR plot", bs4Dash::tooltip(icon("info-circle"),"A group based PCR plot answers whether biological signals are larger than sample-specific variation to allow grouping.", placement = "right")
+          bs4Card(title = tagList("Quantity variance", bs4Dash::tooltip(icon("info-circle"),"Violin-plot showing distribution of peptides quantities within groups. All measurements from all samples are used.", placement = "right")
                                   ), width = 6, maximizable = TRUE
           ),
           bs4Card(title = tagList("Group based Venn Diagram", bs4Dash::tooltip(icon("info-circle"),"This is nicer to identify biological differences given multiple biological samples.", placement = "right")
                                   ), width = 6, maximizable = TRUE,
                   plotOutput("group_venn_plot")
           ),
-          bs4Card(title = tagList("Peptide based heatmap", bs4Dash::tooltip(icon("info-circle"),"Cluster group of peptides based on differential pattern.", placement = "right")
+          bs4Card(title = tagList("Peptide based heatmap", bs4Dash::tooltip(icon("info-circle"),"Cluster peptides based on differential pattern across groups. The MAX quantity for the peptides is used.", placement = "right")
                                   ), width = 12, maximizable = TRUE,
                   plotOutput("group_peptide_heatmap")
           ),
