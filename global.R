@@ -75,8 +75,8 @@ column_schema <- list(
   ),
   
   Fragpipe = list( #Checked psm.tsv and combined.peptide.tsv
-    PEPTIDE        = c("Peptide", "peptide.sequence"),
-    STRIPPED       = c("Modified.Peptide", "modified.sequence"), #not present in combined_peptide.tsv
+    PEPTIDE        = c("Modified.Peptide", "modified.sequence"),
+    STRIPPED       = c("Peptide", "peptide.sequence"),           #not present in combined_peptide.tsv
     LENGTH         = c("Peptide.Length"),                        #not present in combined_modified_peptide.tsv, combined_peptide.tsv
     MASS           = c("Observed.Mass"),                         #can also switch to Calculated.Peptide.Mass, #not present in combined_modified_peptide.tsv, combined_peptide.tsv
     MZ             = c("Observed.M.Z"),       #can also switch to Calibrated.Observed.M.Z or Calculated.M.Z , #not present in combined_modified_peptide.tsv, combined_peptide.tsv
@@ -92,8 +92,8 @@ column_schema <- list(
   ),
   
   DIANN = list( #This is for report.pr_matrix.tsv from the DIANN of the fragpipe pipeline (may be the same as original DIANN)
-    PEPTIDE        = c("stripped.sequence"),
-    STRIPPED       = c("modified.sequence"),
+    PEPTIDE        = c("modified.sequence"),
+    STRIPPED       = c("stripped.sequence"),
     LENGTH         = c(),                  # not present in report.pr_matrix.tsv
     MASS           = c(),                  # not present in report.pr_matrix.tsv
     MZ             = c(),                  # not present in report.pr_matrix.tsv
@@ -109,8 +109,8 @@ column_schema <- list(
   ),
   
   DIANN_parquet = list( #This is for DIANN parquet file, which is in long format.
-    PEPTIDE        = c("stripped.sequence"),
-    STRIPPED       = c("modified.sequence"),
+    PEPTIDE        = c("modified.sequence"),
+    STRIPPED       = c("stripped.sequence"),
     LENGTH         = c(),                  # not present in parquet
     MASS           = c(),                  # not present in parquet
     MZ             = c("Precursor.Mz"),
@@ -131,7 +131,7 @@ signature <- list(
   PEAKS    = c("X.10LgP"),
   Fragpipe = c("prev.aa"),
   DIANN    = c("First.Protein.Description"), #this is for report.pr_matrix.tsv.
-  DIANN_parquet    = c("Run.Index")          #this is for report.pr_matrix.tsv.
+  DIANN_parquet    = c("Run.Index")
 )
 
 #-----------Helper functions------------------
@@ -241,6 +241,44 @@ aa_comp_from_peptides <- function(peptides) {
   100 * freq / sum(freq)
 }
 
+check_data_error <- function(data, required_cols = NULL, na_policy = c("any", "all", "ignore")) {
+  na_policy <- match.arg(na_policy)
+  
+  # Helper: build error message
+  build_error_msg <- function(msg) {
+    validate(need(FALSE, msg))  # This stops execution and shows msg in the UI
+  }
+  
+  # Check if data exists
+  if (is.null(data)) {
+    build_error_msg("Error: Data not available.")
+  }
+  
+  # Check if required columns exist
+  if (!is.null(required_cols)) {
+    missing_cols <- setdiff(required_cols, names(data))
+    if (length(missing_cols) > 0) {
+      build_error_msg(paste("Error: Missing column(s):", paste(missing_cols, collapse = ", ")))
+    }
+  }
+  
+  # Check for NAs based on na_policy
+  if (na_policy != "ignore") {
+    na_cols_all <- sapply(required_cols, function(col) all(is.na(data[[col]])))
+    na_cols_any <- sapply(required_cols, function(col) any(is.na(data[[col]])))
+    
+    if (na_policy == "all" && any(na_cols_all)) {
+      build_error_msg(paste("Error: Column(s) all NA:", paste(names(na_cols_all)[na_cols_all], collapse = ", ")))
+    }
+    
+    if (na_policy == "any" && any(na_cols_any)) {
+      build_error_msg(paste("Error: Column(s) contain NA:", paste(names(na_cols_any)[na_cols_any], collapse = ", ")))
+    }
+  }
+  
+  # If we reach here, everything is OK
+  return(TRUE)
+}
 
 #-----------Data handling/transformation functions------------------
 build_generic_schema <- function(schema) {
@@ -555,6 +593,7 @@ normalize_df <- function(df) {
     message("Length column missing → calculated from peptide")
     original <- rbind(original, data.frame(final_name = "LENGTH", original_name = "[Calculated]", stringsAsFactors = FALSE))
   }
+  #M/Z
   if (!"MASS" %in% colnames(df) & "CHARGE" %in% colnames(df) & "MZ" %in% colnames(df)) {
     df$MASS <- df$MZ * df$CHARGE
     message("Mass column missing → calculated from m/z and charge")

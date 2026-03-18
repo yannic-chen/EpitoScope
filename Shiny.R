@@ -45,6 +45,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   data_list_r <- reactiveVal(NULL) #this is the list of trimmed and filtered data
   data_info_r <- reactiveVal(NULL) #this is the info list to know which columns are used for what
   data_mod_map <- reactiveVal(NULL) #this is the conversion map when modified amino acids are given their own symbol. Only used in PTM analysis.
+  prediction_cache <- reactiveVal(data.frame(Peptide = character())) #This is to save netMHCpan predictions
 
   #Check if we preload_data
   observe({
@@ -103,8 +104,17 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
           result
         })
       } else {
-        print("No netMHpan pro-computed variable. SKIP binding prediction")
+        print("No netMHCpan pro-computed variable. SKIP binding prediction")
       }
+      #The predicted_cache is initialized using all peptides in the input data. If the netMHCpan precomputed data has been left_joined, these will also be taken.
+      prediction <- do.call(rbind, lapply(dfs, function(df) {
+          # pick STRIPPED + all columns starting with HLA
+          hla_cols <- grep("^HLA", colnames(df), value = TRUE)
+          df_subset <- df[, c("STRIPPED", hla_cols), drop = FALSE]
+          colnames(df_subset)[1] <- "Peptide"
+          df_subset <- df_subset[!duplicated(df_subset$Peptide), ]
+          df_subset
+        }))
       
       # Extract summary tables
       infos <- lapply(processed, function(x) x$table)
@@ -114,6 +124,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
 
       print(Sys.time() - start)
   
+      prediction_cache(prediction)
       data_list_r(dfs)
       data_info_r(merged_info)
       data_mod_map(global_mod_map)
@@ -1926,15 +1937,139 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   })
   
 #-------------------Binding prediction------------------------
+  observeEvent(input$run_netmhc, {
+    if (is.null(input$HLA_alleles) || length(input$HLA_alleles) == 0) {
+      showNotification("Please select at least one HLA allele.", type = "error")
+      return()
+    }
+    
+    
+    lst <- processed_data_list()
+    cache <- prediction_cache()
+    req(lst)
+    req(cache)
+    req(input$HLA_alleles)
+    
+    alleles_vec <- input$HLA_alleles
+    
+    # Extract peptides of correct length
+    peptides <- unique(unlist(lapply(lst, `[[`, "STRIPPED"), use.names = FALSE))
+    peptides <- peptides[nchar(peptides) %in% 8:11]
+    req(length(peptides) > 0)
+    
+    # Path to netMHCpan
+    netmhcpan_path <- "/mnt/c/Users/Yannic/netMHCpan-4.2/netMHCpan" # user-defined
+    
+    withProgress(message = "Running netMHCpan predictions...", value = 0, {
+      for (al in alleles_vec) {
+        
+        al_conversion <- sub("-", "\\.", al)
+        al_conversion <- sub(":", "", al_conversion)
+        print(al_conversion)
+        
+        # Determine which peptides need prediction
+        if (!(al_conversion %in% colnames(cache)[-1])) {
+          peptides_to_predict <- peptides       # new allele → predict all peptides
+        } else {
+          peptides_to_predict <- cache$Peptide[is.na(cache[[al_conversion]])]  # existing allele → only new peptides
+          peptides_to_predict <- peptides_to_predict[nchar(peptides_to_predict) %in% 8:11]
+        }
+        incProgress(1 / length(alleles_vec), detail = paste("Predicting for allele", al, " (# of peptides: ", length(peptides_to_predict), ")" ))
+        
+        if (length(peptides_to_predict) == 0) next
+        
+        # Temp files
+        peptide_file <- tempfile(fileext = ".txt")
+        output_file  <- tempfile(fileext = ".txt")
+        writeLines(peptides_to_predict, peptide_file)
+        
+        # Convert Windows paths to WSL paths
+        peptide_wsl <- trimws(system2("wsl", c("wslpath", "-a", shQuote(peptide_file)), stdout = TRUE))
+        out_wsl     <- trimws(system2("wsl", c("wslpath", "-a", shQuote(output_file)), stdout = TRUE))
+        
+        # Build and run netMHCpan command
+        cmd <- paste(
+          shQuote(netmhcpan_path),
+          "-p", shQuote(peptide_wsl),
+          "-a", shQuote(al),
+          "-l 8,9,10,11",
+          "-xls",
+          "-xlsfile", shQuote(out_wsl)
+        )
+        system2("wsl", c("bash", "--login", "-c", shQuote(cmd)),stdout = NULL)
+        
+        # Read and clean output
+        res <- read.table(output_file, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+        
+        # --- Rename columns ---
+        header1 <- colnames(res)
+        header2 <- as.character(unlist(res[1, ]))
+        colnames_new <- header1
+        colnames_new[2] <- "Peptide"
+        
+        current_hla <- NULL
+        for (i in seq_along(colnames_new)) {
+          if (grepl("^HLA", header1[i])) current_hla <- header1[i]
+          if (!is.null(current_hla) && header2[i] != "") colnames_new[i] <- paste0(current_hla, "_", header2[i])
+        }
+        colnames(res) <- colnames_new
+        res <- res[-1, ]  # remove header row
+        
+        # Keep only Peptide + Rank columns
+        keep_cols <- c("Peptide", grep("_Rank$", colnames(res), value = TRUE))
+        res <- res[, keep_cols, drop = FALSE]
+        
+        # Clean column names
+        colnames(res) <- gsub("_Rank$", "", colnames(res))
+        colnames(res)[-1] <- sub("^([^.]+\\.[^.]+)\\.", "\\1", colnames(res)[-1])
+        
+        # Convert numeric columns
+        res[-1] <- lapply(res[-1], as.numeric)
+        res <<- res
+        
+        
+        if (!(al_conversion %in% colnames(cache)[-1])) {
+          cache <- left_join(cache, res, by = "Peptide")
+        } else {
+          cache <- full_join(cache, res, by = "Peptide") %>%
+            mutate(
+              !!al_conversion := coalesce(.data[[paste0(al_conversion, ".x")]],
+                               .data[[paste0(al_conversion, ".y")]])
+            ) %>%
+            dplyr::select(-all_of(c(paste0(al_conversion, ".x"), paste0(al_conversion, ".y"))))
+        }
+
+      }
+    })
+    
+    # Update reactive cache once at the end
+    prediction_cache(cache)
+  })
+  
+  
   peptide_wide_all <- reactive({
       lst <- processed_data_list()
+      cache <- prediction_cache()
       req(lst)
       
       # Check if "netMHCpan" exists in the list
-      if (!exists("netMHCpan")) {
-        data.frame(Message = "netMHCpan pre-generated data missing; analysis skipped.")
+      if (ncol(cache) <= 1) {
+        data.frame(Message = "No binding predictions available. No netMHCpan precomputed data available and netMHCpan has not ran yet")
         req(FALSE)  # Stops this reactive, downstream reactives won't run
       }
+      
+      lst <- lapply(lst, function(df) {
+        
+        # Remove existing HLA columns
+        allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+        cols_to_keep <- setdiff(colnames(df), allele_cols)
+        df <- df[, cols_to_keep]
+        
+        # Left join with new predictions
+        df <- dplyr::left_join(df, cache, by = c("STRIPPED" = "Peptide"))
+        
+        df
+      })
       
       out <- lapply(names(lst), function(nm) {
         df <- lst[[nm]]

@@ -400,11 +400,34 @@ ui <- bs4DashPage(
         fluidRow(
           h6("WIP: Somehow some peptides are missing from netMHCpan results", style = "color: red;"),
           h6("Binding predictions are obtained by pre-computing all peptides (8-11mer) from the uniprot proteome using netMHCpan."),
+          h6("Ensure correct format of the netMHCpan data. THis is now important with the implementation of netMHCpan call."),
           h6("For the sake of filesize, Rank_EL has been limited to 2 decimal places and number have a ceiling of 9.99."),
           h6("Currently each allele adds around 188MB data (47MB per peptide length)"),
           h6("When 9.99 -> '', one allele adds around 48MB data (12MB per length)"),
           h6("WIP: Add option to toggle between HLA1 and HLA2 thresholds.", style = "color: red;"),
           
+          ### ---- Call netMHCpan from windows subsystem for linux ----
+          bs4Card(title = "run netMHCpan", width = 12, maximizable = TRUE,
+                  selectInput(
+                    "HLA_alleles",
+                    "Select HLA allele(s):",
+                    choices = c(
+                      "HLA-A02:01",
+                      "HLA-A01:01",
+                      "HLA-A03:01",
+                      "HLA-A24:02",
+                      "HLA-B07:02",
+                      "HLA-B08:01",
+                      "HLA-B15:01",
+                      "HLA-C07:01",
+                      "HLA-C07:02"
+                    ),
+                    selected = "HLA-A02:01",
+                    multiple = TRUE
+                  ),
+                  actionButton("run_netmhc", "Run netMHCpan"),
+                  verbatimTextOutput("netmhc_output")
+          ),
           ### ---- Summary Table ----
           bs4Card(title = tagList("Summary Table", bs4Dash::tooltip(icon("info-circle"),"On default the threshold for weak binder is 2.0 and for strong binder is 0.5 Rank_EL. (Hard coded).", placement = "right")
                                   ), width = 12, maximizable = TRUE,
