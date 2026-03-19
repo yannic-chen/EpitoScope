@@ -159,12 +159,18 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
       # Add netMHCpan info to dataframes
       if (exists("netMHCpan")) {
         print("left_join netMHCpan pre-generated data.")
+        
+        # Collect all unique peptides across all dfs upfront
+        all_peptides <- unique(unlist(lapply(dfs, `[[`, "STRIPPED")))
+        
+        # Filter netMHCpan once, before the loop
+        netMHCpan_filtered <- netMHCpan[Peptide %in% all_peptides]
+        
         dfs <- lapply(dfs, function(df) {
-          df_dt <- as.data.table(df)   # temporary conversion
-          result <- netMHCpan[df_dt, on = c(Peptide = "STRIPPED")]  # fast left join
-          
-          result <- as.data.frame(result)        # convert back to data.frame
-          names(result)[names(result) == "Peptide"] <- "STRIPPED" #Rename back
+          df_dt <- as.data.table(df)
+          result <- netMHCpan_filtered[df_dt, on = c(Peptide = "STRIPPED")]
+          result <- as.data.frame(result)
+          names(result)[names(result) == "Peptide"] <- "STRIPPED"
           result
         })
       } else {
@@ -193,7 +199,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
 
       print(Sys.time() - start)
   
-      prediction_cache(prediction)
+      prediction_cache(distinct(prediction))
       data_list_r(dfs)
       data_info_r(merged_info)
       data_mod_map(global_mod_map)
@@ -1842,7 +1848,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     
     lst <- processed_data_list()
     cache <- prediction_cache()
-    check_data_error(lst, na_policy = "ignore")
+    check_data_error(lst, required_cols = "LENGTH" ,na_policy = "any")
     req(cache)
     req(input$HLA_alleles)
     
@@ -1851,6 +1857,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     # Extract peptides of correct length
     peptides <- unique(unlist(lapply(lst, `[[`, "STRIPPED"), use.names = FALSE))
     peptides <- peptides[nchar(peptides) %in% 8:11]
+    
     shiny::validate(shiny::need(length(peptides) > 0, "No Peptides within the correct length."))
     
     # Path to netMHCpan
@@ -1866,8 +1873,9 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
           peptides_to_predict <- peptides       # new allele → predict all peptides
         } else {
           peptides_to_predict <- cache$Peptide[is.na(cache[[al_conversion]])]  # existing allele → only new peptides
-          peptides_to_predict <- peptides_to_predict[nchar(peptides_to_predict) %in% 8:11]
+          peptides_to_predict <- unique(peptides_to_predict[nchar(peptides_to_predict) %in% 8:11])
         }
+
         incProgress(1 / length(alleles_vec), detail = paste("Predicting for allele", al, " (# of peptides: ", length(peptides_to_predict), ")" ))
         
         if (length(peptides_to_predict) == 0) next
@@ -1919,12 +1927,14 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
         
         # Convert numeric columns
         res[-1] <- lapply(res[-1], as.numeric)
-        res <<- res
-        
         
         if (!(al_conversion %in% colnames(cache)[-1])) {
           cache <- left_join(cache, res, by = "Peptide")
         } else {
+          #avoid one-to-many.
+          res   <- distinct(res,   Peptide, .keep_all = TRUE)
+          cache <- distinct(cache, Peptide, .keep_all = TRUE)
+          
           cache <- full_join(cache, res, by = "Peptide") %>%
             mutate(
               !!al_conversion := coalesce(.data[[paste0(al_conversion, ".x")]],
@@ -1945,29 +1955,25 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
       lst <- processed_data_list()
       cache <- prediction_cache()
       
-      temp <<- cache
       req(lst)
       
       shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
       
+      
       lst <- lapply(lst, function(df) {
         
-        # Remove existing HLA columns
-        allele_cols <- grep("^HLA", colnames(df), value = TRUE)
-        cols_to_keep <- setdiff(colnames(df), allele_cols)
-        df <- df[, cols_to_keep]
+        # Only keep necessary columns
+        df <- distinct(df[, c("STRIPPED", "LENGTH")])
         
-        # Left join with new predictions
+        # Left join with new cache
         df <- dplyr::left_join(df, cache, by = c("STRIPPED" = "Peptide"))
-        
+
         df
       })
       
       out <- lapply(names(lst), function(nm) {
         df <- lst[[nm]]
-        
         allele_cols <- grep("^HLA", colnames(df), value = TRUE)
-        
         df <- df %>%
           dplyr::filter(LENGTH >= 8, LENGTH <= 11) %>%
           dplyr::select(STRIPPED, all_of(allele_cols)) %>%
@@ -1984,7 +1990,6 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
     
     df <- peptide_wide_all()
-    
     
     allele_cols <- grep("^HLA", colnames(df), value = TRUE)
     

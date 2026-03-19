@@ -257,84 +257,55 @@ check_data_error <- function(data, required_cols = NULL, na_policy = c("any", "a
     shiny::validate(shiny::need(FALSE, msg))
   }
   
-  # Check if data exists
-  if (is.null(data)) {
-    stop_with_msg("Error: Data not available.")
-  }
+  if (is.null(data)) stop_with_msg("Data not available")
   
-  #HANDLE LIST OF DATAFRAMES
   if (is.list(data)) {
+    # Keep only data frames
+    valid_dfs <- data[vapply(data, is.data.frame, logical(1))]
+    if (length(valid_dfs) == 0) stop_with_msg("No valid data.frames in the list")
     
-    # Check if at least one dataframe exists
-    if (length(data) == 0) {
-      stop_with_msg("Error: Empty data list.")
-    }
+    # Check which dfs have all required columns
+    dfs_with_cols <- valid_dfs[vapply(valid_dfs, function(df) all(required_cols %in% colnames(df)), logical(1))]
     
-    # Check required columns across list
-    if (!is.null(required_cols)) {
-      has_col <- vapply(data, function(df) {
-        is.data.frame(df) && all(required_cols %in% colnames(df))
-      }, logical(1))
-      
-      if (!any(has_col)) {
-        stop_with_msg(paste("Error: None of the datasets contain column(s):",
-                            paste(required_cols, collapse = ", ")))
-      }
-      
-      # NA checks (only on valid dfs)
-      if (na_policy != "ignore") {
-        valid_dfs <- data[vapply(data, function(df) {
-          is.data.frame(df) && all(required_cols %in% colnames(df))
-        }, logical(1))]
-        
-        if (length(valid_dfs) == 0) {
-          stop_with_msg("Error: No valid dataframes for NA check.")
-        }
-        
-        if (na_policy == "any") {
-          if (any(vapply(valid_dfs, function(df) {
-            any(is.na(df[[required_cols]]))
-          }, logical(1)))) {
-            stop_with_msg(paste("Error: NA values found in column:", required_cols))
+    if (length(dfs_with_cols) == 0) stop_with_msg(
+      paste("None of the data.frames contain required column(s):", paste(required_cols, collapse = ", "))
+    )
+    
+    # NA check: only on dfs that have the columns
+    if (na_policy != "ignore") {
+      for (df in dfs_with_cols) {
+        for (col in required_cols) {
+          if (na_policy == "any" && any(is.na(df[[col]]))) {
+            stop_with_msg(paste("NA values found in column:", col))
           }
-        }
-        
-        if (na_policy == "all") {
-          if (any(vapply(valid_dfs, function(df) {
-            all(is.na(df[[required_cols]]))
-          }, logical(1)))) {
-            stop_with_msg(paste("Error: Column all NA:", required_cols))
+          if (na_policy == "all" && all(is.na(df[[col]]))) {
+            stop_with_msg(paste("All values are NA in column:", col))
           }
         }
       }
     }
+    
     return(TRUE)
   }
   
-  #SINGLE DATAFRAME (fallback)
+  # Single data.frame case
   if (is.data.frame(data)) {
+    missing_cols <- setdiff(required_cols, colnames(data))
+    if (length(missing_cols) > 0) stop_with_msg(
+      paste("Missing column(s):", paste(missing_cols, collapse = ", "))
+    )
     
-    if (!is.null(required_cols)) {
-      missing_cols <- setdiff(required_cols, names(data))
-      if (length(missing_cols) > 0) {
-        stop_with_msg(paste("Error: Missing column(s):", paste(missing_cols, collapse = ", ")))
-      }
-      
-      if (na_policy != "ignore") {
-        if (na_policy == "any" && any(is.na(data[[required_cols]]))) {
-          stop_with_msg(paste("Error: NA values in column:", required_cols))
-        }
-        
-        if (na_policy == "all" && all(is.na(data[[required_cols]]))) {
-          stop_with_msg(paste("Error: Column all NA:", required_cols))
-        }
+    if (na_policy != "ignore") {
+      for (col in required_cols) {
+        if (na_policy == "any" && any(is.na(data[[col]]))) stop_with_msg(paste("NA in column:", col))
+        if (na_policy == "all" && all(is.na(data[[col]]))) stop_with_msg(paste("All NA in column:", col))
       }
     }
     
     return(TRUE)
   }
   
-  stop_with_msg("Error: Unsupported data type.")
+  stop_with_msg("Unsupported data type")
 }
 
 #-----------Data handling/transformation functions------------------
