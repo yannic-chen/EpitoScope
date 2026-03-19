@@ -1,6 +1,3 @@
-library(shiny)
-library(bs4Dash)
-
 ui <- bs4DashPage(
   title = "EpitoScope",
   help = TRUE, # automatically enable/disable all bs4Dash::tooltips and popover that are present in the shiny app
@@ -77,6 +74,7 @@ ui <- bs4DashPage(
   
   ## ---- Main ----
   body = bs4DashBody(
+    shinyjs::useShinyjs(), #needed to make button grey out
     bs4TabItems(
       ### ---- RAW summary ----
       bs4TabItem(
@@ -426,7 +424,7 @@ ui <- bs4DashPage(
                     multiple = TRUE
                   ),
                   actionButton("run_netmhc", "Run netMHCpan"),
-                  verbatimTextOutput("netmhc_output")
+                  textOutput("netmhc_status")
           ),
           ### ---- Summary Table ----
           bs4Card(title = tagList("Summary Table", bs4Dash::tooltip(icon("info-circle"),"On default the threshold for weak binder is 2.0 and for strong binder is 0.5 Rank_EL. (Hard coded).", placement = "right")

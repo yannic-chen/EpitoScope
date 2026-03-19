@@ -38,8 +38,72 @@ options(shiny.maxRequestSize = 5*1024^3) #Increase upload limit (in bytes) if ne
 options(width=10000) #This allows for text to not be text-wrapped.
 
 server <- function(input, output, session, preloaded_data = NULL, generate_pseudo_sequence = FALSE) {
+#------------------State Check---------------------
+  startup_done <- reactiveVal(FALSE)
+  netmhcpan_path <- "/mnt/c/Users/Yannic/netMHCpan-4.2/netMHCpan" # This is the absolute path in the WSL. Really want the system to read off .bashrc
   
-#------------------Data management-----------------  
+  ## State container
+  wsl_available <- reactiveVal(NULL)
+  netmhcpan_available <- reactiveVal(NULL)
+  
+  observe({
+    if (startup_done()) return() #Since there is no reactive dependency, this observe only runs once anyway. But just in case.
+    #### --- WSL CHECK ---
+    wsl_ok <- tryCatch({
+      res <- system2("wsl", "--status", stdout = TRUE, stderr = TRUE)
+      !is.null(res)
+    }, error = function(e) FALSE)
+    wsl_available(wsl_ok)
+    message(paste0("WSL available: ", wsl_ok))
+    
+    #### --- netMHCpan CHECK (only if WSL exists) ---
+    netmhcpan_ok <- FALSE
+    if (wsl_ok) {
+      netmhcpan_ok <- tryCatch({
+        # Use -o (ignore output) and check exit status
+        status <- system2(
+          "wsl",
+          c("test", "-x", shQuote(netmhcpan_path)),
+          stdout = FALSE,
+          stderr = FALSE
+        )
+        status == 0   # TRUE if executable exists
+      }, error = function(e) FALSE)
+    }
+    
+    netmhcpan_available(netmhcpan_ok)
+    message(paste0("NetMHCpan available: ", netmhcpan_ok))
+    
+    startup_done(TRUE)
+  })
+  
+  ##----Disable buttons------
+  observe({
+    req(!is.null(netmhcpan_available()))
+    
+    if (!netmhcpan_available()) {
+      shinyjs::disable("run_netmhc")
+    } else {
+      shinyjs::enable("run_netmhc")
+    }
+  })
+  
+  output$netmhc_status <- renderText({
+    # Check if WSL is available
+    if (!wsl_available()) {
+      return("Disabled: WSL is not available on this system.")
+    }
+    
+    # Check if netMHCpan executable exists
+    if (!netmhcpan_available()) {
+      return(paste0("Disabled: netMHCpan not found at ", netmhcpan_path))
+    }
+    
+    # Otherwise, no message
+    ""
+  })
+  
+#------------------Data management-----------------
   ## Reactive dataset container
   raw_list_r <- reactiveVal(NULL) #this is the list of raw data
   data_list_r <- reactiveVal(NULL) #this is the list of trimmed and filtered data
@@ -108,13 +172,18 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
       }
       #The predicted_cache is initialized using all peptides in the input data. If the netMHCpan precomputed data has been left_joined, these will also be taken.
       prediction <- do.call(rbind, lapply(dfs, function(df) {
-          # pick STRIPPED + all columns starting with HLA
-          hla_cols <- grep("^HLA", colnames(df), value = TRUE)
+        hla_cols <- grep("^HLA", colnames(df), value = TRUE)
+        
+        if (length(hla_cols) == 0) {
+          df_subset <- data.frame(Peptide = df$STRIPPED, stringsAsFactors = FALSE) #if only Peptide column exist, then R automatically formats to matrix. We need to enforce dataframe format.
+        } else {
           df_subset <- df[, c("STRIPPED", hla_cols), drop = FALSE]
           colnames(df_subset)[1] <- "Peptide"
-          df_subset <- df_subset[!duplicated(df_subset$Peptide), ]
-          df_subset
-        }))
+        }
+        
+        df_subset <- df_subset[!duplicated(df_subset$Peptide), , drop = FALSE]
+        df_subset
+      }))
       
       # Extract summary tables
       infos <- lapply(processed, function(x) x$table)
@@ -446,40 +515,19 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   ## ----Number of peptides and peptidoforms----
   output$summary_peptides_plot <- renderPlot({
     lst <- data_list_r()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "STRIPPED" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No STRIPPED column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
+    check_data_error(lst, na_policy = "ignore")
     plot_unique_counts(lst, column = "STRIPPED", y_label = "Number of unique peptides", color = input$color_palette)
   })
   
   output$summary_peptidoforms_plot <- renderPlot({
     lst <- data_list_r()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "PEPTIDE" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No PEPTIDE column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
+    check_data_error(lst, na_policy = "ignore")
     plot_unique_counts(lst, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = input$color_palette)
   })
   
   output$summary_proteins_plot <- renderPlot({
     lst <- data_list_r()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "PROTEIN" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No PROTEIN column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
+    check_data_error(lst, required_cols = "PROTEIN", na_policy = "ignore")
     # Use extract_protein_prefixes for proteins
     plot_unique_counts(lst, column = "PROTEIN", y_label = "Number of unique proteins",
                        transform_fn = extract_protein_prefixes, color = input$color_palette)
@@ -488,48 +536,26 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   ## ----Charge / Mass / mz / RT / ppm----
   output$charge_plot <- renderPlot({
     lst <- data_list_r()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "CHARGE" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No CHARGE column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
+    check_data_error(lst, required_cols = "CHARGE", na_policy = "any") #Even if CHARGE is missing, preprocessing would add a charge of 1 to every row.
     plot_stacked_bar(lst, column = "CHARGE", fill_label = "Charge", percentage = FALSE, color = input$color_palette)
   })
   
   # Example usage for your Shiny outputs
   output$mass_plot <- renderPlot({
     lst <- data_list_r()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "MASS" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No MASS column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
+    check_data_error(lst, required_cols = "MASS", na_policy = "any")
     plot_density(lst, column = "MASS", x_label = "Mass (Da)", color = input$color_palette)
   })
   
   output$mz_plot <- renderPlot({
     lst <- data_list_r()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "MZ" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No MZ column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
+    check_data_error(lst, required_cols = "MZ", na_policy = "any")
     plot_density(lst, column = "MZ", x_label = "m/z", color = input$color_palette)
   })
   
   output$RT_plot <- renderUI({
     lst <- data_list_r()
-    req(lst)
-    
+    check_data_error(lst, required_cols = "RT", na_policy = "any")
     # Wrap plots in a grid (like motif plots)
     layout_column_wrap(
       width = "400px",  # each plot approx width
@@ -541,7 +567,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   
   observe({
     lst <- data_list_r()
-    req(lst)
+    check_data_error(lst, required_cols = "RT", na_policy = "any")
     
     for (sample_name in names(lst)) {
       
@@ -560,57 +586,39 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   
   output$ppm_plot <- renderPlot({
     lst <- data_list_r()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "PPM" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No PPM column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
+    check_data_error(lst, required_cols = "PPM", na_policy = "any")
     plot_density(lst, column = "PPM", x_label = "ppm", color = input$color_palette)
   })
   
   ##----Score distribution----
   output$score_violin <- renderPlot({
     lst <- data_list_r()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "SCORE" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No SCORE column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
+    check_data_error(lst, required_cols = "SCORE", na_policy = "any")
     plot_violin(lst, column = "SCORE", color = input$color_palette)
   })
   
   ##----Summary Table----
   output$RAW_summary_html <- renderUI({
     lst <- raw_list_r()
-    req(lst)
-    
+    check_data_error(lst, na_policy = "ignore")
     render_summary_pre(lst, font_size = "8px")
   })
 #---------------------QC Tab-------------------------
   ## ---- length distribution ----
   output$length_plot <- renderPlotly({
     lst <- processed_data_list()
-    req(lst)
-    
+    check_data_error(lst, required_cols = "LENGTH", na_policy = "any")
     plot_length_distribution(lst, color = input$color_palette)
   })
   
   ## ---- length range percentage ----
   output$length_range_percentage <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
-    
+    check_data_error(lst, required_cols = "LENGTH", na_policy = "any")
     lst <- lapply(lst, function(df) {
       df$correct_range <- df$LENGTH >= 8 & df$LENGTH <= 13
       df
     })
-    
     plot_stacked_bar(lst, column = "correct_range", fill_label = "8-13mer", percentage = TRUE, color = input$color_palette)
   })
   
@@ -632,7 +640,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   ## Motif plots
   output$motif_tabs <- renderUI({
     lst <- processed_data_list()
-    req(lst)
+    check_data_error(lst, na_policy = "ignore")
     
     lengths <- 7:20
     
@@ -668,7 +676,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   
   observe({
     lst <- processed_data_list()
-    req(lst)
+    check_data_error(lst, na_policy = "ignore")
     
     lengths <- 7:20
     
@@ -682,7 +690,6 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
           output[[paste0("motif_", sample_val, "_", length_val)]] <- renderPlot({
             
             df <- lst[[sample_val]]
-            req(df)
             
             # subset by length
             df_L <- df[df$LENGTH == length_val, ]
@@ -690,13 +697,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
             peptides <- unique(df_L[["STRIPPED"]])
             peptides <- peptides[nchar(peptides) == length_val]
             
-            if (length(peptides) < 5) {
-              return(ggplot() + 
-                       annotate("text", x = 0.5, y = 0.5,
-                                label = "Not enough peptides",
-                                size = 6, color = "red") +
-                       theme_void())
-            }
+            shiny::validate(shiny::need(length(peptides) >= 5, "Not enough peptides"))
             
             par(mar = c(1.5, 1.5, 2, 0.5))
             
@@ -713,7 +714,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   ## ----Dynamic Range plots----
   output$dynrange_individual_ui <- renderUI({
     lst <- processed_data_list()
-    req(lst)
+    check_data_error(lst, required_cols = "MAX_QUANTITY", na_policy = "any")
     
     # Wrap plots in a grid (like motif plots)
     layout_column_wrap(
@@ -726,20 +727,13 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   
   output$dynrange_combined <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "MAX_QUANTITY" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No MAX_QUANTITY column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
+    check_data_error(lst, required_cols = "MAX_QUANTITY", na_policy = "any")
     dynamic_range_plot_combined(df_list = lst, data_col = "MAX_QUANTITY", color = input$color_palette)
   })
   
   observe({
     lst <- processed_data_list()
-    req(lst)
+    check_data_error(lst, required_cols = "MAX_QUANTITY", na_policy = "any")
     
     for (sample_name in names(lst)) {
       
@@ -748,13 +742,8 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
         df_local <- lst[[sample_local]]
         
         output[[paste0("dynrange_", sample_local)]] <- renderPlot({
-          req(df_local)
           
-          if (nrow(df_local) < 10) {
-            plot.new()
-            text(0.5, 0.5, "Not enough peptides", cex = 1.4)
-            return()
-          }
+          shiny::validate(shiny::need(nrow(df_local) >= 10, "Not enough peptides"))
           
           dynamic_range_plot(
             df = df_local,
@@ -772,19 +761,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   ##----1/k0 vs m/z----
   output$scatterplots_ui <- renderUI({
     lst <- processed_data_list()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "MZ" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No MZ column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
-    if (!any(vapply(lst, function(df) "K0" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No K0 column in data.", cex = 1.2)
-      return(invisible())
-    }
+    check_data_error(lst, required_cols = c("MZ","K0"), na_policy = "any")
     
     layout_column_wrap(
       width = "300px",
@@ -796,19 +773,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   
   observe({
     lst <- processed_data_list()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "MZ" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No MZ column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
-    if (!any(vapply(lst, function(df) "K0" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No K0 column in data.", cex = 1.2)
-      return(invisible())
-    }
+    check_data_error(lst, required_cols = c("MZ","K0"), na_policy = "any")
     
     plots <- generate_scatterplots(lst, color = input$color_palette)
     
@@ -827,13 +792,9 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   ##----aa heatmap----
   output$aa_heatmap <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
+    check_data_error(lst, na_policy = "ignore")
     
-    if(length(lst) < 2) {
-      plot.new()
-      text(0.5, 0.5,"At least 2 samples required.", cex = 1.2)
-      return(invisible())
-    }
+    shiny::validate(shiny::need(length(lst) >= 2, "need 2 or more samples to plot"))
     
     ht <- plot_aa_composition(
       lst,
@@ -878,14 +839,17 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   ##----Upset----
   output$upset_plot <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
+    check_data_error(lst, na_policy = "ignore") #By default plot_upset takes STRIPPED column. Need to adjust if we take PEPTIDE column instead.
+    shiny::validate(shiny::need(length(lst) >= 2, "Need 2 or more samples to plot"))
     plot_upset(lst)
   })
   
   ## ----Pairwise comparison of shared peptides----
   output$Pairwise_shared_peptide_matrix <- renderPlot({
     lst <- processed_data_list()
-    req(lst, input$shared_mode)
+    check_data_error(lst, na_policy = "ignore")
+    shiny::validate(shiny::need(length(lst) >= 2, "Need 2 or more samples to plot"))
+    req(input$shared_mode)
     
     ht <- plot_shared_peptide(
       lst,
@@ -900,8 +864,8 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   ## ----Pairwise comparison of shared peptides quantity----
   output$pairwise_peptide_quant_correlation <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
-    
+    shiny::validate(shiny::need(length(lst) >= 2, "Need 2 or more samples to plot"))
+    check_data_error(lst, required_cols = "MAX_QUANTITY" , na_policy = "any")
     ht <- plot_pairwise_peptide_quant_correlation(lst, color = input$color_palette, cluster = input$cluster_mode)
     ComplexHeatmap::draw(ht)
   })
@@ -910,26 +874,26 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   output$pca <- renderPlot({
     lst <- processed_data_list()
     req(lst)
-    
+    shiny::validate(shiny::need(length(lst) >= 2, "Need 2 or more sets to plot Upset"))
     plot_PCA(lst, color = input$color_palette)
   })
   
   ## ----Number of peptides and peptidoforms----
   output$summary_peptides_plot2 <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
+    check_data_error(lst, na_policy = "ignore")
     plot_unique_counts(lst, column = "STRIPPED", y_label = "Number of unique peptides", color = input$color_palette)
   })
   
   output$summary_peptidoforms_plot2 <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
+    check_data_error(lst, na_policy = "ignore")
     plot_unique_counts(lst, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = input$color_palette)
   })
   
   output$summary_proteins_plot2 <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
+    check_data_error(lst, required_cols = "PROTEIN" , na_policy = "all")
     # Use extract_protein_prefixes for proteins
     plot_unique_counts(lst, column = "PROTEIN", y_label = "Number of unique proteins",
                        transform_fn = extract_protein_prefixes, color = input$color_palette)
@@ -938,48 +902,26 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   ## ----Charge / Mass / mz / RT / ppm----
   output$charge_plot2 <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "CHARGE" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No CHARGE column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
-    
+    check_data_error(lst, required_cols = "CHARGE" , na_policy = "all")
     plot_stacked_bar(lst, column = "CHARGE", fill_label = "Charge", percentage = FALSE, color = input$color_palette)
   })
   
   # Example usage for your Shiny outputs
   output$mass_plot2 <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "MASS" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No MASS column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
+    check_data_error(lst, required_cols = "MASS" , na_policy = "all")
     plot_density(lst, column = "MASS", x_label = "Mass (Da)", color = input$color_palette)
   })
   
   output$mz_plot2 <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "MZ" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No MZ column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
+    check_data_error(lst, required_cols = "MZ" , na_policy = "all")
     plot_density(lst, column = "MZ", x_label = "m/z", color = input$color_palette)
   })
   
   output$RT_plot2 <- renderUI({
     lst <- processed_data_list()
-    req(lst)
+    check_data_error(lst, required_cols = "RT" , na_policy = "all")
     
     # Wrap plots in a grid (like motif plots)
     layout_column_wrap(
@@ -992,7 +934,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   
   observe({
     lst <- processed_data_list()
-    req(lst)
+    check_data_error(lst, required_cols = "RT" , na_policy = "all")
     
     for (sample_name in names(lst)) {
       
@@ -1011,28 +953,14 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   
   output$ppm_plot2 <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "PPM" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No PPM column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
+    check_data_error(lst, required_cols = "PPM" , na_policy = "all")
     plot_density(lst, column = "PPM", x_label = "ppm", color = input$color_palette)
   })
   
   ##----Score distribution----
   output$score_violin2 <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
-    
-    if (!any(vapply(lst, function(df) "SCORE" %in% colnames(df), logical(1)))) {
-      plot.new()
-      text(0.5, 0.5,"No SCORE column in data.", cex = 1.2)
-      return(invisible())
-    }
-    
+    check_data_error(lst, required_cols = "SCORE" , na_policy = "all")
     plot_violin(lst, column = "SCORE", color = input$color_palette)
   })
   
@@ -1104,6 +1032,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   ## ----Group Comparison----
   group_peptide_sets <- reactive({
     lst <- processed_data_list()
+    check_data_error(lst, na_policy = "ignore")
     groups <- group_list()
     pep_col <- "PEPTIDE"
     
@@ -1128,7 +1057,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   output$group_venn_plot <- renderPlot({
     
     sets <- group_peptide_sets()
-    req(length(sets) >= 2)
+    shiny::validate(shiny::need(length(sets) >= 2, "Need 2 or more sets to compare"))
     
     n_groups <- length(sets)
     
@@ -1183,7 +1112,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     groups <- groups[sapply(groups, function(g) {
       any(sapply(g, function(s) nrow(lst[[s]]) > 0))
     })]
-    req(length(groups) > 1) # at least 2 groups needed
+    shiny::validate(shiny::need(length(groups) >= 2, "Need 2 or more sets to compare"))
     
     # Generate all unique pairwise combinations
     group_pairs <- combn(names(groups), 2, simplify = FALSE)
@@ -1295,9 +1224,6 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     
     names(pairwise_volcano) <- sapply(group_pairs, function(pair) paste(pair, collapse = "_vs_"))
     
-    #for developmental purpose
-    temp <<- pairwise_volcano[sapply(pairwise_volcano, nrow) > 0]
-    
     pairwise_volcano[sapply(pairwise_volcano, nrow) > 0]
   })
   
@@ -1305,16 +1231,9 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   output$volcano_tabs <- renderUI({
     volcano_list <- group_comp_data()
     req(volcano_list)
-    
-    if (length(volcano_list) == 0) {
-      return(tags$div(
-        style = "color:red; font-weight:bold; padding:20px;",
-        "Not enough data to compute any group comparisons."
-      ))
-    }
+    shiny::validate(shiny::need(length(volcano_list) > 0, "Not enough data to compute any group comparisons."))
     
     output$volcano_comparison_tabs <- renderUI({
-      req(volcano_list)  # make sure the list exists
       
       # Build a list of tabPanels for each comparison
       comparison_tabs <- lapply(names(volcano_list), function(name) {
@@ -1718,11 +1637,11 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
         
         ## ----STRING-DB----
         output[[paste0("STRING_", plot_name)]] <- renderPlot({
-          if (is.null(df) || nrow(df) == 0) {
-            plot.new()
-            text(0.5, 0.5, "No data available")
-            return()
-          }
+          #Check for internet connection
+          shiny::validate(shiny::need(curl::has_internet(), "No Internet Connection."))
+          
+          #Check for data
+          shiny::validate(shiny::need(!is.null(df) && nrow(df) != 0, "No data available."))
           
           df <- df %>%
             filter(!is.na(log2FC)) %>%
@@ -1735,12 +1654,8 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
             unlist() %>%
             unique()
           
-          
-          if (is.null(uni_ids) || nrow(as.data.frame(uni_ids)) == 0) {
-            plot.new()
-            text(0.5, 0.5, "No significant IDs")
-            return()
-          }
+          #Check for empty uni_ids
+          shiny::validate(shiny::need(!is.null(uni_ids) && nrow(as.data.frame(uni_ids)) > 0, "No significant IDs"))
           
           url <- paste0(
             "https://string-db.org/api/json/network?",
@@ -1750,36 +1665,22 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
           
           res <- GET(url)
           
-          if (http_status(res)$category != "Success") {
-            plot.new()
-            text(0.5, 0.5,
-                 paste0("STRING request failed (HTTP ", res$status_code, ")"),
-                 cex = 1.2)
-            return()
-          }
+          #Check HTTP response
+          shiny::validate(shiny::need(http_status(res)$category == "Success", paste0("STRING request failed (HTTP ", res$status_code, ")")))
           
-          # 2) Try to parse JSON safely
+          # Try to parse JSON safely
           data <- tryCatch(
             {
               fromJSON(content(res, "text", encoding = "UTF-8"))
             },
             error = function(e) {
-              plot.new()
-              text(0.5, 0.5,
-                   paste0("JSON parse error:\n", e$message),
-                   cex = 0.9)
-              return(NULL)
+              shiny::validate(shiny::need(FALSE, paste0("JSON parse error:\n", e$message)))
+              NULL
             }
           )
           
-          # 3) If parsing failed, stop here
-          if (is.null(data)) {
-            plot.new()
-            text(0.5, 0.5,
-                 paste0("no STRING-DB result", res$status_code, ")"),
-                 cex = 1.2)
-            return()
-          }
+          # Check that parsing returned something
+          shiny::validate(shiny::need(!is.null(data) && length(data) > 0,paste0("No STRING-DB result (HTTP ", res$status_code, ")")))
           
           g <- graph_from_data_frame(
             data[, c("preferredName_A", "preferredName_B", "score")],
@@ -1806,13 +1707,9 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
 #-------------------PTM------------------------
   output$PTM_plot <- renderPlot({
     lst <- processed_data_list()
-    req(lst)
+    check_data_error(lst, required_cols = "PTM" , na_policy = "ignore")
     
     lst <- lapply(lst, function(df) {
-      
-      if (!"PTM" %in% colnames(df)) {
-        return(NULL)
-      }
       
       df %>%
         mutate(
@@ -1943,10 +1840,9 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
       return()
     }
     
-    
     lst <- processed_data_list()
     cache <- prediction_cache()
-    req(lst)
+    check_data_error(lst, na_policy = "ignore")
     req(cache)
     req(input$HLA_alleles)
     
@@ -1955,11 +1851,9 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     # Extract peptides of correct length
     peptides <- unique(unlist(lapply(lst, `[[`, "STRIPPED"), use.names = FALSE))
     peptides <- peptides[nchar(peptides) %in% 8:11]
-    req(length(peptides) > 0)
+    shiny::validate(shiny::need(length(peptides) > 0, "No Peptides within the correct length."))
     
     # Path to netMHCpan
-    netmhcpan_path <- "/mnt/c/Users/Yannic/netMHCpan-4.2/netMHCpan" # user-defined
-    
     withProgress(message = "Running netMHCpan predictions...", value = 0, {
       for (al in alleles_vec) {
         
@@ -2050,13 +1944,11 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   peptide_wide_all <- reactive({
       lst <- processed_data_list()
       cache <- prediction_cache()
+      
+      temp <<- cache
       req(lst)
       
-      # Check if "netMHCpan" exists in the list
-      if (ncol(cache) <= 1) {
-        data.frame(Message = "No binding predictions available. No netMHCpan precomputed data available and netMHCpan has not ran yet")
-        req(FALSE)  # Stops this reactive, downstream reactives won't run
-      }
+      shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
       
       lst <- lapply(lst, function(df) {
         
@@ -2084,14 +1976,15 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
         df
       })
       
-      temp <<- out
-      
       dplyr::bind_rows(out)
   })
   
   peptide_wide_unique <- reactive({
+    cache <- prediction_cache()
+    shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
+    
     df <- peptide_wide_all()
-    req(df)
+    
     
     allele_cols <- grep("^HLA", colnames(df), value = TRUE)
     
@@ -2102,8 +1995,10 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   })
   
   binder_summary_all <- reactive({
+    cache <- prediction_cache()
+    shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
+    
     df <- peptide_wide_unique()
-    req(df)
     
     allele_cols <- grep("^HLA", colnames(df), value = TRUE)
     
@@ -2143,47 +2038,36 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   })
   
   output$binding_summary <- DT::renderDT({
-    if (!exists("netMHCpan")) {
-      # Return a small placeholder table with a message
-      data.frame(Message = "netMHCpan pre-generated data missing; analysis skipped.")
-    } else {
-      binder_summary_all()
-    }
+    cache <- prediction_cache()
+    shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
+    
+    df <- binder_summary_all()
+    
+    df
   })
   
   output$binding_plot_percent <- renderPlot({
+    cache <- prediction_cache()
+    shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
+    
     df <- peptide_wide_unique()
-    req(df)
-    
-    if (!exists("netMHCpan")) {
-      # Return a small placeholder table with a message
-      return(data.frame(Message = "netMHCpan pre-generated data missing; analysis skipped."))
-    } 
-    
     plot_binders(df, color = input$color_palette, percent = TRUE)
   })
   
   output$binding_plot_absolute <- renderPlot({
+    cache <- prediction_cache()
+    shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
+    
     df <- peptide_wide_unique()
-    req(df)
-    
-    if (!exists("netMHCpan")) {
-      # Return a small placeholder table with a message
-      return(data.frame(Message = "netMHCpan pre-generated data missing; analysis skipped."))
-    } 
-    
     plot_binders(df, color = input$color_palette, percent = FALSE)
   })
   
   output$binding_table <- DT::renderDT({
+    cache <- prediction_cache()
+    shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
+    
     df <- peptide_wide_unique()
-    req(df)
-    
-    if (!exists("netMHCpan")) {
-      # Return a small placeholder table with a message
-      return(data.frame(Message = "netMHCpan pre-generated data missing; analysis skipped."))
-    } 
-    
+
     # Collapse rows by peptide
     df_collapsed <- df %>%
       group_by(STRIPPED) %>%
@@ -2293,16 +2177,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     lst <- data_list_r()
     req(lst)
     
-    # Handle case when there is only one or no dataset
-    if (length(lst) < 2) {
-      return(
-        tibble(
-          Message = paste0(
-            "Analysis is redundant, since less than 2 datasets are given."
-          )
-        )
-      )
-    }
+    shiny::validate(need(length(list) >= 2, "Redundant with only 1 dataset"))
     
     keep_cols <- c("Sample", "PEPTIDE", "STRIPPED", "LENGTH" ,"MASS" ,"CHARGE", "MZ" ,"K0", "RT", "PROTEIN")
     

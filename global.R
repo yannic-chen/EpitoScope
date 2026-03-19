@@ -26,6 +26,7 @@ library(shinyBS)
 library(bs4Dash)
 library(bslib)
 library(DT)
+library(shinyjs) #Only used to grey out buttons.
 #These are for general data handling
 library(dplyr)
 library(tidyr)
@@ -33,6 +34,7 @@ library(purrr)
 library(data.table)
 library(stringr)
 library(reshape2)
+library(curl)
 #These are for plotting
 library(viridis)
 library(ggplot2)
@@ -242,42 +244,97 @@ aa_comp_from_peptides <- function(peptides) {
 }
 
 check_data_error <- function(data, required_cols = NULL, na_policy = c("any", "all", "ignore")) {
+  #'na_policy determines how strict we allow NAs:
+  #'         ignore: the columns can have any number of NA
+  #'         allL: only if all values in column are NA, break operation
+  #'         any: if even just one NA exist, break it.
+  #'
+  #'
+  #'
   na_policy <- match.arg(na_policy)
   
-  # Helper: build error message
-  build_error_msg <- function(msg) {
-    validate(need(FALSE, msg))  # This stops execution and shows msg in the UI
+  stop_with_msg <- function(msg) {
+    shiny::validate(shiny::need(FALSE, msg))
   }
   
   # Check if data exists
   if (is.null(data)) {
-    build_error_msg("Error: Data not available.")
+    stop_with_msg("Error: Data not available.")
   }
   
-  # Check if required columns exist
-  if (!is.null(required_cols)) {
-    missing_cols <- setdiff(required_cols, names(data))
-    if (length(missing_cols) > 0) {
-      build_error_msg(paste("Error: Missing column(s):", paste(missing_cols, collapse = ", ")))
-    }
-  }
-  
-  # Check for NAs based on na_policy
-  if (na_policy != "ignore") {
-    na_cols_all <- sapply(required_cols, function(col) all(is.na(data[[col]])))
-    na_cols_any <- sapply(required_cols, function(col) any(is.na(data[[col]])))
+  #HANDLE LIST OF DATAFRAMES
+  if (is.list(data)) {
     
-    if (na_policy == "all" && any(na_cols_all)) {
-      build_error_msg(paste("Error: Column(s) all NA:", paste(names(na_cols_all)[na_cols_all], collapse = ", ")))
+    # Check if at least one dataframe exists
+    if (length(data) == 0) {
+      stop_with_msg("Error: Empty data list.")
     }
     
-    if (na_policy == "any" && any(na_cols_any)) {
-      build_error_msg(paste("Error: Column(s) contain NA:", paste(names(na_cols_any)[na_cols_any], collapse = ", ")))
+    # Check required columns across list
+    if (!is.null(required_cols)) {
+      has_col <- vapply(data, function(df) {
+        is.data.frame(df) && all(required_cols %in% colnames(df))
+      }, logical(1))
+      
+      if (!any(has_col)) {
+        stop_with_msg(paste("Error: None of the datasets contain column(s):",
+                            paste(required_cols, collapse = ", ")))
+      }
+      
+      # NA checks (only on valid dfs)
+      if (na_policy != "ignore") {
+        valid_dfs <- data[vapply(data, function(df) {
+          is.data.frame(df) && all(required_cols %in% colnames(df))
+        }, logical(1))]
+        
+        if (length(valid_dfs) == 0) {
+          stop_with_msg("Error: No valid dataframes for NA check.")
+        }
+        
+        if (na_policy == "any") {
+          if (any(vapply(valid_dfs, function(df) {
+            any(is.na(df[[required_cols]]))
+          }, logical(1)))) {
+            stop_with_msg(paste("Error: NA values found in column:", required_cols))
+          }
+        }
+        
+        if (na_policy == "all") {
+          if (any(vapply(valid_dfs, function(df) {
+            all(is.na(df[[required_cols]]))
+          }, logical(1)))) {
+            stop_with_msg(paste("Error: Column all NA:", required_cols))
+          }
+        }
+      }
     }
+    return(TRUE)
   }
   
-  # If we reach here, everything is OK
-  return(TRUE)
+  #SINGLE DATAFRAME (fallback)
+  if (is.data.frame(data)) {
+    
+    if (!is.null(required_cols)) {
+      missing_cols <- setdiff(required_cols, names(data))
+      if (length(missing_cols) > 0) {
+        stop_with_msg(paste("Error: Missing column(s):", paste(missing_cols, collapse = ", ")))
+      }
+      
+      if (na_policy != "ignore") {
+        if (na_policy == "any" && any(is.na(data[[required_cols]]))) {
+          stop_with_msg(paste("Error: NA values in column:", required_cols))
+        }
+        
+        if (na_policy == "all" && all(is.na(data[[required_cols]]))) {
+          stop_with_msg(paste("Error: Column all NA:", required_cols))
+        }
+      }
+    }
+    
+    return(TRUE)
+  }
+  
+  stop_with_msg("Error: Unsupported data type.")
 }
 
 #-----------Data handling/transformation functions------------------
@@ -545,7 +602,7 @@ normalize_df <- function(df) {
         names_prefix = "Intensity.",
         values_fn = ~ if (all(is.null(.x))) NA_real_ else max(.x, na.rm = TRUE),
         values_fill = NA_real_
-      )
+        )
     
     df_top <- df %>%
       group_by(Modified.Sequence) %>%
