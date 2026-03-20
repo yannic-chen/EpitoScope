@@ -3,8 +3,8 @@
 # Purpose:            This script creates a shiny app for easy immunopeptidomics analysis
 # Author:             Yannic Chen
 # Date Created:       2025-11-19
-# Last Modified:      2026-02-02
-# Version:            0.2
+# Last Modified:      2026-03-20
+# Version:            0.3
 # R Version:          4.5.2
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 # Details:
@@ -21,15 +21,6 @@
 # report.RmD - This script generated a pdf report. Technically optional if you never generate reports.
 # Optional:
 # data_loading.R - contains Example on how to load the data for use in shiny app.
-#
-# Version:
-# --- v0.2 ---
-# switched from base shiny to bs4Dash UI
-# now also works with PeaksXPro peptide.csv. -> missing charge column now temporarily assigns charge 0 to everything.
-# changed RT density plot to histogram. Density plot still exists.
-#
-# --- v0.1 ---
-# Initial version
 
 source("global.R") #global.R must be in the same folder. Otherwise change this path.
 source("ui.R") #ui.R must be in the same folder. Otherwise change this path.
@@ -39,10 +30,10 @@ options(width=10000) #This allows for text to not be text-wrapped.
 
 server <- function(input, output, session, preloaded_data = NULL, generate_pseudo_sequence = FALSE) {
 #------------------State Check---------------------
-  startup_done <- reactiveVal(FALSE)
-  netmhcpan_path <- "/mnt/c/Users/Yannic/netMHCpan-4.2/netMHCpan" # This is the absolute path in the WSL. Really want the system to read off .bashrc
-  
   ## State container
+  startup_done <- reactiveVal(FALSE)
+  motif_plot_length <- 7:20
+  netmhcpan_path <- "/mnt/c/Users/Yannic/netMHCpan-4.2/netMHCpan" # This is the absolute path in the WSL. Really want the system to read off .bashrc
   wsl_available <- reactiveVal(NULL)
   netmhcpan_available <- reactiveVal(NULL)
   
@@ -111,26 +102,20 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   data_mod_map <- reactiveVal(NULL) #this is the conversion map when modified amino acids are given their own symbol. Only used in PTM analysis.
   prediction_cache <- reactiveVal(data.frame(Peptide = character())) #This is to save netMHCpan predictions
 
-  #Check if we preload_data
+  #Preloaded Data
   observe({
     if (is.null(data_list_r())) {
       start <- Sys.time() #measure time
       
       raw_list_r(preloaded_data)
-      
-      # Process but split df and table
       processed <- lapply(preloaded_data, normalize_df)
-      
       print(Sys.time() - start)
-      
       
       #Add the PTM_Pseudo sequence to each dataframe in the list. We do it outside of normalize_df() function because it unifies the mod_map across all dataframes in the list
       if (generate_pseudo_sequence) {
         start <- Sys.time()
         print("Generating PTM_Pseudo sequence")
-        all_peptides <- unlist(lapply(processed, function(sample) {
-          sample$df$PEPTIDE
-        }), use.names = FALSE)
+        all_peptides <- unlist(lapply(processed, function(sample) {sample$df$PEPTIDE}), use.names = FALSE)
         all_tokens   <- extract_mod_tokens(all_peptides)
         global_mod_map <- build_mod_map(all_tokens)
         processed <- lapply(processed, function(sample) {
@@ -152,7 +137,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
       }
 
       start <- Sys.time()
-      
+    
       # Extract normalized dataframes
       dfs <- lapply(processed, function(x) x$df)
       
@@ -253,13 +238,8 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   
   ## Active data (selected samples)
   active_data_list <- reactive({
-    req(data_list_r())
-    req(input$selected_samples)
+    req(data_list_r(), input$selected_samples)
     data_list_r()[input$selected_samples]
-  })
-  
-  PTM_Pseudo_sequence <- reactive({
-    
   })
   
 #-------------------Data Transformation tab-----------------------
@@ -269,192 +249,26 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     lst <- active_data_list()  # Only selected samples
     req(lst)
     
-    # Apply filters
-    lst_transformed <- lapply(lst, function(df) {
-      # Length filter
-      if(!is.null(input$length_range)) {
-        df <- df[df$LENGTH >= input$length_range[1] & df$LENGTH <= input$length_range[2], ]
-      }
-      
-      # Quantity filter
-      if ("MAX_QUANTITY" %in% names(df)) {
-        
-        req(input$quantity_range)
-        req(length(input$quantity_range) == 2)
-        
-        df <- df %>%
-          dplyr::filter(
-            MAX_QUANTITY >= input$quantity_range[1],
-            MAX_QUANTITY <= input$quantity_range[2]
-          )
-      }
-      
-      # Score filter
-      if("SCORE" %in% colnames(df) && !is.null(input$score_range)) {
-        df <- df[df[["SCORE"]] >= input$score_range[1] &
-                   df[["SCORE"]] <= input$score_range[2], ]
-      }
-      
-      # charge filter
-      if(!is.null(input$charge_range)) {
-        df <- df[df$CHARGE >= input$charge_range[1] & df$CHARGE <= input$charge_range[2], ]
-      }
-      
-      # mass filter
-      if(!is.null(input$mass_range)) {
-        df <- df[df$MASS >= input$mass_range[1] & df$MASS <= input$mass_range[2], ]
-      }
-      
-      # RT filter
-      if(!is.null(input$RT_range)) {
-        df <- df[df$RT >= input$RT_range[1] & df$RT <= input$RT_range[2], ]
-      }
-      
-      df <- df[rowSums(!is.na(df)) > 0, , drop = FALSE] #Remove rows that are all NA
-      
-      df
-    })
-    
-    lst_transformed
+    filters <- list(
+      length_range   = input$length_range,
+      quantity_range = input$quantity_range,
+      score_range    = input$score_range,
+      charge_range   = input$charge_range,
+      mass_range     = input$mass_range,
+      RT_range       = input$RT_range
+    )
+    apply_filters(lst, filters)
   })
   
-  output$length_slider_ui <- renderUI({
-    lst <- active_data_list()
-    req(lst)
-    
-    if (!any(sapply(lst, function(df) "LENGTH" %in% colnames(df)))) {
-      return(tags$div(style = "color: #b30000; font-style: italic;","No LENGTH column in data."))
-    }
-    
-    # Compute min/max across all selected samples
-    min_val <- min(sapply(lst, function(df) min(df[["LENGTH"]], na.rm = TRUE)), na.rm = TRUE)
-    max_val <- max(sapply(lst, function(df) max(df[["LENGTH"]], na.rm = TRUE)), na.rm = TRUE)
-    
-    sliderInput(
-      "length_range",
-      tagList(icon("ruler-horizontal"),"Filter by Length:"),
-      min = min_val,
-      max = max_val,
-      value = c(min_val, max_val),
-      step = 1
-    )
-  })
+  output$length_slider_ui   <- renderUI({ make_range_slider_ui(active_data_list(), "LENGTH",       "length_range",   tagList(icon("ruler-horizontal"), "Filter by Length:"),   step = 1) })
+  output$quantity_slider_ui <- renderUI({ make_range_slider_ui(active_data_list(), "MAX_QUANTITY", "quantity_range", "Filter by Max Quantity:",                                step = 1) })
+  output$score_slider_ui    <- renderUI({ make_range_slider_ui(active_data_list(), "SCORE",        "score_range",    "Filter by Score:") })
+  output$charge_slider_ui   <- renderUI({ make_range_slider_ui(active_data_list(), "CHARGE",       "charge_range",   "Filter by Charge:",                                     step = 1) })
+  output$mass_slider_ui     <- renderUI({ make_range_slider_ui(active_data_list(), "MASS",         "mass_range",     "Filter by Mass:",                                       step = 1) })
+  output$RT_slider_ui       <- renderUI({ make_range_slider_ui(active_data_list(), "RT",           "RT_range",       "Filter by RT:",                                         step = 1) })
   
-  output$quantity_slider_ui <- renderUI({
-    lst <- active_data_list()
-    req(lst)
-    
-    if (!any(sapply(lst, function(df) "MAX_QUANTITY" %in% colnames(df)))) {
-      return(tags$div(style = "color: #b30000; font-style: italic;","No MAX_QUANTITY column in data."))
-    }
-    
-    # Compute min/max across all selected samples
-    min_val <- min(sapply(lst, function(df) min(df[["MAX_QUANTITY"]], na.rm = TRUE)), na.rm = TRUE)
-    max_val <- max(sapply(lst, function(df) max(df[["MAX_QUANTITY"]], na.rm = TRUE)), na.rm = TRUE)
-    
-    # Ensure valid slider range
-    if (min_val == max_val) {
-      max_val <- min_val + 1
-    }
-    
-    sliderInput(
-      "quantity_range",
-      "Filter by Max Quantity:",
-      min = min_val,
-      max = max_val,
-      value = c(min_val, max_val),
-      step = 1
-    )
-  })
-
-  output$score_slider_ui <- renderUI({
-    lst <- active_data_list()  # already standardized/filtered datasets
-    req(lst)
-    
-    if (!any(sapply(lst, function(df) "SCORE" %in% colnames(df)))) {
-      return(tags$div(style = "color: #b30000; font-style: italic;","No SCORE column in data."))
-    }
-    
-    # Compute min/max across all selected samples
-    min_val <- min(sapply(lst, function(df) min(df[["SCORE"]], na.rm = TRUE)), na.rm = TRUE)
-    max_val <- max(sapply(lst, function(df) max(df[["SCORE"]], na.rm = TRUE)), na.rm = TRUE)
-    
-    sliderInput("score_range",
-                "Filter by Score:",
-                min = min_val,
-                max = max_val,
-                value = c(min_val, max_val)
-    )
-  })
-  
-  output$charge_slider_ui <- renderUI({
-    lst <- active_data_list()
-    req(lst)
-    
-    if (!any(sapply(lst, function(df) "CHARGE" %in% colnames(df)))) {
-      return(tags$div(style = "color: #b30000; font-style: italic;","No CHARGE column in data."))
-    }
-
-    # Compute min/max across all selected samples
-    min_val <- min(sapply(lst, function(df) min(df[["CHARGE"]], na.rm = TRUE)), na.rm = TRUE)
-    max_val <- max(sapply(lst, function(df) max(df[["CHARGE"]], na.rm = TRUE)), na.rm = TRUE)
-    
-    sliderInput(
-      "charge_range",
-      "Filter by Charge:",
-      min = min_val,
-      max = max_val,
-      value = c(min_val, max_val),
-      step = 1
-    )
-  })
-  
-  output$mass_slider_ui <- renderUI({
-    lst <- active_data_list()
-    req(lst)
-    
-    if (!any(sapply(lst, function(df) "MASS" %in% colnames(df)))) {
-      return(tags$div(style = "color: #b30000; font-style: italic;","No MASS column in data."))
-    }
-    
-    # Compute min/max across all selected samples
-    min_val <- min(sapply(lst, function(df) min(df[["MASS"]], na.rm = TRUE)), na.rm = TRUE)
-    max_val <- max(sapply(lst, function(df) max(df[["MASS"]], na.rm = TRUE)), na.rm = TRUE)
-    
-    sliderInput(
-      "mass_range",
-      "Filter by Mass:",
-      min = min_val,
-      max = max_val,
-      value = c(min_val, max_val),
-      step = 1
-    )
-  })
-  
-  output$RT_slider_ui <- renderUI({
-    lst <- active_data_list()
-    req(lst)
-    
-    if (!any(sapply(lst, function(df) "RT" %in% colnames(df)))) {
-      return(tags$div(style = "color: #b30000; font-style: italic;","No RT column in data."))
-    }
-    
-    # Compute min/max across all selected samples
-    min_val <- min(sapply(lst, function(df) min(df[["RT"]], na.rm = TRUE)), na.rm = TRUE)
-    max_val <- max(sapply(lst, function(df) max(df[["RT"]], na.rm = TRUE)), na.rm = TRUE)
-    
-    sliderInput(
-      "RT_range",
-      "Filter by RT:",
-      min = min_val,
-      max = max_val,
-      value = c(min_val, max_val),
-      step = 1
-    )
-  })
   
   observeEvent(input$generate_report, {
-    
     # Choose an output file name
     out_file <- paste0("EpitoScope_Report_", Sys.Date(), ".html")
     
@@ -500,9 +314,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     # Store path so downloadHandler can access it
     output$download_report <- downloadHandler(
       filename = function() { out_file },
-      content = function(file) {
-        file.copy(out_path, file)
-      }
+      content = function(file) {file.copy(out_path, file)}
     )
   })
   
@@ -633,8 +445,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     ggplot2::theme_minimal() +
     ggplot2::ggtitle("Amino Acid Colors")
   
-  lengths <- 7:20
-  for (L in lengths) {
+  for (L in motif_plot_length) {
     local({
       L_local <- L
       output[[paste0("motif_legend_", L_local)]] <- renderPlot({
@@ -648,10 +459,8 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
     
-    lengths <- 7:20
-    
     # Build a list of tabPanels for each peptide length
-    length_tabs <- lapply(lengths, function(L) {
+    length_tabs <- lapply(motif_plot_length, function(L) {
       
       # For each length, build inner sample plots
       sample_plots <- lapply(names(lst), function(sample_name) {
@@ -684,9 +493,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
     
-    lengths <- 7:20
-    
-    for (L in lengths) {
+    for (L in motif_plot_length) {
       for (sample_name in names(lst)) {
         
         local({
@@ -696,21 +503,12 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
           output[[paste0("motif_", sample_val, "_", length_val)]] <- renderPlot({
             
             df <- lst[[sample_val]]
+            peptides <- unique(df$STRIPPED[df$LENGTH == length_val])
             
-            # subset by length
-            df_L <- df[df$LENGTH == length_val, ]
-            
-            peptides <- unique(df_L[["STRIPPED"]])
-            peptides <- peptides[nchar(peptides) == length_val]
-            
-            shiny::validate(shiny::need(length(peptides) >= 5, "Not enough peptides"))
+            shiny::validate(shiny::need(length(peptides) >= 5, "Not enough peptides. Need at least 5"))
             
             par(mar = c(1.5, 1.5, 2, 0.5))
-            
-            plot_seqlogo(
-              peptides,
-              title = paste(sample_val, "• Length", length_val)
-            )
+            plot_seqlogo(peptides,title = paste(sample_val, "• Length", length_val))
           })
         })
       }
@@ -744,17 +542,16 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     for (sample_name in names(lst)) {
       
       local({
-        sample_local <- sample_name
-        df_local <- lst[[sample_local]]
+        df_local <- lst[[sample_name]]
         
-        output[[paste0("dynrange_", sample_local)]] <- renderPlot({
+        output[[paste0("dynrange_", sample_name)]] <- renderPlot({
           
-          shiny::validate(shiny::need(nrow(df_local) >= 10, "Not enough peptides"))
+          shiny::validate(shiny::need(nrow(df_local) >= 10, "Not enough peptides. Need at least 10."))
           
           dynamic_range_plot(
             df = df_local,
             data_col = "MAX_QUANTITY",
-            title_name = paste("Dynamic Range –", sample_local),
+            title_name = paste("Dynamic Range –", sample_name),
             name_col = "PROTEIN",
             gene = "HLA",               # Default highlight can be HLA
             gene_regex = "HLA[A-C]+" #Only HLA-A,B and C
@@ -810,12 +607,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     draw(ht)
     
   }, res = 144,
-  height = function() {
-    lst <- processed_data_list()
-    n_rows <- length(lst)
-    row_height_px <- 50
-    (n_rows * row_height_px) + 500
-  })
+  height = function() {(length(processed_data_list()) * 50) + 500 })
 #---------------------Results Tab-------------------------
   ##----Data Completeness----
   output$completeness_plot <- renderPlot({
@@ -977,24 +769,22 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     n <- input$n_groups
     
     # Wrap everything in a tagList so Shiny renders the list properly
-    tagList(
-      lapply(seq_len(n), function(i) {
-        tagList(
-          textInput(
-            inputId = paste0("group_name_", i),
-            label   = paste("Group", i, "name"),
-            value   = paste("Group", i)  # default name
-          ),
-          selectInput(
-            inputId = paste0("group_", i),
-            label   = paste("Select samples for", paste0("Group ", i)),
-            choices = names(active_data_list()),
-            multiple = TRUE
-          ),
-          tags$hr()
-        )
-      })
-    )
+    tagList(lapply(seq_len(n), function(i) {
+      tagList(
+        textInput(
+          inputId = paste0("group_name_", i),
+          label   = paste("Group", i, "name"),
+          value   = paste("Group", i)  # default name
+        ),
+        selectInput(
+          inputId = paste0("group_", i),
+          label   = paste("Select samples for", paste0("Group ", i)),
+          choices = names(active_data_list()),
+          multiple = TRUE
+        ),
+        tags$hr()
+      )
+    }))
   })
   
   # Update group list
@@ -1023,8 +813,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
           "The following group(s) are empty or have no name and must be filled before continuing:", 
           paste(empty_groups, collapse = ", ")
         ),
-        type = "error",
-        duration = NULL
+        type = "error"
       )
       return(NULL)
     }
@@ -1040,7 +829,10 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
     groups <- group_list()
+    req(groups, length(groups) >= 2)
+    
     pep_col <- "PEPTIDE"
+    #pep_col    <- if (!is.null(input$use_peptidoforms) && input$use_peptidoforms) "PEPTIDE" else "STRIPPED"
     
     lapply(names(groups), function(g) {
       
@@ -1108,6 +900,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   group_comp_data <- eventReactive(input$update_group_comp, {
     lst <- processed_data_list()
     groups <- group_list()
+    
     #Get all columns containing the quantity info.
     quantity_cols <- data_info_r() %>%
       filter(final_name == "QUANTITY") %>%
@@ -1123,118 +916,29 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     # Generate all unique pairwise combinations
     group_pairs <- combn(names(groups), 2, simplify = FALSE)
     
+    # Peptide column
+    pep_col <- "PEPTIDE" #WIP: need to think how to solve the PTM problem? Do I just add the same peptidoform together?
+    # pep_col    <- if (!is.null(input$use_peptidoforms) && input$use_peptidoforms) "PEPTIDE" else "STRIPPED"
+    
     # Compute volcano data for each pair
-    pairwise_volcano <- lapply(group_pairs, function(pair) {
+    group_comp_stats <- lapply(group_pairs, function(pair) {
       g1 <- pair[1]
       g2 <- pair[2]
-      
-      # Peptide column
-      pep_col <- "PEPTIDE" #WIP: need to think how to solve the PTM problem? Do I just add the same peptidoform together?
-      keep_cols <- c(pep_col, quantity_cols, "PROTEIN")
       
       #Here we filter based on union-intersect criteria
       allowed_peptides_g1 <- group_peptide_sets()[[g1]]
       allowed_peptides_g2 <- group_peptide_sets()[[g2]]
       
-      # Combine data for each group
-      df_g1 <- dplyr::bind_rows(lapply(groups[[g1]], function(s) {
-        df <- lst[[s]]
-        cols <- intersect(keep_cols, colnames(df))
-        if (length(cols) < 2) return(NULL)  # need peptide column + ≥1 quantity column
-        df[, cols, drop = FALSE]
-        df[df[["PEPTIDE"]] %in% allowed_peptides_g1, , drop = FALSE]
-      }))
-      
-      df_g2 <- dplyr::bind_rows(lapply(groups[[g2]], function(s) {
-        df <- lst[[s]]
-        cols <- intersect(keep_cols, colnames(df))
-        if (length(cols) < 2) return(NULL)  # need peptide column + ≥1 quantity column
-        df[, cols, drop = FALSE]
-        df[df[["PEPTIDE"]] %in% allowed_peptides_g2, , drop = FALSE]
-      }))
-      
-      # Skip pair if either group is empty
-      if (is.null(df_g1) || is.null(df_g2) ||
-          nrow(df_g1) == 0 || nrow(df_g2) == 0) {
-        return(NULL)
-      }
-      
-      df_long <- bind_rows(
-        df_g1 %>%
-          pivot_longer(
-            cols = any_of(quantity_cols),
-            names_to = "Sample",
-            values_to = "Quantity"
-          ) %>%
-          mutate(Group = g1),
-        
-        df_g2 %>%
-          pivot_longer(
-            cols = any_of(quantity_cols),
-            names_to = "Sample",
-            values_to = "Quantity"
-          ) %>%
-          mutate(Group = g2)
-      )
-      
-      #safe_mean <- function(x) if(length(x) > 0) mean(x, na.rm = TRUE) else NA_real_
-      safe_ttest <- function(x, y) {
-        x <- x[!is.na(x)]
-        y <- y[!is.na(y)]
-        
-        # Not enough data
-        if (length(x) < 2 || length(y) < 2) {
-          return(NA_real_)
-        }
-        
-        sx <- sd(x)
-        sy <- sd(y)
-        
-        # Zero variance
-        if (is.na(sx) || is.na(sy) || (sx == 0 && sy == 0)) {
-          return(NA_real_)
-        }
-        
-        tryCatch(
-          t.test(x, y)$p.value,
-          error = function(e) NA_real_
-        )
-      }
-
-      volcano_df <- df_long %>%
-        group_by(.data[[pep_col]]) %>%
-        summarise(
-          PROTEIN = dplyr::first(PROTEIN),
-          Mean_G1 = mean(Quantity[Group == g1], na.rm = TRUE),
-          Mean_G2 = mean(Quantity[Group == g2], na.rm = TRUE),
-          log2FC = log2(Mean_G2 + 1) - log2(Mean_G1 + 1),
-          pval = safe_ttest(
-            Quantity[Group == g2],
-            Quantity[Group == g1]
-          ),
-          .groups = "drop"
-        ) %>%
-        ungroup() %>%  # important before applying p.adjust
-        mutate(
-          adj_pval_BH = p.adjust(pval, method = "BH"),          # Benjamini-Hochberg FDR
-          adj_pval_Bonf = p.adjust(pval, method = "bonferroni"),# Bonferroni
-          negLog10P = -log10(pval),
-          negLog10AdjP_BH = -log10(adj_pval_BH),
-          negLog10AdjP_Bonf = -log10(adj_pval_Bonf)
-        ) %>% #this is for MAplot
-        mutate(
-          A = 0.5 * (log2(Mean_G1 + 1) + log2(Mean_G2 + 1)),
-        )
-      volcano_df
+      compute_group_comp_stats(lst, groups, allowed_peptides_g1, allowed_peptides_g2, g1, g2, pep_col, quantity_cols)
     })
     
-    names(pairwise_volcano) <- sapply(group_pairs, function(pair) paste(pair, collapse = "_vs_"))
+    names(group_comp_stats) <- sapply(group_pairs, function(pair) paste(pair, collapse = "_vs_"))
     
-    pairwise_volcano[sapply(pairwise_volcano, nrow) > 0]
+    group_comp_stats[sapply(group_comp_stats, nrow) > 0]
   })
   
   # Render the volcano tabset UI
-  output$volcano_tabs <- renderUI({
+  output$group_stats_tabs <- renderUI({
     volcano_list <- group_comp_data()
     req(volcano_list)
     shiny::validate(shiny::need(length(volcano_list) > 0, "Not enough data to compute any group comparisons."))
@@ -1289,416 +993,47 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
         )
         ## ----Volcano plot----
         output[[paste0("volcano_", plot_name)]] <- renderPlotly({
-          
-          # Check if groups have data
-          if (is.null(df) || nrow(df) == 0 ||
-              all(is.na(df$log2FC)) || all(is.na(df$negLog10AdjP_BH))) {
-            
-            return(
-              plot_ly() %>%
-                layout(
-                  annotations = list(
-                    x = 0.5, y = 0.5, xref = "paper", yref = "paper",
-                    showarrow = FALSE,
-                    text = paste("Not enough data for comparison:", plot_name),
-                    font = list(size = 16, color = "red")
-                  ),
-                  xaxis = list(visible = FALSE),
-                  yaxis = list(visible = FALSE)
-                )
-            )
-          }
-          
+          shiny::validate(shiny::need(!is.null(df) && nrow(df) > 0, "No data to plot"))
           sel <- selected_peptide()
-          if (is.null(sel)) sel <- NA_character_  # <- avoids length 0
-          
-          # Add 'selected' column
-          volc_df <- df %>%
-            mutate(selected = !is.na(sel) & PEPTIDE == sel)
-          
-          # Split by significance for plotting
-          ns_df        <- volc_df %>% filter(Significance == "Not significant")
-          sig_df       <- volc_df %>% filter(Significance == "Significant", !selected)
-          selected_df  <- volc_df %>% filter(selected)
-          
-          #Axis setting
-          safe_max_neglogp <- suppressWarnings(max(df$negLog10AdjP_BH, na.rm = TRUE))
-          safe_min_fc      <- suppressWarnings(min(df$log2FC,   na.rm = TRUE))
-          safe_max_fc      <- suppressWarnings(max(df$log2FC,   na.rm = TRUE))
-          
-          if (!is.finite(safe_max_neglogp)) safe_max_neglogp <- 1
-          if (!is.finite(safe_min_fc))      safe_min_fc <- -1
-          if (!is.finite(safe_max_fc))      safe_max_fc <- 1
-          
-          #Plotting
-          plot_ly(source = "group_diff") %>%
-            add_trace(
-              data = ns_df, x = ~log2FC, y = ~negLog10AdjP_BH,
-              type = "scatter", mode = "markers",
-              name = "Not significant",
-              marker = list(color = "grey40", size = 6),
-              hoverinfo = "none",
-              inherit = FALSE
-            ) %>%
-            add_trace(
-              data = sig_df, x = ~log2FC, y = ~negLog10AdjP_BH,
-              type = "scatter", mode = "markers",
-              name = "Significant",
-              marker = list(color = "red", size = 8),
-              text = ~PEPTIDE,
-              key = ~PEPTIDE,
-              hoverinfo = "text+x+y"
-            ) %>%
-            add_trace(
-              data = selected_df,
-              x = ~log2FC, y = ~negLog10AdjP_BH,
-              type = "scatter", mode = "markers",
-              name = "Selected peptide",
-              marker = list(color = "lightgreen", size = 12),
-              text = ~PEPTIDE,
-              key = ~PEPTIDE,
-              hoverinfo = "text+x+y"
-            ) %>%
-            layout(
-              title = paste0("volcano plot: ",plot_name),
-              xaxis = list(title = "log2 Fold Change"),
-              yaxis = list(title = "-log10 p-value"),
-              shapes = list(
-                # fold change vertical lines
-                list(type = "line", x0 = -1, x1 = -1, y0 = 0, y1 = safe_max_neglogp,
-                     line = list(dash = "dash", color = "grey")),
-                list(type = "line", x0 =  1, x1 =  1, y0 = 0, y1 = safe_max_neglogp,
-                     line = list(dash = "dash", color = "grey")),
-                # p-value cutoff
-                list(type = "line", x0 = safe_min_fc, x1 = safe_max_fc,
-                     y0 = 1.3, y1 = 1.3,
-                     line = list(dash = "dash", color = "grey"))
-              )
-            )
+          group_volcano_plot(df,sel,plot_name)
         })
         
         ## ----MA plot----
         output[[paste0("ma_", plot_name)]] <- renderPlotly({
-          
-          if (is.null(df) || nrow(df) == 0 || all(is.na(df$A))) {
-            return(plot_ly())
-          }
-          
+          shiny::validate(shiny::need(!is.null(df) && nrow(df) > 0, "No data to plot"))
           sel <- selected_peptide()
-          if (is.null(sel)) sel <- NA_character_  # <- avoids length 0
-          
-          # Add 'selected' column
-          ma_df <- df %>%
-            mutate(selected = !is.na(sel) & PEPTIDE == sel)
-          
-          # Split by significance for plotting
-          ns_df        <- ma_df %>% filter(Significance == "Not significant")
-          sig_df       <- ma_df %>% filter(Significance == "Significant", !selected)
-          selected_df  <- ma_df %>% filter(selected)
-          
-          plot_ly(source = "group_diff") %>%
-            add_trace(
-              data = ns_df,
-              x = ~A, y = ~log2FC,
-              type = "scatter", mode = "markers",
-              name = "Not significant",
-              marker = list(color = "grey40", size = 6),
-              hoverinfo = "none",
-              inherit = FALSE
-            ) %>%
-            add_trace(
-              data = sig_df,
-              x = ~A, y = ~log2FC,
-              type = "scatter", mode = "markers",
-              name = "Significant",
-              marker = list(color = "red", size = 8),
-              text = ~PEPTIDE,
-              key = ~PEPTIDE,
-              hoverinfo = "text+x+y"
-            ) %>%
-            add_trace(
-              data = selected_df,
-              x = ~A, y = ~log2FC,
-              type = "scatter", mode = "markers",
-              name = "Selected peptide",
-              marker = list(color = "lightgreen", size = 12),
-              text = ~PEPTIDE,
-              key = ~PEPTIDE,
-              hoverinfo = "text+x+y"
-            ) %>%
-            layout(
-              title = paste("MA plot:", plot_name),
-              xaxis = list(title = "Mean abundance (A)"),
-              yaxis = list(title = "log2 Fold Change (M)"),
-              shapes = list(
-                list(type = "line", x0 = min(df$A, na.rm = TRUE),
-                     x1 = max(df$A, na.rm = TRUE),
-                     y0 = 0, y1 = 0,
-                     line = list(dash = "dash", color = "grey"))
-              )
-            )
+          group_MA_plot(df, sel,plot_name)
         })
-        
         
         ## ----P-value histogram----
         output[[paste0("pval_hist_", plot_name)]] <- renderPlotly({
-          
-          if (is.null(df) || nrow(df) == 0 || all(is.na(df$negLog10AdjP_BH))) {
-            return(plot_ly())
-          }
-          
-          pvals <- 10^(-df$negLog10AdjP_BH)
-          pvals <- pvals[is.finite(pvals) & pvals >= 0 & pvals <= 1]
-          
-          if (length(pvals) == 0) {
-            return(plot_ly())
-          }
-          
-          plot_ly(
-            x = pvals,
-            type = "histogram",
-            nbinsx = 50,
-            marker = list(color = "grey40"),
-            hoverinfo = "x+y"
-          ) %>%
-            layout(
-              title = paste("P-value distribution:", plot_name),
-              xaxis = list(title = "Adjusted p-value", range = c(0, 1)),
-              yaxis = list(title = "Count", type = "log"),
-              shapes = list(
-                list(
-                  type = "line",
-                  x0 = 0.05, x1 = 0.05,
-                  y0 = 0, y1 = 1,
-                  xref = "x",
-                  yref = "paper",
-                  line = list(color = "red", dash = "dash")
-                )
-              ),
-              annotations = list(
-                list(
-                  x = 0.05, y = 1,
-                  xref = "x", yref = "paper",
-                  text = "0.05",
-                  showarrow = FALSE,
-                  xanchor = "left",
-                  font = list(color = "red")
-                )
-              )
-            )
-          
+          shiny::validate(shiny::need(!is.null(df) && nrow(df) > 0, "No data to plot"))
+          group_p_histogram(df,plot_name)
         })
         
         ## ----Ranked Fold Change----
         output[[paste0("rank_fc_", plot_name)]] <- renderPlotly({
-          
-          if (is.null(df) || nrow(df) == 0 || all(is.na(df$log2FC))) {
-            return(plot_ly())
-          }
-          
+          shiny::validate(shiny::need(!is.null(df) && nrow(df) > 0, "No data to plot"))
           sel <- selected_peptide()
-          if (is.null(sel)) sel <- NA_character_
-          
-          rank_df <- df %>%
-            filter(!is.na(log2FC)) %>%
-            arrange(log2FC) %>%          # ascending; use desc(log2FC) if you prefer
-            mutate(
-              rank = row_number(),
-              selected = !is.na(sel) & PEPTIDE == sel
-            )
-          
-          selected_df <- rank_df %>% filter(selected)
-          rest_df     <- rank_df %>% filter(!selected)
-          
-          plot_ly(source = "group_diff") %>%
-            
-            # All peptides
-            add_trace(
-              data = rest_df,
-              x = ~rank,
-              y = ~log2FC,
-              type = "scatter",
-              mode = "markers",
-              name = "Peptides",
-              marker = list(color = "grey40", size = 6),
-              hoverinfo = "none"
-            ) %>%
-            
-            # Selected peptide
-            add_trace(
-              data = selected_df,
-              x = ~rank,
-              y = ~log2FC,
-              type = "scatter",
-              mode = "markers",
-              name = "Selected peptide",
-              marker = list(color = "lightgreen", size = 12),
-              text = ~PEPTIDE,
-              key = ~PEPTIDE,
-              hoverinfo = "text+x+y"
-            ) %>%
-            
-            layout(
-              title = paste("Ranked fold change:", plot_name),
-              xaxis = list(title = "Rank (based on Fold Change)"),
-              yaxis = list(title = "log2 Fold Change"),
-              shapes = list(
-                list(
-                  type = "line",
-                  x0 = 0,
-                  x1 = max(rank_df$rank),
-                  y0 = 0,
-                  y1 = 0,
-                  line = list(dash = "dash", color = "grey")
-                )
-              )
-            )
+          group_rank_FC(df,plot_name,sel)
         })
         ## ----Peptide Fold Change table----
         output[[paste0("peptide_table_", plot_name)]] <- DT::renderDT({
-          
-          if (is.null(df) || nrow(df) == 0) {
-            return(
-              DT::datatable(
-                data.frame(Message = "No data available"),
-                options = list(dom = "t")
-              )
-            )
-          }
-          
-          table_df <- df %>%
-            filter(!is.na(log2FC)) %>%
-            dplyr::select(
-              PEPTIDE,
-              log2FC,
-              adj_pval_BH,
-              adj_pval_Bonf,
-              Significance
-            ) %>%
-            arrange(adj_pval_BH)
-          
-          DT::datatable(
-            table_df,
-            rownames = FALSE,
-            selection = "none",
-            options = list(
-              pageLength = 10,
-              scrollX = TRUE,
-              order = list(list(2, "asc"))
-            )
-          ) %>%
-            DT::formatRound(c("log2FC", "adj_pval_BH","adj_pval_Bonf"), digits = 3)
+          shiny::validate(shiny::need(!is.null(df) && nrow(df) > 0, "No data to plot"))
+          group_FC_table(df)
         })
         
         ## ----GO term----
         output[[paste0("go_term_", plot_name)]] <- renderPlot({
-          if (is.null(df) || nrow(df) == 0) {
-            plot.new()
-            text(0.5, 0.5, "No data available")
-            return()
-          }
-          
-          df <- df %>%
-            filter(!is.na(log2FC)) %>%
-            filter(Significance == "Significant") %>%
-            dplyr::select(PEPTIDE, Significance, PROTEIN)
-          
-          uni_ids <- df$PROTEIN %>%
-            strsplit(";") %>%                # split multiple proteins
-            lapply(function(x) sapply(strsplit(x, "\\|"), `[`, 1)) %>%  # take first part of each
-            unlist() %>%
-            unique()
-          
-          if (is.null(uni_ids) || nrow(as.data.frame(uni_ids)) == 0) {
-            plot.new()
-            text(0.5, 0.5, "No significant IDs")
-            return()
-          }
-          
-          gene_map <- bitr(uni_ids, fromType="UNIPROT", toType="ENTREZID", OrgDb=org.Hs.eg.db)
-          if (nrow(gene_map) == 0) {
-            plot.new()
-            text(0.5, 0.5, "No valid UniProt->Entrez mapping")
-            return()
-          }
-          
-          ego <- enrichGO(
-            gene = gene_map$ENTREZID,
-            OrgDb = org.Hs.eg.db,
-            keyType = "ENTREZID",
-            ont = "BP",
-            pAdjustMethod = "BH",
-            universe = NULL,
-            readable = TRUE
-          )
-          
-          if (is.null(ego) || nrow(as.data.frame(ego)) == 0) {
-            plot.new()
-            text(0.5, 0.5, "No significant GO terms")
-            return()
-          }
-          
-          barplot(ego, showCategory = 10)
+          shiny::validate(shiny::need(!is.null(df) && nrow(df) != 0, "No data available."))
+          run_go_enrichment(df)
         })
         
         ## ----STRING-DB----
         output[[paste0("STRING_", plot_name)]] <- renderPlot({
-          #Check for internet connection
           shiny::validate(shiny::need(curl::has_internet(), "No Internet Connection."))
-          
-          #Check for data
           shiny::validate(shiny::need(!is.null(df) && nrow(df) != 0, "No data available."))
-          
-          df <- df %>%
-            filter(!is.na(log2FC)) %>%
-            filter(Significance == "Significant") %>%
-            dplyr::select(PEPTIDE, Significance, PROTEIN)
-          
-          uni_ids <- df$PROTEIN %>%
-            strsplit(";") %>%                # split multiple proteins
-            lapply(function(x) sapply(strsplit(x, "\\|"), `[`, 1)) %>%  # take first part of each
-            unlist() %>%
-            unique()
-          
-          #Check for empty uni_ids
-          shiny::validate(shiny::need(!is.null(uni_ids) && nrow(as.data.frame(uni_ids)) > 0, "No significant IDs"))
-          
-          url <- paste0(
-            "https://string-db.org/api/json/network?",
-            "identifiers=", paste(uni_ids, collapse = "%0d"),
-            "&species=", 9606 # human
-          )
-          
-          res <- GET(url)
-          
-          #Check HTTP response
-          shiny::validate(shiny::need(http_status(res)$category == "Success", paste0("STRING request failed (HTTP ", res$status_code, ")")))
-          
-          # Try to parse JSON safely
-          data <- tryCatch(
-            {
-              fromJSON(content(res, "text", encoding = "UTF-8"))
-            },
-            error = function(e) {
-              shiny::validate(shiny::need(FALSE, paste0("JSON parse error:\n", e$message)))
-              NULL
-            }
-          )
-          
-          # Check that parsing returned something
-          shiny::validate(shiny::need(!is.null(data) && length(data) > 0,paste0("No STRING-DB result (HTTP ", res$status_code, ")")))
-          
-          g <- graph_from_data_frame(
-            data[, c("preferredName_A", "preferredName_B", "score")],
-            directed = FALSE
-          )
-          
-          ggraph(g, layout = "fr") +
-            geom_edge_link(aes(width = score), alpha = 0.8) +
-            geom_node_point(size = 5, color = "steelblue") +
-            geom_node_text(aes(label = name), repel = TRUE) +
-            theme_void()
-          
+          run_string(df)
         })
       })
     }
@@ -1866,7 +1201,6 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
         
         al_conversion <- sub("-", "\\.", al)
         al_conversion <- sub(":", "", al_conversion)
-        print(al_conversion)
         
         # Determine which peptides need prediction
         if (!(al_conversion %in% colnames(cache)[-1])) {
@@ -1880,53 +1214,8 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
         
         if (length(peptides_to_predict) == 0) next
         
-        # Temp files
-        peptide_file <- tempfile(fileext = ".txt")
-        output_file  <- tempfile(fileext = ".txt")
-        writeLines(peptides_to_predict, peptide_file)
-        
-        # Convert Windows paths to WSL paths
-        peptide_wsl <- trimws(system2("wsl", c("wslpath", "-a", shQuote(peptide_file)), stdout = TRUE))
-        out_wsl     <- trimws(system2("wsl", c("wslpath", "-a", shQuote(output_file)), stdout = TRUE))
-        
-        # Build and run netMHCpan command
-        cmd <- paste(
-          shQuote(netmhcpan_path),
-          "-p", shQuote(peptide_wsl),
-          "-a", shQuote(al),
-          "-l 8,9,10,11",
-          "-xls",
-          "-xlsfile", shQuote(out_wsl)
-        )
-        system2("wsl", c("bash", "--login", "-c", shQuote(cmd)),stdout = NULL)
-        
-        # Read and clean output
-        res <- read.table(output_file, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
-        
-        # --- Rename columns ---
-        header1 <- colnames(res)
-        header2 <- as.character(unlist(res[1, ]))
-        colnames_new <- header1
-        colnames_new[2] <- "Peptide"
-        
-        current_hla <- NULL
-        for (i in seq_along(colnames_new)) {
-          if (grepl("^HLA", header1[i])) current_hla <- header1[i]
-          if (!is.null(current_hla) && header2[i] != "") colnames_new[i] <- paste0(current_hla, "_", header2[i])
-        }
-        colnames(res) <- colnames_new
-        res <- res[-1, ]  # remove header row
-        
-        # Keep only Peptide + Rank columns
-        keep_cols <- c("Peptide", grep("_Rank$", colnames(res), value = TRUE))
-        res <- res[, keep_cols, drop = FALSE]
-        
-        # Clean column names
-        colnames(res) <- gsub("_Rank$", "", colnames(res))
-        colnames(res)[-1] <- sub("^([^.]+\\.[^.]+)\\.", "\\1", colnames(res)[-1])
-        
-        # Convert numeric columns
-        res[-1] <- lapply(res[-1], as.numeric)
+        res   <- run_netmhcpan(peptides_to_predict, al, netmhcpan_path)
+        res   <- parse_netmhc_output(res)
         
         if (!(al_conversion %in% colnames(cache)[-1])) {
           cache <- left_join(cache, res, by = "Peptide")
@@ -1949,7 +1238,6 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     # Update reactive cache once at the end
     prediction_cache(cache)
   })
-  
   
   peptide_wide_all <- reactive({
       lst <- processed_data_list()
@@ -2002,79 +1290,34 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   binder_summary_all <- reactive({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    
-    df <- peptide_wide_unique()
-    
-    allele_cols <- grep("^HLA", colnames(df), value = TRUE)
-    
-    df %>%
-      tidyr::pivot_longer(
-        cols = all_of(allele_cols),
-        names_to = "Allele",
-        values_to = "Rank"
-      ) %>%
-      dplyr::mutate(
-        Class = dplyr::case_when(
-          is.na(Rank) ~ "Missing",
-          Rank <= 0.5 ~ "Strong",
-          Rank <= 2   ~ "Weak",
-          TRUE        ~ "Non"
-        ),
-        Class = factor(Class, levels = c("Strong", "Weak", "Non", "Missing"))
-      ) %>%
-      dplyr::count(Set, Allele, Class) %>%
-      tidyr::complete(
-        Set,
-        Allele,
-        Class,
-        fill = list(n = 0)
-      ) %>%
-      tidyr::pivot_wider(
-        names_from = Class,
-        values_from = n
-      ) %>%
-      dplyr::mutate(
-        Total = Strong + Weak + Non + Missing,
-        Strong_pct = round(100 * Strong / Total, 2),
-        Weak_pct   = round(100 * Weak   / Total, 2),
-        Non_pct    = round(100 * Non    / Total, 2),
-        NA_pct     = round(100 * Missing / Total, 2)
-      )
+    compute_binder_summary(peptide_wide_unique())
   })
   
   output$binding_summary <- DT::renderDT({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    
-    df <- binder_summary_all()
-    
-    df
+    binder_summary_all()
+
   })
   
   output$binding_plot_percent <- renderPlot({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    
-    df <- peptide_wide_unique()
-    plot_binders(df, color = input$color_palette, percent = TRUE)
+    plot_binders(peptide_wide_unique(), color = input$color_palette, percent = TRUE)
   })
   
   output$binding_plot_absolute <- renderPlot({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    
-    df <- peptide_wide_unique()
-    plot_binders(df, color = input$color_palette, percent = FALSE)
+    plot_binders(peptide_wide_unique(), color = input$color_palette, percent = FALSE)
   })
   
   output$binding_table <- DT::renderDT({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
     
-    df <- peptide_wide_unique()
-
     # Collapse rows by peptide
-    df_collapsed <- df %>%
+    df_collapsed <- peptide_wide_unique() %>%
       group_by(STRIPPED) %>%
       summarise_all(~ {
         vals <- unique(.)

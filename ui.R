@@ -332,7 +332,19 @@ ui <- bs4DashPage(
                   ),
                   numericInput("n_groups", "Number of groups (2-5):", 2, min = 2, max = 5),
                   uiOutput("group_assign_ui"),
-                  actionButton("update_group_comp", "Update Groups")
+                  actionButton("update_group_comp", "Update Groups"),
+                  h6("WIP: currently this checkbox doesnt do anything. Need to solve how to combine info same peptide with different peptidoforms"),
+                  checkboxInput(
+                    inputId = "use_peptidoforms",
+                    label   = tagList(
+                      "Compare at peptidoform level ",
+                      tags$small(
+                        style = "color: grey; font-weight: normal;",
+                        "(includes PTMs)"
+                      )
+                    ),
+                    value = FALSE  # default: compare stripped sequences
+                  )
           ),
           
           ### ---- Group Stuff ----
@@ -356,7 +368,7 @@ ui <- bs4DashPage(
                                                       (while volcano plot gives you highly differential expressed peptides that are also significant).
                                                       Significant here means a corrected p-value of less than 0.05 and a log2FC larger than 1.", placement = "right")
                                   ), width = 12, maximizable = TRUE,
-                  uiOutput("volcano_tabs")
+                  uiOutput("group_stats_tabs")
           ),
           
           ### ---- GO-terms ----
