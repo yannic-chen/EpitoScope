@@ -592,6 +592,59 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     }
   })
   
+  ## ---- measurement specific heatmap ----
+  
+  output$measurement_heatmap <- renderPlot({
+    lst <- processed_data_list()
+    check_data_error(lst, na_policy = "ignore")
+    
+    quantity_cols <- data_info_r() %>%
+      filter(final_name == "QUANTITY") %>%          #Should be SPECTRA, but cannot currently do because 0 is missing in PEAKS, while 0 is existing in Fragpipe and NA is missing here.
+      dplyr::select(-final_name) %>%   # all sample columns.
+      unlist(recursive = TRUE, use.names = FALSE)
+    
+    shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
+    
+    pep_mat <- prepare_measurement_matrix(lst, quantity_cols)
+    shiny::validate(shiny::need(ncol(pep_mat) >= 2, "Need at least 2 groups for correlation."))
+    shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
+    
+    cor_mat <- cor(pep_mat, method = "pearson", use = "complete.obs")
+    
+    group_names <- names(lst)
+    
+    get_group <- function(colname) {
+      matched <- group_names[sapply(group_names, function(g) startsWith(colname, g))]
+      if (length(matched) == 0) return(NA)
+      matched[1]
+    }
+      
+    if(input$cluster_mode_ea == "sample") {
+      groups <- sapply(colnames(cor_mat), get_group)
+      ht <- plot_heatmap(cor_mat,color = input$color_palette, row_groups = groups, col_groups = groups, label = "Pearson")
+    } else if (input$cluster_mode_ea == "mix") {
+      col_groups <- sapply(colnames(cor_mat), get_group)
+      ht <- plot_heatmap(cor_mat,color = input$color_palette, cluster = "rows",row_groups = NULL, col_groups = col_groups, label = "Pearson")
+    } else {
+      ht <- plot_heatmap(cor_mat,color = input$color_palette, cluster = input$cluster_mode_ea, label = "Pearson")
+    }
+    
+    pad <- compute_padding(colnames(cor_mat), fontsize = 10, rot = 90)
+    
+    draw(ht, heatmap_legend_side = "left",
+         padding = unit.c(
+           unit(pad / 2, "mm"),
+           unit(2, "mm"),
+           unit(2, "mm"),
+           unit(pad, "mm")
+         )
+    )
+  }, width = function() {
+    nrow(temp_cor_mat) * 80 + 100
+  }, height = function() {
+    nrow(temp_cor_mat) * 30 + 200
+  })
+  
   ##----aa heatmap----
   output$aa_heatmap <- renderPlot({
     lst <- processed_data_list()
@@ -889,9 +942,11 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
       dplyr::select(-final_name) %>% 
       unlist(recursive = TRUE, use.names = FALSE)
     
+    shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
+    
     pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets())
     
-    req(nrow(pep_mat) > 0)
+    shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
     
     plot_heatmap(pep_mat, color = input$color_palette, transpose = TRUE, log_transform = TRUE)
   })

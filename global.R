@@ -45,6 +45,7 @@ library(plotly)
 library(ComplexUpset)
 library(ComplexHeatmap)
 library(circlize)
+library(grid)
 #These are exclusive for GO-term.
 library(clusterProfiler) #this one masks a lot of dplyr and other package functions
 library(org.Hs.eg.db)
@@ -306,6 +307,22 @@ check_data_error <- function(data, required_cols = NULL, na_policy = c("any", "a
   }
   
   stop_with_msg("Unsupported data type")
+}
+
+compute_padding <- function(labels, fontsize = 10, rot = 90) {
+  
+  # Create text grob
+  tg <- textGrob(labels,
+                 gp = gpar(fontsize = fontsize),
+                 rot = rot)
+  
+  # Measure width
+  max_width <- max(convertWidth(stringWidth(labels), "mm", valueOnly = TRUE))
+  
+  # Add a little buffer (important)
+  padding_mm <- max_width + 1
+  
+  padding_mm
 }
 
 #-----------Data handling/transformation functions------------------
@@ -812,6 +829,47 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
     
     pep_mat[agg$PEPTIDE, g] <- agg$value
   }
+  
+  pep_mat
+}
+
+prepare_measurement_matrix <- function(lst, quantity_cols) {
+  
+  peptides_all <- unique(unlist(lapply(lst, function(df) df$PEPTIDE)))
+  
+  col_names <- unlist(lapply(names(lst), function(nm) {
+    cols <- intersect(quantity_cols, colnames(lst[[nm]]))
+    paste0(nm, " | ", cols)
+  }))
+  
+  pep_mat <- matrix(NA_real_,
+                    nrow = length(peptides_all),
+                    ncol = length(col_names),
+                    dimnames = list(peptides_all, col_names))
+  
+  safe_max <- function(x) {
+    x <- x[is.finite(x)]
+    if (length(x) == 0) NA_real_ else max(x)
+  }
+  
+  for (nm in names(lst)) {
+    df   <- lst[[nm]]
+    cols <- intersect(quantity_cols, colnames(df))
+    if (length(cols) == 0 || !"PEPTIDE" %in% colnames(df)) next
+    
+    df_sub <- df[, c("PEPTIDE", cols), drop = FALSE]
+    
+    for (col in cols) {
+      agg <- df_sub %>%
+        group_by(PEPTIDE) %>%
+        summarise(value = safe_max(.data[[col]]), .groups = "drop")
+      
+      pep_mat[agg$PEPTIDE, paste0(nm, " | ", col)] <- agg$value
+    }
+  }
+  
+  # Remove peptides with no finite measurements across any column
+  pep_mat <- pep_mat[rowSums(is.finite(pep_mat)) > 0, , drop = FALSE]
   
   pep_mat
 }
@@ -1538,14 +1596,14 @@ plot_pairwise_peptide_quant_correlation <- function(lst, method = "pearson", min
   )
 }
 
-plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster = "both", transpose = FALSE) {
+plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster = "both", transpose = FALSE, row_groups = NULL, col_groups = NULL, label = "QUANTITY") {
   
   mat[is.na(mat)] <- 0
   
   # Log-transform if requested
   if (log_transform) {
-    mat <- log10(mat)  # avoid log10(0)
-    mat[is.infinite(mat)] <- 0   # replace -Inf / Inf with 0
+    mat <- log10(mat)
+    mat[is.infinite(mat)] <- 0
   }
   
   if (transpose) {
@@ -1554,27 +1612,54 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
   
   # Define color function
   if (color == "default") {
-    col_fun <- colorRamp2(c(min(mat, na.rm = TRUE), max(mat, na.rm = TRUE)), c("white", "red"))
+    col_fun <- colorRamp2(
+      c(min(mat, na.rm = TRUE), max(mat, na.rm = TRUE)),
+      c("white", "red")
+    )
   } else {
     cols <- viridis(100, option = color)
     col_fun <- colorRamp2(range(mat, na.rm = TRUE), c(cols[1], cols[100]))
   }
   
-  # Cluster options
-  cluster_rows <- cluster %in% c("rows", "both")
-  cluster_cols <- cluster %in% c("columns", "both")
+  # ---- Handle grouping vs clustering ----
+  
+  # Rows
+  if (!is.null(row_groups)) {
+    row_groups <- as.factor(row_groups)
+    cluster_rows <- FALSE
+  } else {
+    cluster_rows <- cluster %in% c("rows", "both")
+  }
+  
+  # Columns
+  if (!is.null(col_groups)) {
+    col_groups <- as.factor(col_groups)
+    cluster_cols <- FALSE
+  } else {
+    cluster_cols <- cluster %in% c("columns", "both")
+  }
+  
+  # ---- Build heatmap ----
   
   Heatmap(
     mat,
-    name = if(log_transform) "log10(QUANTITY)" else "QUANTITY",
+    name = if (log_transform) paste("log10(",label, ")") else label,
     col = col_fun,
     na_col = "grey90",
+    
+    # clustering
     cluster_rows = cluster_rows,
     cluster_columns = cluster_cols,
+    
     clustering_distance_rows    = "euclidean",
     clustering_distance_columns = "euclidean",
     clustering_method_rows      = "complete",
     clustering_method_columns   = "complete",
+    
+    # grouping (splitting)
+    row_split = row_groups,
+    column_split = col_groups,
+    
     row_names_gp = gpar(fontsize = 8),
     column_names_gp = gpar(fontsize = 10)
   )

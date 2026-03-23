@@ -188,6 +188,21 @@ ui <- bs4DashPage(
                   uiOutput("scatterplots_ui")
                   ),
           
+          ### ---- measurement specific heatmap ----
+          bs4Card(title = "Measurement Specific Heatmap", width = 12, maximizable = TRUE,
+                  selectInput("cluster_mode_ea", "Clustering:",
+                              choices = c(
+                                "Sample" = "sample",
+                                "Rows only" = "rows",
+                                "Columns only" = "columns",
+                                "Rows + columns" = "both",
+                                "Sample + rows" = "mix"
+                              ), selected = "sample"
+                              
+                  ),
+                  plotOutput("measurement_heatmap", width= "auto", height = "auto")
+                  ),
+          
           ### ---- Composition profiling ----
           bs4Card(title = tagList("Composition profiling", bs4Dash::tooltip(icon("info-circle"),"Ideally I want to integrate the whole C.profiler from Vacic et al. 2007, but that is only written in python.", placement = "right")
                                   ), width = 12, maximizable = TRUE, solidHeader = TRUE, status = "warning", collapsed = TRUE,
