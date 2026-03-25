@@ -101,7 +101,9 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   data_info_r <- reactiveVal(NULL) #this is the info list to know which columns are used for what
   data_mod_map <- reactiveVal(NULL) #this is the conversion map when modified amino acids are given their own symbol. Only used in PTM analysis.
   prediction_cache <- reactiveVal(data.frame(Peptide = character())) #This is to save netMHCpan predictions
-
+  binder_summary_all <- reactive(NULL)
+  peptide_wide_unique <- reactive(NULL)
+  
   #Preloaded Data
   observe({
     if (is.null(data_list_r())) {
@@ -292,7 +294,24 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
         params = list(
           data_info = data_info_r(),
           data_list = data_list_r(),
-          processed_data_list = processed_data_list()
+          mod_map_list = data_mod_map(),
+          processed_data_list = processed_data_list(),
+          filters             = list(
+            samples        = input$selected_samples,
+            length_range   = input$length_range,
+            quantity_range = input$quantity_range,
+            score_range    = input$score_range,
+            charge_range   = input$charge_range,
+            mass_range     = input$mass_range,
+            RT_range       = input$RT_range,
+            min_presence_fraction = input$min_presence_fraction
+          ),
+          color_palette = input$color_palette,
+          cluster_mode_ea     = input$cluster_mode_ea,
+          binder_summary_all = binder_summary_all(),
+          binder_unique = peptide_wide_unique(),
+          group_list = safe_reactive(group_list),
+          group_comp_data = safe_reactive(group_comp_data)
         ),
         envir = new.env(parent = globalenv())
       )
@@ -593,6 +612,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   })
   
   ## ---- measurement specific heatmap ----
+  cor_mat_cache <- reactiveVal(matrix(NA, nrow = 5, ncol = 5)) #necessary as the space reserving rungs before the code.
   
   output$measurement_heatmap <- renderPlot({
     lst <- processed_data_list()
@@ -610,6 +630,8 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
     
     cor_mat <- cor(pep_mat, method = "pearson", use = "complete.obs")
+    
+    cor_mat_cache(cor_mat)
     
     group_names <- names(lst)
     
@@ -640,9 +662,9 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
          )
     )
   }, width = function() {
-    nrow(temp_cor_mat) * 80 + 100
+    nrow(cor_mat_cache()) * 80 + 100
   }, height = function() {
-    nrow(temp_cor_mat) * 30 + 200
+    nrow(cor_mat_cache()) * 30 + 200
   })
   
   ##----aa heatmap----
@@ -875,7 +897,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     showNotification("Groups updated successfully!", type = "message")
     
     groups
-  })
+  },ignoreNULL = TRUE)
   
   ## ----Group Comparison----
   group_peptide_sets <- reactive({
@@ -910,34 +932,16 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     sets <- group_peptide_sets()
     shiny::validate(shiny::need(length(sets) >= 2, "Need 2 or more sets to compare"))
     
-    n_groups <- length(sets)
-    
-    p <- ggVennDiagram::ggVennDiagram(
-      sets,
-      label_alpha = 0
-    ) +
-      ggplot2::theme_void()  +
-      ggplot2::theme(
-        legend.position = "none",
-        plot.margin = margin(10,10,10,10)
-      )
-    
-    if (input$color_palette != "default") {
-      p <- p + ggplot2::scale_fill_viridis_c(
-        option = input$color_palette
-      )  
-    } else {
-      p <- p + scale_fill_distiller(palette = "RdBu")
-    }
-    
-    p
+    group_venn_plotting(sets, color = input$color_palette)
   })
   
   output$group_peptide_heatmap <- renderPlot({
     lst <- processed_data_list()
     groups <- group_list()
+    data_info <- data_info_r()
+    req(lst, groups, data_info)
     
-    quantity_cols <- data_info_r() %>%
+    quantity_cols <- data_info %>%
       filter(final_name == "QUANTITY") %>%
       dplyr::select(-final_name) %>% 
       unlist(recursive = TRUE, use.names = FALSE)
@@ -990,7 +994,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     names(group_comp_stats) <- sapply(group_pairs, function(pair) paste(pair, collapse = "_vs_"))
     
     group_comp_stats[sapply(group_comp_stats, nrow) > 0]
-  })
+  },ignoreNULL = TRUE)
   
   # Render the volcano tabset UI
   output$group_stats_tabs <- renderUI({
@@ -1351,6 +1355,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   output$binding_summary <- DT::renderDT({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
+    
     binder_summary_all()
 
   })
@@ -1480,7 +1485,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     lst <- data_list_r()
     req(lst)
     
-    shiny::validate(need(length(list) >= 2, "Redundant with only 1 dataset"))
+    shiny::validate(need(length(lst) >= 2, "Redundant with only 1 dataset"))
     
     keep_cols <- c("Sample", "PEPTIDE", "STRIPPED", "LENGTH" ,"MASS" ,"CHARGE", "MZ" ,"K0", "RT", "PROTEIN")
     

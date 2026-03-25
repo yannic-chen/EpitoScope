@@ -80,17 +80,12 @@ ui <- bs4DashPage(
       bs4TabItem(
         tabName = "raw_summary",  # must match menuItem
         fluidRow(
-          h6("WIP: Fragpipe data transformation takes a long time", style = "color: red;"),
-          h6("WIP: netMHCpan pre-computed left_join also takes a long time, due to its size.", style = "color: red;"),
           h6("WIP: Sequence motif plot stretches too much if only 1 sample.", style = "color: red;"),
           h6("WIP: Since the master dataframe is based on peptidoform, some of the plots are peptidoform centric. Need to convert to peptide centric.", style = "color: red;"),
-          h6("WIP: Generating PTM_Pseudo sequence should only be done when asked, since it takes some time.", style = "color: red;"),
           h6("WIP: Stop the automatic ordering of categorical data by ggplot. And also order stacks of stacked bar chart better.", style = "color: red;"),
-          h6("WIP: Some users are interested in visualizing per measurement, such as unique peptides per measurement that were added up to the total unique peptides. Need to think about where to place it.", style = "color: red;"),
-          h6("WIP: Create a function that tests for input data useability (i.e. check for empty, 0, NA, exist,...).", style = "color: red;"),
           h6("WIP: When selecting samples, the filtering criteria resets. Need to somehow keep it.", style = "color: red;"),
           h6("WIP: For package management, switch to pkg::fun() style (i.e. dplyr::mutate()).", style = "color: red;"),
-          
+          h6("WIP: Decouple the renderPlot() function for drawing the plot from the calculations, so that when changing window size only the renderPlot() function without the recalculation is reprocessed for speeding up.", style = "color: red;"),
           ### ---- Column Map ----
           bs4Card(title = tagList("Column Map", 
                                   span(bs4Dash::tooltip(icon("info-circle"), title = "This table maps the columns of your dataset to the expected schema.

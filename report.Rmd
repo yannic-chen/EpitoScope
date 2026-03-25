@@ -1,96 +1,282 @@
 ---
-title: "EpitoScope report"
-runtime: shiny
+title: "EpitoScope Report"
+date: "`r format(Sys.time(), '%d %B %Y, %H:%M')`"
 output:
   html_document:
     toc: true
     toc_depth: 3
-    toc_float: true
-    theme: united
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    theme: flatly        # closest Bootstrap 3 theme to AdminLTE3's clean look
+    highlight: textmate
     number_sections: true
     self_contained: true
     fig_width: 12
     fig_height: 6
 params:
-  data_info: NULL
-  data_list: NULL
+  data_info:           NULL
+  data_list:           NULL
+  mod_map_list:        NULL
   processed_data_list: NULL
+  filters:             NULL
+  color_palette:       "default"
+  cluster_mode_ea:     "sample"
+  binder_summary_all:  NULL
+  binder_unique:       NULL
+  group_list:          NULL
+  group_comp_data:     NULL
 ---
 
 <style>
-/* Remove bootstrap offsets so TOC can be at absolute left */
-.container-fluid,
-.container,
-.row-fluid {
-  padding-left: 0 !important;
-  margin-left: 0 !important;
-  padding-right: 0 !important;
-  margin-right: 0 !important;
+/* ── AdminLTE3 / bs4Dash colour tokens ─────────────────────────────────── */
+/* Primary blue  : #3c8dbc  (AdminLTE default)                              */
+/* Sidebar dark  : #343a40                                                  */
+/* Body bg       : #f4f6f9                                                  */
+/* Card bg       : #ffffff                                                  */
+/* Card border   : #dee2e6 / top accent strip matches card status colour    */
+/* Accent (info) : #17a2b8                                                  */
+
+/* ── Fonts ─────────────────────────────────────────────────────────────── */
+body {
+  font-family: 'Source Sans Pro', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  color: #212529;
+  background-color: #f4f6f9;  /* AdminLTE body bg */
 }
 
-/* Left TOC */
-#toc {
-  position: fixed !important;
-  top: 80px !important;
-  left: 0 !important;
-  width: 160px !important;
-  background: #f8f8f8;
-  border-right: 1px solid #ddd;
-  padding: 10px !important;
-  margin: 0 !important;
-  max-height: calc(100% - 100px);
-  overflow-y: auto;
+/* ── Page title block ──────────────────────────────────────────────────── */
+h1.title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #343a40;
+  border-bottom: 3px solid #3c8dbc;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
 }
 
-.tocify-wrapper {
-    width: 200px;   /* default might be 250-300px */
+h4.date {
+  font-size: 12px;
+  color: #6c757d;
+  font-weight: 400;
+  margin-top: 2px;
 }
 
-/* Main content shifted right of TOC */
+/* ── Section headings  ─────────────────────────────────────────────────── */
+h1 { font-size: 20px; font-weight: 600; color: #343a40;
+     border-bottom: 2px solid #dee2e6; padding-bottom: 5px; }
+h2 { font-size: 16px; font-weight: 600; color: #495057; }
+h3 { font-size: 14px; font-weight: 600; color: #6c757d; }
+
+/* ── TOC — mirrors bs4Dash sidebar ────────────────────────────────────── */
+#TOC {
+  background-color: #343a40;  /* AdminLTE sidebar dark */
+  border-right: none;
+  padding: 14px 10px;
+  font-size: 12.5px;
+  color: #c2c7d0;
+  border-radius: 0 4px 4px 0;
+}
+
+.tocify-header > .tocify-item > a,
+.tocify-subheader > .tocify-item > a {
+  color: #c2c7d0 !important;
+  padding: 5px 10px;
+  display: block;
+}
+
+.tocify-header > .tocify-item > a:hover,
+.tocify-subheader > .tocify-item > a:hover {
+  color: #ffffff !important;
+  background-color: #3c8dbc !important;
+  border-radius: 3px;
+}
+
+.tocify .list-group-item.active,
+.tocify .list-group-item.active:hover {
+  background-color: #3c8dbc !important;
+  border-color:     #3c8dbc !important;
+  color: #ffffff !important;
+  border-radius: 3px;
+}
+
+/* ── Main content ──────────────────────────────────────────────────────── */
 .main-container {
-  margin-left: 180px !important; /* slightly bigger than TOC width */
-  padding: 20px !important;
-  width: calc(100% - 180px) !important;
   max-width: none !important;
-  box-sizing: border-box !important;
+  padding: 20px 28px;
+  background-color: #f4f6f9;
 }
 
-/* Figures full width */
+/* ── Section cards ─────────────────────────────────────────────────────── */
+
+/* Level 1 (e.g. # RAW Summary) — card with stronger accent */
+.section.level1 {
+  background:    #ffffff;
+  border:        1px solid #dee2e6;
+  border-top:    3px solid #3c8dbc;
+  border-radius: 4px;
+  padding:       0px 10px;
+  margin-bottom: 24px;
+  box-shadow:    0 1px 4px rgba(0,0,0,0.07);
+}
+
+/* Level 2 (e.g. ## Column Map) — just a divider, no box */
+.section.level2 {
+  background:  transparent;
+  border:      none;
+  border-bottom: 1px solid #f0f0f0;
+  border-radius: 0;
+  padding:     8px 0 16px 0;
+  margin-bottom: 8px;
+  box-shadow:  none;
+}
+
+/* Level 3 (e.g. ### Peptides inside a tabset) — no box, just spacing */
+.section.level3 {
+  background:  transparent;
+  border:      none;
+  padding:     8px 0;
+  margin:      0;
+  box-shadow:  none;
+}
+
+/* ── Tabs — AdminLTE nav-tabs ──────────────────────────────────────────── */
+.nav-tabs {
+  border-bottom: 2px solid #dee2e6;
+  margin-bottom: 0;
+}
+
+.nav-tabs > li > a {
+  color: #495057;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: 3px 3px 0 0;
+  padding: 6px 14px;
+}
+
+.nav-tabs > li > a:hover {
+  background-color: #f8f9fa;
+  border-color: #dee2e6 #dee2e6 transparent;
+}
+
+.nav-tabs > li.active > a,
+.nav-tabs > li.active > a:hover,
+.nav-tabs > li.active > a:focus {
+  color:            #3c8dbc;
+  background-color: #ffffff;
+  border-color:     #dee2e6 #dee2e6 #ffffff;
+  border-top:       2px solid #3c8dbc;
+  font-weight:      600;
+}
+
+.tab-content {
+  background:    #ffffff;
+  border:        1px solid #dee2e6;
+  border-top:    none;
+  border-radius: 0 0 4px 4px;
+  padding:       18px;
+  margin-bottom: 16px;
+}
+
+/* ── Tables ────────────────────────────────────────────────────────────── */
+table {
+  font-size: 13px;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead tr {
+  background-color: #3c8dbc;
+  color: #ffffff;
+}
+
+thead th {
+  padding: 8px 10px;
+  font-weight: 600;
+}
+
+tbody tr:nth-child(even) { background-color: #f8f9fa; }
+tbody tr:hover           { background-color: #e8f4f8; }
+
+tbody td { padding: 6px 10px; }
+
+/* ── Figures ───────────────────────────────────────────────────────────── */
 figure, img, .plot-container, .html-widget {
   width: 100% !important;
   max-width: 100% !important;
 }
 
+/* ── Code / pre ────────────────────────────────────────────────────────── */
+pre, code {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+pre {
+  background:    #f8f9fa;
+  border:        1px solid #dee2e6;
+  border-radius: 3px;
+  padding:       10px 14px;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────── */
 @media (max-width: 900px) {
-  #toc {
-    position: relative !important;
-    width: 100% !important;
-    margin: 0 !important;
-    border-right: none !important;
-  }
-  .main-container {
-    margin-left: 0 !important;
-    width: 100% !important;
-  }
+  #TOC            { background-color: #f8f9fa; color: #212529; border-right: 1px solid #dee2e6; }
+  .main-container { padding: 12px; }
 }
 </style>
 
 ```{r setup, include=FALSE}
-library(ggplot2)
-library(dplyr)
-library(ggpointdensity)
-library(viridis)
-library(purrr)
-library(shiny)
-library(plotly)
-library(ComplexUpset)
-library(GGally)
-library(ggrepel)
+knitr::opts_chunk$set(
+  echo    = FALSE,
+  warning = FALSE,
+  message = FALSE
+)
+
 source("global.R")
 
-data_info <- params$data_info
-data_list <- params$data_list
+data_info      <- params$data_info
+data_list      <- params$data_list
+mod_map_list   <- params$mod_map_list
 processed_list <- params$processed_data_list
+cluster_mode_ea <- params$cluster_mode_ea
+color_palette   <- params$color_palette
+binder_summary_all <- params$binder_summary_all
+binder_unique   <- params$binder_unique
+group_list      <- params$group_list
+group_comp_stats <- params$group_comp_data
+min_presence_fraction <- params$filters$min_presence_fraction
+
+motif_plot_length <- 7:13 # should be the same as in Shiny.R
+```
+
+# Analysis Parameters
+```{r filter_summary, results='asis'}
+f <- params$filters
+
+make_row <- function(label, val) {
+  if (is.null(val)) return(NULL)
+  if (length(val) == 2 && is.numeric(val)) {
+    formatted <- paste0(round(val[1], 2), " – ", round(val[2], 2))
+  } else {
+    formatted <- paste(val, collapse = ", ")
+  }
+  data.frame(Parameter = label, Value = formatted, stringsAsFactors = FALSE)
+}
+
+filter_df <- do.call(rbind, Filter(Negate(is.null), list(
+  make_row("Samples",        f$samples),
+  make_row("Length range",   f$length_range),
+  make_row("Quantity range", f$quantity_range),
+  make_row("Score range",    f$score_range),
+  make_row("Charge range",   f$charge_range),
+  make_row("Mass range",     f$mass_range),
+  make_row("RT range",       f$RT_range),
+  make_row("min_presence_fraction",       f$min_presence_fraction)
+)))
+
+knitr::kable(filter_df, row.names = FALSE)
 ```
 
 # RAW Summary {.tabset}
@@ -98,7 +284,12 @@ processed_list <- params$processed_data_list
 ## Column Map
 
 ```{r}
-Colum_mapping_table(data_info)
+DT::datatable(
+  Colum_mapping_table(data_info),
+  escape   = FALSE,   # <-- this is the key, allows the HTML spans to render
+  options  = list(pageLength = 20, scrollX = TRUE, autoWidth = TRUE),
+  rownames = FALSE
+)
 ```
 
 ## Unique Entries {.tabset}
@@ -106,20 +297,20 @@ Colum_mapping_table(data_info)
 ### Peptides
 
 ```{r}
-plot_unique_counts(data_list, column = "STRIPPED", y_label = "Number of unique peptides")
+plot_unique_counts(data_list, column = "STRIPPED", y_label = "Number of unique peptides", color = color_palette)
 ```
 
 ### Peptidoforms
 
 ```{r}
-plot_unique_counts(data_list, column = "PEPTIDE", y_label = "Number of unique peptidoforms")
+plot_unique_counts(data_list, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = color_palette)
 ```
 
 ### Proteins
 
 ```{r}
 plot_unique_counts(data_list, column = "PROTEIN", y_label = "Number of unique proteins",
-                       transform_fn = extract_protein_prefixes)
+                   transform_fn = extract_protein_prefixes, color = color_palette)
 ```
 
 ## Other Numeric Columns {.tabset}
@@ -127,37 +318,44 @@ plot_unique_counts(data_list, column = "PROTEIN", y_label = "Number of unique pr
 ### Charge
 
 ```{r}
-plot_stacked_bar(data_list, column = "CHARGE", fill_label = "Charge", percentage = FALSE)
+plot_stacked_bar(data_list, column = "CHARGE", fill_label = "Charge", percentage = FALSE, color = color_palette)
 ```
 
 ### Mass
 
 ```{r}
-plot_density(data_list, column = "MASS", x_label = "Mass (Da)")
+plot_density(data_list, column = "MASS", x_label = "Mass (Da)", color = color_palette)
 ```
 
 ### m/z
 
 ```{r}
-plot_density(data_list, column = "MZ", x_label = "m/z")
+plot_density(data_list, column = "MZ", x_label = "m/z", color = color_palette)
 ```
 
 ### Retention Time
 
 ```{r}
-plot_density(data_list, column = "RT", x_label = "Retention Time (min)")
+plot_per_sample_grid(
+  lst      = data_list,
+  plot_fn  = plot_histogram,
+  ncol     = 2,
+  column   = "RT",
+  x_label  = "Retention Time (min)",
+  color    = color_palette
+)
 ```
 
 ### ppm
 
 ```{r}
-plot_density(data_list, column = "PPM", x_label = "ppm")
+plot_density(data_list, column = "PPM", x_label = "ppm", color = color_palette)
 ```
 
 ### Score
 
 ```{r}
-plot_violin(data_list, column = "SCORE")
+plot_violin(data_list, column = "SCORE", color = color_palette)
 ```
 
 ## Summary Table
@@ -171,97 +369,118 @@ render_summary_pre(data_list, font_size = "8px")
 ## Peptide Length Distribution
 
 ```{r}
-plot_length_distribution(processed_list)
+plot_length_distribution(processed_list, color = color_palette)
 ```
 
-## Motif Plot {.tabset}
+## Peptide Length Distribution
 
-```{r motif_grid, echo=FALSE, message=FALSE, warning=FALSE}
-library(patchwork)
-
-lst <- params$lst
-
-# Generate scatterplots
-scatter_list <- generate_scatterplots(lst)
-
-if (length(scatter_list) == 0) {
-  # Show placeholder if no plots available
-  print(
-    ggplot() +
-      annotate("text", x = 0.5, y = 0.5,
-               label = "No scatterplots available",
-               size = 6, color = "red") +
-      theme_void()
-  )
-} else {
-  # Combine all plots in a grid
-  grid_plot <- wrap_plots(scatter_list, ncol = 2)
-  print(grid_plot)
-}
+```{r}
+    lst <- lapply(processed_list, function(df) {
+      df$correct_range <- df$LENGTH >= 8 & df$LENGTH <= 13
+      df
+    })
+plot_stacked_bar(lst, column = "correct_range", fill_label = "8-13mer", percentage = TRUE, color = color_palette)
 ```
+
+## Motif Plot
+
+```{r motif, fig.height = length(motif_plot_length) * 3}
+plot_motif_grid(
+  lst     = processed_list,
+  lengths = motif_plot_length,
+  ncol    = length(processed_list)
+)
+```
+
 ## Dynamic Range {.tabset}
 
 ### Individual
 
-```{r dynrange_grid, echo=FALSE, message=FALSE, warning=FALSE}
-library(patchwork)
-
-lst <- params$lst
-
-# Generate plots per sample
-dynrange_list <- generate_dynrange_grid(lst)
-
-# Remove NULL/empty plots if any
-dynrange_list <- Filter(function(p) !is.null(p), dynrange_list)
-
-if (length(dynrange_list) == 0) {
-  # Show placeholder if no plots available
-  print(
-    ggplot() +
-      annotate("text", x = 0.5, y = 0.5,
-               label = "Not enough peptides for any sample",
-               size = 6, color = "red") +
-      theme_void()
-  )
-} else {
-  # Combine all plots in a grid (e.g., 2 per row)
-  grid_plot <- wrap_plots(dynrange_list, ncol = 2)
-  print(grid_plot)
-}
+```{r}
+plot_per_sample_grid(
+  lst      = processed_list,
+  plot_fn  = dynamic_range_plot,
+  ncol     = 2,
+  data_col = "MAX_QUANTITY",
+  name_col = "PROTEIN",
+  gene     = "HLA",
+  gene_regex = "HLA[A-C]+"
+)
 ```
 
 ### Combined
 
-```{r}
-dynamic_range_plot_combined(df_list = lst, data_col = "MAX_QUANTITY")
+```{r dynrange_combined}
+dynamic_range_plot_combined(df_list = processed_list, data_col = "MAX_QUANTITY")
 ```
 
 ## 1/k0 vs m/z
-```{r k0_vs_mz_grid, echo=FALSE, message=FALSE, warning=FALSE}
-library(patchwork)
 
-lst <- params$lst
-
-# Generate scatterplots
-scatter_list <- generate_scatterplots(lst)
-
-# Remove NULL/empty plots if any
-scatter_list <- Filter(function(p) !is.null(p), scatter_list)
+```{r k0_vs_mz_grid, fig.height=5}
+scatter_list <- generate_scatterplots(processed_list)
+scatter_list <- Filter(Negate(is.null), scatter_list)
 
 if (length(scatter_list) == 0) {
-  print(
-    ggplot() +
-      annotate("text", x = 0.5, y = 0.5,
-               label = "No scatterplots available",
-               size = 6, color = "red") +
-      theme_void()
-  )
+  ggplot() + annotate("text", x=.5, y=.5, label="No scatterplots available", size=6, color="red") + theme_void()
 } else {
-  # Combine all plots in a grid
-  grid_plot <- wrap_plots(scatter_list, ncol = 2)
-  print(grid_plot)
+  wrap_plots(scatter_list, ncol = min(2, length(scatter_list)))
 }
 ```
+
+## Measurement Correlation Heatmap
+````{r measurement_heatmap}
+quantity_cols <- data_info %>%
+  filter(final_name == "QUANTITY") %>%
+  dplyr::select(-final_name) %>%
+  unlist(recursive = TRUE, use.names = FALSE)
+
+if (length(quantity_cols) == 0) {
+  cat("_No QUANTITY columns found._")
+} else {
+  pep_mat <- prepare_measurement_matrix(processed_list, quantity_cols)
+  
+  if (ncol(pep_mat) < 2 || nrow(pep_mat) == 0) {
+    cat("_Not enough data to compute correlation._")
+  } else {
+    
+    cor_mat <- cor(pep_mat, method = "pearson", use = "complete.obs")
+    
+    group_names <- names(lst)
+
+    get_group <- function(colname) {
+      matched <- group_names[sapply(group_names, function(g) startsWith(colname, g))]
+      if (length(matched) == 0) return(NA)
+      matched[1]
+    }
+    
+    if (cluster_mode_ea == "sample") {
+      groups <- sapply(colnames(cor_mat), get_group)
+      ht <- plot_heatmap(cor_mat, color = color_palette,
+                         row_groups = groups, col_groups = groups, label = "Pearson")
+    } else if (cluster_mode_ea == "mix") {
+      col_groups <- sapply(colnames(cor_mat), get_group)
+      ht <- plot_heatmap(cor_mat, color = color_palette, cluster = "rows",
+                         row_groups = NULL, col_groups = col_groups, label = "Pearson")
+    } else {
+      ht <- plot_heatmap(cor_mat, color = color_palette,
+                         cluster = cluster_mode_ea, label = "Pearson")
+    }
+    
+    pad <- compute_padding(colnames(cor_mat), fontsize = 10, rot = 90)
+    
+    draw(ht,
+         heatmap_legend_side = "left",
+         padding = unit.c(
+           unit(pad / 2, "mm"),
+           unit(2,       "mm"),
+           unit(2,       "mm"),
+           unit(pad,     "mm")
+         )
+    )
+  }
+}
+
+````
 
 # Results {.tabset}
 
@@ -270,46 +489,80 @@ if (length(scatter_list) == 0) {
 ### Absolute
 
 ```{r}
-plot_completeness(processed_list)
+spectra_cols <- data_info %>%
+  filter(final_name == "SPECTRA") %>%
+  dplyr::select(-final_name) %>%
+  unlist(use.names = FALSE)
+
+plot_completeness(processed_list, spectra_cols, color = color_palette)
 ```
 
 ### Percentage
 
 ```{r}
-plot_completeness(processed_list, percent = TRUE)
+plot_completeness(processed_list, spectra_cols, percent = TRUE, color = color_palette)
 ```
 
-## Upset Plot of Peptides
+## Upset Plot
 
 ```{r}
 plot_upset(processed_list)
 ```
 
-## Pairwise Overlap Matrix
+## Pairwise Overlap Matrix {.tabset}
+
+### Count
 
 ```{r}
-plot_shared_peptide_matrix(processed_list)
+plot_shared_peptide(processed_list, mode = "count", percent_type = "union", color = color_palette)
 ```
 
-## Unique Entries (Processed) {.tabset}
+### Percent
+
+```{r}
+plot_shared_peptide(processed_list, mode = "percent", percent_type = "union", color = color_palette)
+```
+
+## Pairwise comparison Matrix {.tabset}
+
+### No cluster
+
+```{r}
+plot_pairwise_peptide_quant_correlation(processed_list, color = color_palette, cluster = "none")
+```
+
+### Cluster
+
+```{r}
+plot_pairwise_peptide_quant_correlation(processed_list, color = color_palette, cluster = "both")
+```
+
+## PCA plot
+
+```{r}
+plot_PCA(processed_list, color = color_palette)
+```
+
+
+## Unique Entries (Filtered) {.tabset}
 
 ### Peptides
 
 ```{r}
-plot_unique_counts(processed_list, column = "STRIPPED", y_label = "Number of unique peptides")
+plot_unique_counts(processed_list, column = "STRIPPED", y_label = "Number of unique peptides", color = color_palette)
 ```
 
 ### Peptidoforms
 
 ```{r}
-plot_unique_counts(processed_list, column = "PEPTIDE", y_label = "Number of unique peptidoforms")
+plot_unique_counts(processed_list, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = color_palette)
 ```
 
 ### Proteins
 
 ```{r}
 plot_unique_counts(processed_list, column = "PROTEIN", y_label = "Number of unique proteins",
-                       transform_fn = extract_protein_prefixes)
+                   transform_fn = extract_protein_prefixes, color = color_palette)
 ```
 
 ## Other Numeric Columns {.tabset}
@@ -317,35 +570,327 @@ plot_unique_counts(processed_list, column = "PROTEIN", y_label = "Number of uniq
 ### Charge
 
 ```{r}
-plot_stacked_bar(processed_list, column = "CHARGE", fill_label = "Charge", percentage = FALSE)
+plot_stacked_bar(processed_list, column = "CHARGE", fill_label = "Charge", percentage = FALSE, color = color_palette)
 ```
 
 ### Mass
 
 ```{r}
-plot_density(processed_list, column = "MASS", x_label = "Mass (Da)")
+plot_density(processed_list, column = "MASS", x_label = "Mass (Da)", color = color_palette)
 ```
 
 ### m/z
 
 ```{r}
-plot_density(processed_list, column = "MZ", x_label = "m/z")
+plot_density(processed_list, column = "MZ", x_label = "m/z", color = color_palette)
 ```
 
 ### Retention Time
 
 ```{r}
-plot_density(processed_list, column = "RT", x_label = "Retention Time (min)")
+plot_per_sample_grid(
+  lst      = processed_list,
+  plot_fn  = plot_histogram,
+  ncol     = 2,
+  column   = "RT",
+  x_label  = "Retention Time (min)",
+  color    = color_palette
+)
 ```
 
 ### ppm
 
 ```{r}
-plot_density(processed_list, column = "PPM", x_label = "ppm")
+plot_density(processed_list, column = "PPM", x_label = "ppm", color = color_palette)
 ```
 
 ### Score
 
 ```{r}
-plot_violin(processed_list, column = "SCORE")
+plot_violin(processed_list, column = "SCORE", color = color_palette)
 ```
+
+# Groups {.tabset}
+
+## Group based Venn Diagram
+
+```{r}
+if (!is.null(group_list)) {
+  lst <- processed_list
+  groups <- group_list
+  pep_col <- "PEPTIDE"
+  #pep_col    <- if (!is.null(input$use_peptidoforms) && input$use_peptidoforms) "PEPTIDE" else "STRIPPED"
+  
+  group_peptide_sets <- lapply(names(groups), function(g) {
+      
+      sample_names <- groups[[g]]
+      
+      peptide_counts <- table(unlist(lapply(sample_names, function(s) {
+        df <- lst[[s]]
+        if (!pep_col %in% colnames(df)) return(character(0))
+        unique(df[[pep_col]])
+      })))
+      
+      n_samples <- length(sample_names)
+      
+      names(peptide_counts[
+        peptide_counts / n_samples >= min_presence_fraction
+      ])
+    }) |> setNames(names(groups))
+  
+  
+  group_venn_plotting(group_peptide_sets, color = color_palette)
+} else {
+  cat("no Groups defined")
+}
+```
+
+## Peptide based Heatmap
+
+```{r}
+if (!is.null(group_list)) {
+    lst <- processed_list
+    groups <- group_list
+    
+    quantity_cols <- data_info %>%
+      filter(final_name == "QUANTITY") %>%
+      dplyr::select(-final_name) %>% 
+      unlist(recursive = TRUE, use.names = FALSE)
+    
+    if(length(quantity_cols) < 1) {
+      cat("No QUANTITY columns found.")
+      return(NULL)
+    }
+    
+    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets)
+    
+    if(nrow(pep_mat)  < 1) {
+      cat("No peptides to plot.")
+      return(NULL)
+    }
+    
+    plot_heatmap(pep_mat, color = color_palette, transpose = TRUE, log_transform = TRUE)
+} else {
+  cat("no Groups defined")
+}
+```
+
+## Group Comparison {.tabset}
+
+```{r group_comp, results='asis', fig.height=5}
+if (is.null(group_comp_stats) || length(group_comp_stats) == 0) {
+  cat("_No group comparison data available._\n")
+} else {
+
+  for (comp_name in names(group_comp_stats)) {
+    df <- group_comp_stats[[comp_name]]
+
+    df$Significance <- ifelse(
+      is.na(df$negLog10AdjP_BH) | is.na(df$log2FC), "Missing",
+      ifelse(df$negLog10AdjP_BH > 1.3 & abs(df$log2FC) > 1,
+             "Significant", "Not significant")
+    )
+
+    if (is.null(df) || nrow(df) == 0) next
+
+    # Tab header — must be followed by a blank line
+    cat("\n\n###", comp_name, "\n\n")
+
+    # Volcano + MA
+    p <- patchwork::wrap_plots(
+      group_volcano_plot_static(df, comp_name),
+      group_MA_plot_static(df, comp_name),
+      ncol = 2
+    )
+    print(p)
+    cat("\n\n")
+
+    # P-value histogram + Ranked FC
+    p2 <- patchwork::wrap_plots(
+      group_p_histogram_static(df, comp_name),
+      group_rank_FC_static(df, comp_name),
+      ncol = 2
+    )
+    print(p2)
+    cat("\n\n")
+
+    # Peptide table — knit_print renders htmlwidgets inline in results='asis'
+    table_df <- df %>%
+      filter(!is.na(log2FC)) %>%
+      dplyr::select(PEPTIDE, log2FC, adj_pval_BH, adj_pval_Bonf, Significance) %>%
+      arrange(adj_pval_BH)
+
+    
+    cat(knitr::knit_print(
+      DT::datatable(
+        table_df,
+        rownames = FALSE,
+        caption  = paste("Differential peptides —", comp_name),
+        options  = list(pageLength = 10, scrollX = TRUE)
+      ) %>% DT::formatRound(c("log2FC", "adj_pval_BH", "adj_pval_Bonf"), digits = 3)
+    ))
+    
+    cat("\n\n")
+
+    # GO term
+    cat("\n\n#### GO-term enrichment\n\n")
+    res <- run_go_enrichment(df)
+    if (is.list(res) && isTRUE(res$.skip)) {
+      cat(res$message, "\n\n")
+    } else {
+      print(res)
+      cat("\n\n")
+    }
+
+    # STRING
+    cat("\n\n#### STRING-DB network\n\n")
+    if (!curl::has_internet()) {
+      cat("_No internet connection — STRING-DB network unavailable._\n\n")
+    } else {
+      res <- run_string(df)
+      if (is.list(res) && isTRUE(res$.skip)) {
+        cat(res$message, "\n\n")
+      } else {
+        print(res)
+        cat("\n\n")
+      }
+    }
+  }
+}
+```
+
+# PTM {.tabset}
+
+## PTM distribution
+
+```{r}
+if ("PTM" %in% colnames(processed_list)) {
+  lst <- processed_data_list
+  lst <- lapply(lst, function(df) {
+      
+      df %>%
+        mutate(
+          PTM = ifelse(is.na(PTM) | PTM == "", "Unmodified", PTM)
+        ) %>%
+        tidyr::separate_rows(PTM, sep = "\\s*[,;]\\s*") %>%
+        mutate(
+          PTM = gsub("^\\d+", "", PTM) #This is specifically for fragpipe to remove the position information on PTMs
+        )
+    })
+    
+    lst <- lst[!vapply(lst, is.null, logical(1))]
+    
+    plot_stacked_bar(lst, column = "PTM", fill_label = "PTM", percentage = FALSE, rev_levels = FALSE)
+} else {
+  cat("no PTM column")
+}
+```
+
+## PTM sequence motif
+
+```{r}
+if (is.null(mod_map_list) || length(mod_map_list) == 0 || all(is.na(mod_map_list))) {
+      cat("no PTM pseudo sequence")
+} else {
+          # Flatten the list into a single data.frame
+    mod_map_list <- purrr::imap_dfr(mod_map_list, ~ tibble(
+      Sample = .y,
+      Symbol = .x,
+      Modification = names(.x)
+    ))
+    
+    DT::datatable(mod_map_list, options = list(pageLength = 20))
+    }
+    
+
+```
+
+# Binding {.tabset}
+
+WIP: For speed sake, binder data is directly obtained rather than recalculated. As such, it needs to reactively update for the updated data to make it to this report.
+
+## Binding Summary
+
+```{r}
+if (!is.null(binder_summary_all)) {
+  DT::datatable(binder_summary_all)
+} else {
+  cat("no binding data")
+}
+```
+
+## Summary Barchart {.tabset}
+
+### Absolute
+
+```{r}
+if (!is.null(binder_unique)) {
+  plot_binders(binder_unique, color = color_palette, percent = FALSE)
+} else {
+  cat("no binding data")
+}
+```
+
+### Percent
+
+```{r}
+if (!is.null(binder_unique)) {
+  plot_binders(binder_unique, color = color_palette, percent = TRUE)
+} else {
+  cat("no binding data")
+}
+```
+
+## Binding Table
+
+```{r}
+if (!is.null(binder_unique)) {
+  
+      df_collapsed <- binder_unique %>%
+      group_by(STRIPPED) %>%
+      summarise_all(~ {
+        vals <- unique(.)
+        vals <- vals[!is.na(vals)]
+        if(length(vals) == 0) NA else paste(vals, collapse = ",")
+      })
+  
+  DT::datatable(df_collapsed)
+} else {
+  cat("no binding data")
+}
+```
+
+# Lookup
+
+```{r}
+keep_cols <- c("Sample", "PEPTIDE", "STRIPPED", "LENGTH" ,"MASS" ,"CHARGE", "MZ" ,"K0", "RT", "PROTEIN")
+    
+combined <- imap_dfr(data_list, ~ dplyr::select(.x, intersect(keep_cols, colnames(.x))) %>% mutate(Sample = .y))
+    
+peptide_counts <- combined %>% count(STRIPPED, name = "n_datasets")
+    
+combined <- combined %>% inner_join( peptide_counts %>% filter(n_datasets == 1), by = "STRIPPED" ) %>%
+      dplyr::select(-n_datasets) %>%
+      arrange(Sample, STRIPPED)
+
+numeric_cols <- c("LENGTH", "MASS", "CHARGE", "MZ", "K0", "RT")
+
+combined <- combined %>%
+  mutate(across(any_of(numeric_cols), as.numeric))
+
+DT::datatable(
+  combined,
+  filter   = "top",
+  rownames = FALSE,
+  options  = list(
+    pageLength  = 25,
+    scrollX     = TRUE,
+    dom         = "frtip",
+    autoWidth   = FALSE,
+    initComplete = JS("function(settings, json) { this.api().columns.adjust(); }")
+  )
+)
+```
+
+
+

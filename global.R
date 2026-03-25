@@ -46,6 +46,7 @@ library(ComplexUpset)
 library(ComplexHeatmap)
 library(circlize)
 library(grid)
+library(patchwork) #This is only used for the 1/k0 vs m/z plot. Could remove this by changing the code.
 #These are exclusive for GO-term.
 library(clusterProfiler) #this one masks a lot of dplyr and other package functions
 library(org.Hs.eg.db)
@@ -138,6 +139,25 @@ signature <- list(
 )
 
 #-----------Helper functions------------------
+safe_reactive <- function(x) {
+  tryCatch(
+    x(),
+    error = function(e) NULL
+  )
+}
+
+safe_validate <- function(cond, message) {
+  if (!cond) {
+    if (isTRUE(getOption("knitr.in.progress"))) {
+      # In R Markdown → DO NOT STOP
+      return(list(.skip = TRUE, message = message))
+    } else {
+      # In Shiny → show validation message
+      shiny::validate(shiny::need(FALSE, message))
+    }
+  }
+  return(NULL)
+}
 
 remove_ptms <- function(x) {
   gsub("\\(.*?\\)|\\[.*?\\]|\\{.*?\\}", "", x)
@@ -323,6 +343,59 @@ compute_padding <- function(labels, fontsize = 10, rot = 90) {
   padding_mm <- max_width + 1
   
   padding_mm
+}
+
+#for report.Rmd
+plot_per_sample_grid <- function(lst, plot_fn, ncol = 2, ...) {
+  plots <- lapply(names(lst), function(nm) {
+    tryCatch(
+      plot_fn(df = lst[[nm]], title_name = nm, ...),
+      error = function(e) {
+        ggplot() +
+          annotate("text", x = .5, y = .5, label = paste("Error:", e$message),
+                   size = 4, color = "red") +
+          theme_void() +
+          ggtitle(nm)
+      }
+    )
+  })
+  plots <- Filter(Negate(is.null), plots)
+  if (length(plots) == 0) return(NULL)
+  patchwork::wrap_plots(plots, ncol = ncol)
+}
+
+#for report.Rmd
+plot_motif_grid <- function(lst, lengths, ncol = 3) {
+  # One row of plots per length
+  length_panels <- lapply(lengths, function(L) {
+    
+    sample_plots <- lapply(names(lst), function(nm) {
+      df       <- lst[[nm]]
+      peptides <- unique(df$STRIPPED[df$LENGTH == L])
+      
+      if (length(peptides) < 5) {
+        return(
+          ggplot() +
+            annotate("text", x = .5, y = .5,
+                     label = paste("Length", L, "— not enough peptides"),
+                     size = 3, color = "grey50") +
+            theme_void() +
+            ggtitle(paste(nm, "• Length", L))
+        )
+      }
+      
+      plot_seqlogo(peptides, title = paste(nm, "• Length", L))
+    })
+    
+    # Combine legend + sample plots for this length into one row
+    patchwork::wrap_plots(
+      c(sample_plots),
+      ncol = ncol + 1   # +1 for the legend
+    )
+  })
+  
+  # Stack all length rows vertically
+  patchwork::wrap_plots(length_panels, ncol = 1)
 }
 
 #-----------Data handling/transformation functions------------------
@@ -917,9 +990,13 @@ plot_histogram <- function(df, column, x_label, title_name = "RT plot", color = 
     by = 1
   )
   
-  if (color == "default") color <- "steelblue"
+  if (color == "default") {
+    color <- NULL  # ggplot will use default fill colors
+  } else {
+    color <- viridis(1, option = color)
+  }
   
-  ggplot(df, aes_string(x = column)) +   # <- use column, not data_col
+  p <- ggplot(df, aes_string(x = column)) +   # <- use column, not data_col
     geom_histogram(
       breaks = breaks,
       fill = color,
@@ -931,6 +1008,12 @@ plot_histogram <- function(df, column, x_label, title_name = "RT plot", color = 
       y = "Count"
     ) +
     theme_minimal()
+  
+  if (!is.null(color)) {
+    p <- p + scale_fill_manual(values = color)
+  }
+  
+  return(p)
 }
 
 plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, percentage = FALSE, color = "default") {
@@ -2068,6 +2151,30 @@ compute_binder_summary <- function(df) {
     )
 }
 
+group_venn_plotting <- function(sets, color = "default") {
+  n_groups <- length(sets)
+  
+  p <- ggVennDiagram::ggVennDiagram(
+    sets,
+    label_alpha = 0
+  ) +
+    ggplot2::theme_void()  +
+    ggplot2::theme(
+      legend.position = "none",
+      plot.margin = margin(10,10,10,10)
+    )
+  
+  if (color != "default") {
+    p <- p + ggplot2::scale_fill_viridis_c(
+      option = color
+    )  
+  } else {
+    p <- p + scale_fill_distiller(palette = "RdBu")
+  }
+  
+  return(p)
+}
+
 group_volcano_plot <- function(df,sel,plot_name) {
   # Check if groups have data
   shiny::validate(shiny::need(any(!is.na(df$log2FC)) && any(!is.na(df$negLog10AdjP_BH)), "have data, but no log2FC and p-values."))
@@ -2326,6 +2433,73 @@ group_FC_table <- function(df) {
   ) %>%
     DT::formatRound(c("log2FC", "adj_pval_BH","adj_pval_Bonf"), digits = 3)
 }
+
+##----static versions-----
+group_volcano_plot_static <- function(df, plot_name) {
+  ggplot(df, aes(x = log2FC, y = negLog10AdjP_BH, colour = Significance)) +
+    geom_point(size = 2, alpha = 0.7) +
+    scale_colour_manual(values = c(
+      "Significant"     = "red",
+      "Not significant" = "grey40",
+      "Missing"         = "grey80"
+    )) +
+    geom_vline(xintercept = c(-1, 1), linetype = "dashed", colour = "grey60") +
+    geom_hline(yintercept = 1.3,      linetype = "dashed", colour = "grey60") +
+    labs(title = paste("Volcano:", plot_name),
+         x = "log2 Fold Change", y = "-log10 adjusted p-value") +
+    theme_minimal()
+}
+
+group_MA_plot_static <- function(df, plot_name) {
+  ggplot(df, aes(x = A, y = log2FC, colour = Significance)) +
+    geom_point(size = 2, alpha = 0.7) +
+    scale_colour_manual(values = c(
+      "Significant"     = "red",
+      "Not significant" = "grey40",
+      "Missing"         = "grey80"
+    )) +
+    geom_hline(yintercept = 0, linetype = "dashed", colour = "grey60") +
+    labs(title = paste("MA plot:", plot_name),
+         x = "Mean abundance (A)", y = "log2 Fold Change (M)") +
+    theme_minimal()
+}
+
+group_p_histogram_static <- function(df, plot_name) {
+  pvals <- 10^(-df$negLog10AdjP_BH)
+  pvals <- pvals[is.finite(pvals) & pvals >= 0 & pvals <= 1]
+  
+  if (length(pvals) == 0) {
+    return(ggplot() + annotate("text", x=.5, y=.5, label="No p-values available",
+                               size=4, colour="grey50") + theme_void())
+  }
+  
+  ggplot(data.frame(pval = pvals), aes(x = pval)) +
+    geom_histogram(bins = 50, fill = "grey40", colour = "white") +
+    geom_vline(xintercept = 0.05, linetype = "dashed", colour = "red") +
+    scale_y_log10() +
+    labs(title = paste("P-value distribution:", plot_name),
+         x = "Adjusted p-value", y = "Count (log10)") +
+    theme_minimal()
+}
+
+group_rank_FC_static <- function(df, plot_name) {
+  rank_df <- df %>%
+    filter(!is.na(log2FC)) %>%
+    arrange(log2FC) %>%
+    mutate(rank = row_number())
+  
+  ggplot(rank_df, aes(x = rank, y = log2FC, colour = Significance)) +
+    geom_point(size = 1.5, alpha = 0.7) +
+    scale_colour_manual(values = c(
+      "Significant"     = "red",
+      "Not significant" = "grey40",
+      "Missing"         = "grey80"
+    )) +
+    geom_hline(yintercept = 0, linetype = "dashed", colour = "grey60") +
+    labs(title = paste("Ranked fold change:", plot_name),
+         x = "Rank", y = "log2 Fold Change") +
+    theme_minimal()
+}
 #------Grids and precomputation for Markdown report---------
 #The functions here are specifically for the Markdown report, where all plots in the grid tabs need to be precomputed. Opposite of Shiny reactive.
 generate_motif_grid <- function(lst, lengths = 7:20) {
@@ -2444,11 +2618,13 @@ run_go_enrichment <- function(df) {
     unlist() %>%
     unique()
   
-  shiny::validate(shiny::need(!is.null(uni_ids) && nrow(as.data.frame(uni_ids)) > 0, "No significant IDs"))
+  check <- safe_validate(!is.null(uni_ids) && nrow(as.data.frame(uni_ids)) > 0, "No significant IDs")
+  if (!is.null(check)) return(check)
   
   gene_map <- clusterProfiler::bitr(uni_ids, fromType = "UNIPROT", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
   
-  shiny::validate(shiny::need(nrow(gene_map) > 0, "No valid UniProt→Entrez mapping"))
+  check <- safe_validate(nrow(gene_map) > 0, "No valid UniProt→Entrez mapping")
+  if (!is.null(check)) return(check)
   
   ego <- clusterProfiler::enrichGO(
     gene          = gene_map$ENTREZID,
@@ -2460,9 +2636,11 @@ run_go_enrichment <- function(df) {
     readable      = TRUE
   )
   
-  shiny::validate(shiny::need(!is.null(ego) && nrow(as.data.frame(ego)) > 0, "No significant GO terms"))
+  check <- safe_validate(!is.null(ego) && nrow(as.data.frame(ego)) > 0, "No significant GO terms")
+  if (!is.null(check)) return(check)
   
   barplot(ego, showCategory = 10)
+  
 }
 
 run_string <- function(df) {
@@ -2478,7 +2656,7 @@ run_string <- function(df) {
     unique()
   
   #Check for empty uni_ids
-  shiny::validate(shiny::need(!is.null(uni_ids) && nrow(as.data.frame(uni_ids)) > 0, "No significant IDs"))
+  check <- safe_validate(!is.null(uni_ids) && nrow(as.data.frame(uni_ids)) > 0, "No significant IDs")
   
   url <- paste0(
     "https://string-db.org/api/json/network?",
@@ -2489,7 +2667,8 @@ run_string <- function(df) {
   res <- GET(url)
   
   #Check HTTP response
-  shiny::validate(shiny::need(http_status(res)$category == "Success", paste0("STRING request failed (HTTP ", res$status_code, ")")))
+  check <- safe_validate(http_status(res)$category == "Success", paste0("STRING request failed (HTTP ", res$status_code, ")"))
+  if (!is.null(check)) return(check)
   
   # Try to parse JSON safely
   data <- tryCatch(
@@ -2497,16 +2676,22 @@ run_string <- function(df) {
       fromJSON(content(res, "text", encoding = "UTF-8"))
     },
     error = function(e) {
-      shiny::validate(shiny::need(FALSE, paste0("JSON parse error:\n", e$message)))
+      safe_validate(FALSE, paste0("JSON parse error:\n", e$message))
       NULL
     }
   )
   
   # Check that parsing returned something
-  shiny::validate(shiny::need(!is.null(data) && length(data) > 0,paste0("No STRING-DB result (HTTP ", res$status_code, ")")))
+  check <- safe_validate(!is.null(data) && length(data) > 0,paste0("No STRING-DB result (HTTP ", res$status_code, ")"))
+  if (!is.null(check)) return(check)
+  
+  required_cols <- c("preferredName_A", "preferredName_B", "score")
+  if (!all(required_cols %in% colnames(data))) {
+    return(list(.skip = TRUE, message = "STRING-DB result missing required columns"))
+  }
   
   g <- graph_from_data_frame(
-    data[, c("preferredName_A", "preferredName_B", "score")],
+    data[, required_cols],
     directed = FALSE
   )
   
