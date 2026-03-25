@@ -17,6 +17,7 @@ output:
 params:
   data_info:           NULL
   data_list:           NULL
+  data_mod_map:        NULL
   mod_map_list:        NULL
   processed_data_list: NULL
   filters:             NULL
@@ -247,6 +248,7 @@ binder_unique   <- params$binder_unique
 group_list      <- params$group_list
 group_comp_stats <- params$group_comp_data
 min_presence_fraction <- params$filters$min_presence_fraction
+data_mod_map <- params$data_mod_map
 
 motif_plot_length <- 7:13 # should be the same as in Shiny.R
 ```
@@ -764,25 +766,27 @@ if (is.null(group_comp_stats) || length(group_comp_stats) == 0) {
 ## PTM distribution
 
 ```{r}
-if ("PTM" %in% colnames(processed_list)) {
-  lst <- processed_data_list
-  lst <- lapply(lst, function(df) {
-      
-      df %>%
-        mutate(
-          PTM = ifelse(is.na(PTM) | PTM == "", "Unmodified", PTM)
-        ) %>%
-        tidyr::separate_rows(PTM, sep = "\\s*[,;]\\s*") %>%
-        mutate(
-          PTM = gsub("^\\d+", "", PTM) #This is specifically for fragpipe to remove the position information on PTMs
-        )
-    })
-    
-    lst <- lst[!vapply(lst, is.null, logical(1))]
-    
-    plot_stacked_bar(lst, column = "PTM", fill_label = "PTM", percentage = FALSE, rev_levels = FALSE)
+has_ptm <- sapply(processed_list, function(df) "PTM" %in% colnames(df))
+
+if (!any(has_ptm)) {
+  cat("No PTM column found in any dataset.")
 } else {
-  cat("no PTM column")
+  
+  lst <- processed_list[has_ptm]  # only keep samples that have PTM
+  
+  lst <- lapply(lst, function(df) {
+    df %>%
+      mutate(
+        PTM = ifelse(is.na(PTM) | PTM == "", "Unmodified", PTM)
+      ) %>%
+      tidyr::separate_rows(PTM, sep = "\\s*[,;]\\s*") %>%
+      mutate(
+        PTM = gsub("^\\d+", "", PTM)
+      )
+  })
+  
+  plot_stacked_bar(lst, column = "PTM", fill_label = "PTM", 
+                   percentage = FALSE, rev_levels = FALSE)
 }
 ```
 
@@ -803,6 +807,28 @@ if (is.null(mod_map_list) || length(mod_map_list) == 0 || all(is.na(mod_map_list
     }
     
 
+```
+
+```{r ptm_motif, results='asis'}
+ptm_mod_map <- data_mod_map
+
+if (is.null(ptm_mod_map) || length(ptm_mod_map) == 0 || all(is.na(ptm_mod_map))) {
+  cat("_No PTM pseudo sequence available._\n")
+} else {
+  AA_symbols  <- LETTERS
+  PTM_symbols <- c(as.character(1:9), letters)
+  namespace   <- c(AA_symbols, PTM_symbols)
+  
+  print(
+    plot_motif_grid(
+      lst       = processed_list,
+      lengths   = motif_plot_length,
+      ncol      = length(processed_list),
+      ptm_only  = TRUE,
+      namespace = namespace
+    )
+  )
+}
 ```
 
 # Binding {.tabset}
@@ -861,22 +887,21 @@ if (!is.null(binder_unique)) {
 ```
 
 # Lookup
-
+For unique peptides per sample, set n_datasets = 1
 ```{r}
-keep_cols <- c("Sample", "PEPTIDE", "STRIPPED", "LENGTH" ,"MASS" ,"CHARGE", "MZ" ,"K0", "RT", "PROTEIN")
+keep_cols <- c("Sample", "PEPTIDE", "STRIPPED", "MAX_QUANTITY","LENGTH" ,"MASS" ,"CHARGE", "MZ" ,"K0", "RT", "PROTEIN")
     
 combined <- imap_dfr(data_list, ~ dplyr::select(.x, intersect(keep_cols, colnames(.x))) %>% mutate(Sample = .y))
     
-peptide_counts <- combined %>% count(STRIPPED, name = "n_datasets")
+peptide_counts <- combined %>% distinct(STRIPPED, Sample) %>% count(STRIPPED, name = "n_datasets")
     
-combined <- combined %>% inner_join( peptide_counts %>% filter(n_datasets == 1), by = "STRIPPED" ) %>%
-      dplyr::select(-n_datasets) %>%
-      arrange(Sample, STRIPPED)
-
 numeric_cols <- c("LENGTH", "MASS", "CHARGE", "MZ", "K0", "RT")
-
-combined <- combined %>%
+    
+combined <- combined %>% inner_join(peptide_counts, by = "STRIPPED") %>%
+  arrange(Sample, STRIPPED) %>%
   mutate(across(any_of(numeric_cols), as.numeric))
+
+combined <- combined[,c(1,2,3,4,5,6,7,8,9,11,12,10)]
 
 DT::datatable(
   combined,

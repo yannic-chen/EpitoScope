@@ -492,33 +492,11 @@ ui <- bs4DashPage(
       bs4TabItem(
         tabName = "peptide_lookup",  # must match menuItem
         fluidRow(
-          h6("WIP: we can actually combine Sequence Search and unique peptide list together using n_database = 1 as filtering criteria and allow empty imput to display everything.", style = "color: red;"),
-          h6("WIP: While this minimal approach makes it look cleaner, it also requires more understanding in the form of more text.", style = "color: red;"),
-          h6("WIP: seems MaxQuantity is not there. Add it.", style = "color: red;"),
-          h6("WIP: The search bar is only useful for exact matches. Because we can otherwise use the DTOutput, which can do column-specific and global search."),
-          
-
           ### ---- Peptide Lookup ----
+          h6("If you want to find peptides only found in one sample, set n_datasets = 1"),
           bs4Card(title = tagList("Peptide Lookup", bs4Dash::tooltip(icon("info-circle"),"The stripped peptides rather than peptidoforms are used as identifier.", placement = "right")
                                   ), width = 12, maximizable = TRUE,
-                  tabsetPanel(  
-                    tabPanel(tagList("Sequence Search", bs4Dash::tooltip(icon("info-circle"),"Only shows the first 100 results.", placement = "right")), 
-                             textInput(
-                               "peptide_query",
-                               "Search peptide sequence",
-                               placeholder = "e.g. SIINFEKL"
-                               ),
-                             checkboxInput("exact", "Exact match", FALSE),
-                             actionButton("search_peptide", "Search"),
-                             br(),
-                             br(),
-                             DT::DTOutput("peptide_table")
-                             ),
-                    
-                    tabPanel(tagList("Unique peptides", bs4Dash::tooltip(icon("info-circle"),"this is filtered based on n_database = 1.", placement = "right")),
-                             DT::DTOutput("unique_peptide_table")
-                             )
-                    )
+                  DT::DTOutput("peptide_table")
                   )
           )
         )

@@ -365,36 +365,51 @@ plot_per_sample_grid <- function(lst, plot_fn, ncol = 2, ...) {
 }
 
 #for report.Rmd
-plot_motif_grid <- function(lst, lengths, ncol = 3) {
-  # One row of plots per length
+plot_motif_grid <- function(lst, lengths, ncol = 3, 
+                            ptm_only = FALSE, 
+                            namespace = NULL) {
   length_panels <- lapply(lengths, function(L) {
     
     sample_plots <- lapply(names(lst), function(nm) {
-      df       <- lst[[nm]]
-      peptides <- unique(df$STRIPPED[df$LENGTH == L])
+      df <- lst[[nm]]
+      
+      # PTM filter — only modified peptides
+      if (ptm_only) {
+        df <- df[!is.na(df$PTM) & df$PTM != "", ]
+        peptide_col <- "PTM_Pseudo"
+      } else {
+        peptide_col <- "STRIPPED"
+      }
+      
+      df_L     <- df[df$LENGTH == L, ]
+      peptides <- unique(df_L[[peptide_col]])
+      peptides <- peptides[!is.na(peptides) & nchar(peptides) == L]
       
       if (length(peptides) < 5) {
         return(
           ggplot() +
             annotate("text", x = .5, y = .5,
-                     label = paste("Length", L, "— not enough peptides"),
+                     label = "Not enough peptides",
                      size = 3, color = "grey50") +
             theme_void() +
             ggtitle(paste(nm, "• Length", L))
         )
       }
       
-      plot_seqlogo(peptides, title = paste(nm, "• Length", L))
+      par(mar = c(1.5, 1.5, 2, 0.5))
+      plot_seqlogo(
+        peptides,
+        title     = paste(nm, "• Length", L),
+        namespace = namespace
+      )
     })
     
-    # Combine legend + sample plots for this length into one row
     patchwork::wrap_plots(
       c(sample_plots),
-      ncol = ncol + 1   # +1 for the legend
+      ncol = length(lst) + 1
     )
   })
   
-  # Stack all length rows vertically
   patchwork::wrap_plots(length_panels, ncol = 1)
 }
 
@@ -463,7 +478,7 @@ find_transform_column <- function(df, list, name) {
   ))
 }
 
-transform_columns <- function(df, schema, software, targets = c("PEPTIDE", "STRIPPED", "LENGTH", "MASS", "MZ", "SCORE", "CHARGE", "RT", "PPM", "PROTEIN")) {
+transform_columns <- function(df, schema, software, targets = c("PEPTIDE", "STRIPPED", "LENGTH", "MASS", "MZ", "SCORE", "CHARGE", "RT", "PPM", "PROTEIN", "PTM")) {
   mapping_log <- data.frame(
     final_name = character(),
     original_name = character(),

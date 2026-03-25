@@ -295,6 +295,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
           data_info = data_info_r(),
           data_list = data_list_r(),
           mod_map_list = data_mod_map(),
+          data_mod_map = data_mod_map(),
           processed_data_list = processed_data_list(),
           filters             = list(
             samples        = input$selected_samples,
@@ -1152,34 +1153,26 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     
     mod_map_list <- data_mod_map()
     
-    # Check if mod_map is NULL or empty
     if (is.null(mod_map_list) || length(mod_map_list) == 0 || all(is.na(mod_map_list))) {
-      # Return a simple message in the UI
       return(tags$div("No PTM_pseudo sequence"))
     }
     
-    lengths <- 7:11
-    
-    tabsetPanel(
-      id = "motif_length_tabs",
-      !!!lapply(lengths, function(L) {
-        
-        tabPanel(
-          paste("Length", L),
-          
-          layout_column_wrap(
-            width = "250px",  # each plot gets ~250px width
-            !!!lapply(names(lst), function(sample_name) {
-              plotOutput(
-                paste0("PTM_motif_", sample_name, "_", L),
-                height = "180px"
-              )
-            })
-          )
+    length_tabs <- lapply(motif_plot_length, function(L) {
+      
+      sample_plots <- lapply(names(lst), function(sample_name) {
+        plotOutput(
+          paste0("PTM_motif_", sample_name, "_", L),
+          height = "180px"
         )
-        
       })
-    )
+      
+      tabPanel(
+        paste("Length", L),
+        do.call(layout_column_wrap, c(list(width = "250px"), sample_plots))
+      )
+    })
+    
+    do.call(tabsetPanel, c(list(id = "motif_length_tabs"), length_tabs))
   })
   
   observe({
@@ -1191,9 +1184,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
     PTM_symbols <- c(as.character(1:9), letters)
     namespace <- c(AA_symbols, PTM_symbols)
     
-    lengths <- 7:11
-    
-    for (L in lengths) {
+    for (L in motif_plot_length) {
       for (sample_name in names(lst)) {
         
         local({
@@ -1445,71 +1436,27 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   )
   
 #-------------------Peptide Search-------------
-  search_results <- eventReactive(input$search_peptide, {
-    req(input$peptide_query)
-    query <- trimws(input$peptide_query)
-    req(nchar(query) > 0)
-    
-    lst <- data_list_r()
-    req(lst)
-    
-    keep_cols <- c("Sample", "PEPTIDE", "STRIPPED", "LENGTH" ,"MASS" ,"CHARGE", "MZ" ,"K0", "RT", "PROTEIN")
-    
-    filtered_list <- lapply(lst, function(df) {
-      df_sub <- df[, intersect(keep_cols, colnames(df)), drop = FALSE]
-      if (input$exact) df_sub[df_sub$STRIPPED == query, , drop = FALSE] else df_sub[grepl(query, df_sub$STRIPPED, ignore.case = TRUE), , drop = FALSE]
-    })
-    
-    # combine all samples (optional – remove bind_rows if per-sample)
-    df_combined <- dplyr::bind_rows(filtered_list, .id = "Sample")
-    head(df_combined, 100)
-  })
-  
   output$peptide_table <- renderDT({
-    df <- search_results()
-    shiny::validate(shiny::need(nrow(df) > 0, "No matching peptides found"))
-    
-    DT::datatable(
-      df,
-      filter = "top",
-      options = list(
-        pageLength = 25,
-        scrollY = "60vh", #This should be good enough for the standard monitors. Otherwise need to make it responsive to browser window.
-        scrollX = TRUE,
-        dom = "Bfrtip"
-      )
-    )
-  })
-  
-  unique_peptides_table <- reactive({
     lst <- data_list_r()
-    req(lst)
     
-    shiny::validate(need(length(lst) >= 2, "Redundant with only 1 dataset"))
+    keep_cols <- c("Sample", "PEPTIDE", "STRIPPED", "MAX_QUANTITY","LENGTH" ,"MASS" ,"CHARGE", "MZ" ,"K0", "RT", "PROTEIN")
     
-    keep_cols <- c("Sample", "PEPTIDE", "STRIPPED", "LENGTH" ,"MASS" ,"CHARGE", "MZ" ,"K0", "RT", "PROTEIN")
+    combined <- imap_dfr(lst, ~ dplyr::select(.x, intersect(keep_cols, colnames(.x))) %>% mutate(Sample = .y))
     
-    combined <- imap_dfr(lst, ~ dplyr::select(.x, intersect(keep_cols, colnames(.x))) %>%
-                           mutate(Sample = .y))
+    peptide_counts <- combined %>% distinct(STRIPPED, Sample) %>% count(STRIPPED, name = "n_datasets")
     
-    peptide_counts <- combined %>%
-      count(STRIPPED, name = "n_datasets")
+    numeric_cols <- c("LENGTH", "MASS", "CHARGE", "MZ", "K0", "RT")
     
-    combined %>%
-      inner_join(
-        peptide_counts %>% filter(n_datasets == 1),
-        by = "STRIPPED"
-      ) %>%
-      dplyr::select(-n_datasets) %>%
-      arrange(Sample, STRIPPED)
-  })
-  
-  output$unique_peptide_table <- renderDT({
-    df <- unique_peptides_table()
-    shiny::validate(shiny::need(nrow(df) > 0, "No matching peptides found"))
+    combined <- combined %>% inner_join(peptide_counts, by = "STRIPPED") %>%
+      arrange(Sample, STRIPPED) %>%
+      mutate(across(any_of(numeric_cols), as.numeric))
+    
+    combined <- combined[,c(1,2,3,4,5,6,7,8,9,11,12,10)]
+    
+    shiny::validate(shiny::need(nrow(combined) > 0, "No Peptide"))
     
     DT::datatable(
-      df,
+      combined,
       filter = "top",
       options = list(
         pageLength = 25,
@@ -1526,6 +1473,6 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
 shinyApp(
   ui = ui,
   server = function(input, output, session) {
-    server(input, output, session, preloaded_data = preloaded_data, generate_pseudo_sequence = FALSE)
+    server(input, output, session, preloaded_data = preloaded_data, generate_pseudo_sequence = TRUE)
   }
 )
