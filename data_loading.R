@@ -49,3 +49,14 @@ preloaded_data <- lapply(preloaded_data, function(df) {
   maxlfq_cols <- grep("MaxLFQ", colnames(df))
   df[rowSums(df[, maxlfq_cols, drop = FALSE] != 0) > 0, ]
 })
+
+custom_schema <- list(
+  Software1 = list(PEPTIDE = c("output_sequence"), 
+                   QUANTITY = c("relative_intensity")), 
+  Software2 = list(STRIPPED = c("string"), 
+                   RT = c("retention")))
+
+custom_signature <- list(
+  Software1 = c("output_sequence"), 
+  Software2 = c("retention"))
+

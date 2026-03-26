@@ -1,6 +1,36 @@
 # EpitoScope
 Shiny App for visualization of immunopeptidomics data
 
+## WIP
+Task List
+- [X] Create Error Handler
+- [X] Implement netMHCpan calling using WSL on windows
+- [X] Allow Custom Schema
+- [X] Combine the unique and lookup table, to one unified table
+- [ ] Accept an anotation table to better differentiate measurements into biological/technical replicate and condition. This allows fine tuned handling of conditions within the same input data.
+- [X] Overhaul the HTML report and update the report generation function.
+- [ ] Make Sequence motif (stretches too much for only 1 sample) and measurement specific heatmap plots format better.
+- [ ] clearly separate, and if needed add option, between peptide and peptidoform plots.
+- [ ] Solve the automatic ordering of categorical data by ggplot.
+- [ ] Prevent filtering criteria reset when selecting/deselecting samples. Likewise the groups for the grouped analysis.
+- [ ] Change all functions to pkg::fun() style (i.e. dplyr::mutate()). This avoids future function masking.
+- [ ] Decouple data calculations and plotting function, so that when changing window size only the plotting function is rerun and not the whole calculation
+- [ ] Have a better way to separate PROTEIN names for different input formats.
+- [ ] How to do NA handling for PCA plot. Sometimes user-input data is biologically too different for imputation.
+- [ ] Unify PTM nomenclature between output. Translate mass difference to PTM.
+- [ ] Limit HLA allele for binding prediction, so the plots and stats only incorporate relevant HLA and not everything.
+- [ ] Add more plots to binding prediction to better mimic MhcVizPip
+- [ ] Decide on how to download the binding Data.
+- [ ] GO-term more transparency on protein names used
+- [ ] Solve the usage of Peptide and Peptidoform usage in group analysis
+- [ ] STRING allow background 
+- [ ] Convert to Package
+
+### Maybe?
+- [ ] Flexible Length Range Percentage plot for MHC2 and perhaps other species
+- [ ] Call GibbsCluster or HLA-HD from WSL
+- [ ] 
+
 ## Features
 - Interactive visualization of immunopeptidomics datasets.
 - Support for:
@@ -100,3 +130,24 @@ preloaded_data
 5. In Shiny.R the "Run" button will be replaced by the "Run App" button. Click it and the app will start in a separate window.
 
 ![alt text](image.png)
+
+### Adding custom schema
+At the top of global.R, some preset schema are defined for common MS software output formats:
+
+![alt text](image-3.png)
+
+Futhermore, Just below the `column_schema` variable is the `signature` variable, which is used to automatically detect the input data format based on a unique column specific to that software output:
+
+![alt text](image-4.png)
+
+**The App generates a "generic" schema which is the collection of all schemes and is used if no signature can be assigned to the input data.**
+
+These two can be updated manually, but a custom format can also be assigned on-the-go as part of a variable. For the custom `column_schema` the minimum requirement is either "PEPTIDE" or "STRIPPED" column. Missing column will be filled with empty data if not deriveable. A custom `signature` is optional, but is helpful to identify the data format to assign the schema. Multiple custom schema can be included:
+
+![alt text](image-5.png)
+
+If for some reason, the signature or schema might clash with the default data, one can opt to replace the default schema with the custom schema by setting `replace_schema = TRUE`. Both the custom schema/signature and the replace schema are found at the end of the Shiny.R script:
+
+![alt text](image-7.png)
+
+(An interesting trick is that if one want to apply the generic schema on all input data, then one can create an empty `custom_signature` and use `replace_schema = TRUE`, so that there are no signatures that can be used to identify the input data.)

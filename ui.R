@@ -80,12 +80,6 @@ ui <- bs4DashPage(
       bs4TabItem(
         tabName = "raw_summary",  # must match menuItem
         fluidRow(
-          h6("WIP: Sequence motif plot stretches too much if only 1 sample.", style = "color: red;"),
-          h6("WIP: Since the master dataframe is based on peptidoform, some of the plots are peptidoform centric. Need to convert to peptide centric.", style = "color: red;"),
-          h6("WIP: Stop the automatic ordering of categorical data by ggplot. And also order stacks of stacked bar chart better.", style = "color: red;"),
-          h6("WIP: When selecting samples, the filtering criteria resets. Need to somehow keep it.", style = "color: red;"),
-          h6("WIP: For package management, switch to pkg::fun() style (i.e. dplyr::mutate()).", style = "color: red;"),
-          h6("WIP: Decouple the renderPlot() function for drawing the plot from the calculations, so that when changing window size only the renderPlot() function without the recalculation is reprocessed for speeding up.", style = "color: red;"),
           ### ---- Column Map ----
           bs4Card(title = tagList("Column Map", 
                                   span(bs4Dash::tooltip(icon("info-circle"), title = "This table maps the columns of your dataset to the expected schema.
@@ -107,7 +101,6 @@ ui <- bs4DashPage(
                              ),
                     tabPanel("Proteins",
                              h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"This depends heavily on the style of the header and how the software identifies it.", placement = "right")),
-                             h6("WIP: Only Protein ID or before the first '|' is used. Anything else might break it. Need to make the more universal.", style = "color: red;"),
                              plotOutput("summary_proteins_plot")
                              )
                     )
@@ -158,14 +151,12 @@ ui <- bs4DashPage(
           
           ### ---- Length Range Percentage ----
           bs4Card(title = "Length Range Percentage", width = 12, maximizable = TRUE,
-                  h6("WIP: Currently only 8-13 mer. But need to be flexible for MHC2.", style = "color: red;"),
                   plotOutput("length_range_percentage")
                   ),
           
           ### ---- Motif Plot ---
           bs4Card(title = tagList("Motif Plot", bs4Dash::tooltip(icon("info-circle"),"Minimum of 5 sequences are required for Motif generation.", placement = "right")
                                   ), width = 12, maximizable = TRUE, 
-                  h6("WIP: GibbsCluster is a bash only script. Would need to covnert it to R script or call using R.", style = "color: red;"),
                   uiOutput("motif_tabs")
                   ),
           
@@ -240,7 +231,6 @@ ui <- bs4DashPage(
           ### ---- Pairwise shared peptide matrix ----
           bs4Card(title = tagList("Pairwise shared peptide matrix", bs4Dash::tooltip(icon("info-circle"),"Pairwise comparison of number of shared peptides. For Percent visualization union is used (i.e. jaccard style).", placement = "right")
                                   ), width = 12, maximizable = TRUE,
-                  h6("WIP: Need to decide if the colour scale should be between min-max values or 0% -> 100%? for both heatmaps.", style = "color: red;"),
                   selectInput("shared_mode", "Visualization:", choices = c("Count" = "count", "Percent" = "percent")),
                   plotOutput("Pairwise_shared_peptide_matrix")
                   ),
@@ -248,7 +238,6 @@ ui <- bs4DashPage(
           ### ---- Pairwise shared peptide quantity comparison matrix ----
           bs4Card(title = tagList("Pairwise shared peptide quantity comparison matrix", bs4Dash::tooltip(icon("info-circle"),"Pairwise comparison of peptide max quantity of shared peptides, using pearson correlation. Clustering distance is 'euclidean' and method is 'complete'.", placement = "right")
           ), width = 12, maximizable = TRUE,
-          h6("WIP: Need to decide if the colour scale should be between min-max values or 0% -> 100%? for both heatmaps.", style = "color: red;"),
           selectInput("cluster_mode", "Clustering:",
                       choices = c(
                         "None" = "none",
@@ -263,7 +252,6 @@ ui <- bs4DashPage(
           
           ### ---- PCA plot ----
           bs4Card(title = "PCA plot", width = 12, maximizable = TRUE,
-                  h6("WIP: need to check what to do about NA. Currently changed to 0. MAX_QUANTITY is used here, which circumvents some NAs.", style = "color: red;"),
                   plotOutput("pca")
           ),
           
@@ -280,7 +268,6 @@ ui <- bs4DashPage(
                     ),
                     tabPanel("Proteins",
                              h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"This depends heavily on the style of the header and how the software identifies it.", placement = "right")),
-                             h6("WIP: Only Protein ID or before the first '|' is used. Anything else might break it. Need to make the more universal.", style = "color: red;"),
                              plotOutput("summary_proteins_plot2")
                     )
                   )
@@ -395,8 +382,6 @@ ui <- bs4DashPage(
       bs4TabItem(
         tabName = "ptm",  # must match menuItem
         fluidRow(
-          h6("WIP: Different software uses different PTM nomenclature. Need to unify them, to avoid flagging as distinct PTMs.", style = "color: red;"),
-          
           ### ---- PTM distribution ----
           bs4Card(title = "PTM distribution", width = 12, maximizable = TRUE,
                   plotOutput("PTM_plot")
@@ -418,13 +403,9 @@ ui <- bs4DashPage(
       bs4TabItem(
         tabName = "binding_pred",  # must match menuItem
         fluidRow(
-          h6("WIP: Somehow some peptides are missing from netMHCpan results", style = "color: red;"),
-          h6("Binding predictions are obtained by pre-computing all peptides (8-11mer) from the uniprot proteome using netMHCpan."),
           h6("Ensure correct format of the netMHCpan data. THis is now important with the implementation of netMHCpan call."),
           h6("For the sake of filesize, Rank_EL has been limited to 2 decimal places and number have a ceiling of 9.99."),
-          h6("Currently each allele adds around 188MB data (47MB per peptide length)"),
           h6("When 9.99 -> '', one allele adds around 48MB data (12MB per length)"),
-          h6("WIP: Add option to toggle between HLA1 and HLA2 thresholds.", style = "color: red;"),
           
           ### ---- Call netMHCpan from windows subsystem for linux ----
           bs4Card(title = "run netMHCpan", width = 12, maximizable = TRUE,
@@ -457,7 +438,6 @@ ui <- bs4DashPage(
           ### ---- Summary barchart ----
           bs4Card(title = tagList("Summary barchart", bs4Dash::tooltip(icon("info-circle"),"The binders is the best category for all alleles.", placement = "right")
                                   ), width = 12, maximizable = TRUE,
-                  h6("WIP: Need to be able to pick which HLA allele.", style = "color: red;"),
                   tabsetPanel(
                     # --- absolute ---
                     tabPanel(

@@ -429,7 +429,58 @@ build_generic_schema <- function(schema) {
   
   return(generic)
 }
-column_schema$Generic <- build_generic_schema(column_schema)
+
+register_custom_schema <- function(custom_schema    = NULL, custom_signature = NULL,replace_schema   = FALSE) {
+  # Capture all_keys before any nulling — needed for filling missing keys
+  all_keys <- names(column_schema[[1]])
+  
+  if (!is.null(custom_schema)) {
+    
+    if (replace_schema) {
+      column_schema <<- list()  # empty list rather than NULL — safer for [[<- assignment
+      message("Replaced default schema.")
+    }
+    
+    for (nm in names(custom_schema)) {
+      
+      has_peptide  <- !is.null(custom_schema[[nm]]$PEPTIDE)  && length(custom_schema[[nm]]$PEPTIDE)  > 0
+      has_stripped <- !is.null(custom_schema[[nm]]$STRIPPED) && length(custom_schema[[nm]]$STRIPPED) > 0
+      
+      if (!has_peptide && !has_stripped) {
+        stop(paste0(
+          "Custom schema '", nm, "' must specify at least one of PEPTIDE or STRIPPED."
+        ))
+      }
+      
+      # Fill missing keys silently with empty vectors
+      complete_entry <- setNames(
+        lapply(all_keys, function(k) c()),  # all keys start empty
+        all_keys
+      )
+      
+      # Overwrite with user-provided values
+      for (k in names(custom_schema[[nm]])) {
+        complete_entry[[k]] <- custom_schema[[nm]][[k]]
+      }
+      
+      column_schema[[nm]] <<- complete_entry
+      message(paste0("Added custom schema: '", nm, "'"))
+    }
+  }
+  
+  if (!is.null(custom_signature)) {
+    
+    if (replace_schema) {
+      signature <<- list()  # same — empty list rather than NULL
+      message("Replaced default signature.")
+    }
+    
+    for (nm in names(custom_signature)) {
+      signature[[nm]] <<- custom_signature[[nm]]
+      message(paste0("Registered custom signature: '", nm, "'"))
+    }
+  }
+}
 
 detect_software <- function(df, signature, fallback = "Generic") {
   
@@ -566,6 +617,8 @@ aggregate_fragpipe_psm <- function(df) {
     ) %>%
     ungroup()
 }
+
+column_schema$Generic <- build_generic_schema(column_schema)
 
 normalize_df <- function(df) {
   #Here we transform the data to only contain the minimum columns required for analysis and rename column names to work with code.

@@ -28,7 +28,7 @@ source("ui.R") #ui.R must be in the same folder. Otherwise change this path.
 options(shiny.maxRequestSize = 5*1024^3) #Increase upload limit (in bytes) if needed. 1024^3 = 1 GB
 options(width=10000) #This allows for text to not be text-wrapped.
 
-server <- function(input, output, session, preloaded_data = NULL, generate_pseudo_sequence = FALSE) {
+server <- function(input, output, session, preloaded_data = NULL, generate_pseudo_sequence = FALSE, custom_schema = NULL, custom_signature = NULL, replace_schema = FALSE) {
 #------------------State Check---------------------
   ## State container
   startup_done <- reactiveVal(FALSE)
@@ -108,6 +108,20 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   observe({
     if (is.null(data_list_r())) {
       start <- Sys.time() #measure time
+      
+      register_custom_schema(custom_schema, custom_signature, replace_schema)
+      
+      if (!is.null(custom_signature)) {
+        if (replace_schema) {
+          signature <<- list()
+          message(paste0("Replace default signature"))
+        } 
+        
+        for (nm in names(custom_signature)) {
+          signature[[nm]] <<- custom_signature[[nm]]
+          message(paste0("Registered custom signature: '", nm, "'"))
+        }
+      }
       
       raw_list_r(preloaded_data)
       processed <- lapply(preloaded_data, normalize_df)
@@ -1473,6 +1487,11 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
 shinyApp(
   ui = ui,
   server = function(input, output, session) {
-    server(input, output, session, preloaded_data = preloaded_data, generate_pseudo_sequence = TRUE)
+    server(input, output, session, 
+           preloaded_data = preloaded_data, 
+           generate_pseudo_sequence = FALSE, 
+           custom_schema = NULL, 
+           custom_signature = NULL, 
+           replace_schema = FALSE)
   }
 )
