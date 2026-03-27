@@ -18,18 +18,23 @@ Task List
 - [ ] Have a better way to separate PROTEIN names for different input formats.
 - [ ] How to do NA handling for PCA plot. Sometimes user-input data is biologically too different for imputation.
 - [ ] Unify PTM nomenclature between output. Translate mass difference to PTM.
+- [ ] Double check netmHCpan precomputed data, if it indeed analysed all possible peptides.
+- [ ] Make the precomputed data more efficient. Parquet for reading and merge the different length together, by using the first # letters for each max_length peptide as the #mer peptide.
 - [ ] Limit HLA allele for binding prediction, so the plots and stats only incorporate relevant HLA and not everything.
+- [ ] Add option of different binding prediction binder threshold (e.g. for HLA2)
 - [ ] Add more plots to binding prediction to better mimic MhcVizPip
 - [ ] Decide on how to download the binding Data.
 - [ ] GO-term more transparency on protein names used
 - [ ] Solve the usage of Peptide and Peptidoform usage in group analysis
-- [ ] STRING allow background 
+- [ ] STRING allow background
+- [ ] Document each function
 - [ ] Convert to Package
 
 ### Maybe?
 - [ ] Flexible Length Range Percentage plot for MHC2 and perhaps other species
 - [ ] Call GibbsCluster or HLA-HD from WSL
-- [ ] 
+- [ ] Calculate theoretical mass if m/z is not available, but mass and charge are
+- [ ] UI for data loading
 
 ## Features
 - Interactive visualization of immunopeptidomics datasets.
@@ -151,3 +156,17 @@ If for some reason, the signature or schema might clash with the default data, o
 ![alt text](image-7.png)
 
 (An interesting trick is that if one want to apply the generic schema on all input data, then one can create an empty `custom_signature` and use `replace_schema = TRUE`, so that there are no signatures that can be used to identify the input data.)
+
+### Loading from annotation table.
+
+It is possible to give a dataframe representing an annotation table from which data is automatically loaded instead of a list of named dataframes with the given data. In the former case, the annotation table needs to have specific formats and conditions. The two mandatory columns are: `name` and `source`.
+
+| Column | Description |
+| --- | --- |
+| name | (Mandatory) This will be the displayed name for a dataset, also called sample name. Multiple sources can be associated to the same name. In that case the data will be row bound together. |
+| source | (Mandatory) This is path to the file to be read. Currently only .tsv, .csv, .txt and .parquet files are supported.|
+| measurement | (Optional) This is used to access individual measurements in a given dataset. As such, the name here must be the same as the identifier used by the software. This becomes mandatory when multiple conditions and replicates are given for the same sample. |
+| raw | (Optional) This column is for documentation purpose only. In case where the measurement name is not the raw file name, these can be filled here, to know which raw data associates to which measurement. Otherwise, this can be used as "notes" to write some comments |
+| biological_replicate | (Optional) can be any string or number |
+| technical_replicate | (Optional) can be any string or number |
+| condition | (Optional) can be any string . Multiple condition columns can exist. In that case, the the column name keeps the "condition" prefix and add a suffix: e.g. "condition_1" |

@@ -482,6 +482,134 @@ register_custom_schema <- function(custom_schema    = NULL, custom_signature = N
   }
 }
 
+check_annotation_table <- function(df) {
+  #check the file headers
+  message("Annotation file given.")
+  colnames(df) <- tolower(colnames(df))
+  header <- colnames(df)
+  
+  # ── Required columns ──────────────────────────────────────────────────────
+  if(!("name" %in% header && "source" %in% header)) {
+    stop("Missing either Name or Source in Annotation Table")
+  }
+  
+  # The same source file cannot apply to multiple names, but multiple source file can apply to the same name (e.g. fragpipe psm.tsv)
+  distinctmap <- all(tapply(df$name, df$source, function(x) length(unique(x)) == 1))
+
+  if(!all(distinctmap)) {
+    stop("Some 'source' files map to multiple 'name' values — each source must only map to one name.")
+  }
+    
+  if(ncol(df) == 2) {
+    # if ncol is 2, we know it doesnt contain any optional info
+    message("No condition, replicate or measurement info given. Proceed as default")
+    return(df)
+  }
+
+  #now we need to check. It is possible to allow conditions based only on the sample name. However, in that case, one can just use the default grouping mechanis.
+  #Only when one has multiple conditions associated to the same sample name does it become important to have the measurement.
+  
+  has_measurement <- "measurement" %in% header
+  condition_cols  <- grep("^condition", header, value = TRUE)
+  replicate_cols  <- intersect(c("biological_replicate", "technical_replicate"), header)
+  
+  
+  # ── Type coercion ─────────────────────────────────────────────────────────
+  if (length(condition_cols) > 0) {
+    df[condition_cols] <- lapply(df[condition_cols], as.character)
+  }
+  if (length(replicate_cols) > 0) {
+    df[replicate_cols] <- lapply(df[replicate_cols], as.character)
+  }
+  
+  # ── Measurement column ────────────────────────────────────────────────────
+  
+  if(has_measurement) {
+    #measurement must be distinct. 
+    if(any(duplicated(df$measurement))){
+      #if we find duplicates, then we can try to make them unique, by combining them with names.
+      #This is under the assumption that for analysis of different samples, one can have the same measurement name. In that case, the sample name will make them distinct.
+      warning("There are duplicates in the measurement names. Attempting to make unique by prepending sample name.")
+      df$measurement <- paste(df$name, df$measurement, sep = "_")
+      if(any(duplicated(df$measurement))){
+        stop("Duplicate measurement names remain after prepending sample name.")
+        }
+    }
+    
+  } else {
+    message("no measurement column found.")
+
+    df %>%
+      select(all_of(c("name", condition_cols, replicate_cols))) %>%
+      group_by(name) %>%
+      summarise(n = n(), .groups = "drop") %>%
+      { 
+        if (any(.$n > 1)) {
+          stop("Multiple condition + replicate rows identified for the same sample name. 
+               Without 'measurement' column, each name can only be assignet to one condition + replicate combination.
+               Add a 'measurement' column to distinguish individual sources.")
+        }
+      }
+  }
+  
+  # ── Attach metadata as attributes for downstream use ──────────────────────
+  attr(df, "replicate_cols") <- replicate_cols
+  attr(df, "condition_cols") <- condition_cols
+  attr(df, "has_measurement") <- has_measurement
+  attr(df, "has_raw")         <- "raw"         %in% header
+  
+  df
+  
+}
+
+load_from_annotation <- function(annotation_df) {
+  
+  annotation_df <- check_annotation_table(annotation_df)
+  
+  split_df <- split(annotation_df, annotation_df$name)
+  
+  data_list <- lapply(names(split_df), function(nm) {
+    
+    sub_df <- split_df[[nm]]
+    
+    sub_df <- unique(sub_df[, c("name", "source")])
+    
+    dfs <- lapply(sub_df$source, function(path) {
+      
+      # Normalise path
+      path <- trimws(path)
+      path <- gsub("\\\\", "/", path)
+      path <- gsub("/+", "/", path)
+      path <- normalizePath(path, winslash = "/", mustWork = FALSE)
+      
+      if (!file.exists(path)) {
+        stop(paste0("File not found for '", nm, "': ", path))
+      }
+      
+      ext <- tolower(tools::file_ext(path))
+      
+      message(paste0("Loading '", nm, "' from: ", path, " (", ext, ")"))
+      
+      switch(ext,
+             csv     = read.csv(path,  stringsAsFactors = FALSE),
+             tsv     = read.delim(path, stringsAsFactors = FALSE),
+             txt     = read.delim(path, stringsAsFactors = FALSE),
+             parquet = arrow::read_parquet(path),
+             stop(paste0("Unsupported file type '.", ext, "' for '", nm, "'."))
+      )
+    })
+    
+    # Combine all sources for this name
+    dfs <- dplyr::bind_rows(dfs)
+  })
+  
+  names(data_list) <- names(split_df)
+  
+  attr(data_list, "annotation") <- annotation_df
+  
+  data_list
+}
+
 detect_software <- function(df, signature, fallback = "Generic") {
   
   df_cols <- tolower(colnames(df))
