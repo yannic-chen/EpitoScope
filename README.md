@@ -159,14 +159,15 @@ If for some reason, the signature or schema might clash with the default data, o
 
 ### Loading from annotation table.
 
-It is possible to give a dataframe representing an annotation table from which data is automatically loaded instead of a list of named dataframes with the given data. In the former case, the annotation table needs to have specific formats and conditions. The two mandatory columns are: `name` and `source`.
+**Annotation table is given the same as preloaded_data. So you can just load your table and call it preloaded_data or change the variable at the bottom of the Shiny.R to `preloaded_data = test_annotation`.**
+
+It is possible to give a dataframe representing an annotation table from which data is automatically loaded instead of a list of named dataframes with the given data. In the former case, the annotation table needs to have specific formats and conditions. The two mandatory columns are: `name` and `source`. Columns other than the ones displayed below can be included and will be displayed in the app and report for documentation purpose only.
 
 | Column | Description |
 | --- | --- |
 | name | (Mandatory) This will be the displayed name for a dataset, also called sample name. Multiple sources can be associated to the same name. In that case the data will be row bound together. |
 | source | (Mandatory) This is path to the file to be read. Currently only .tsv, .csv, .txt and .parquet files are supported.|
 | measurement | (Optional) This is used to access individual measurements in a given dataset. As such, the name here must be the same as the identifier used by the software. This becomes mandatory when multiple conditions and replicates are given for the same sample. |
-| raw | (Optional) This column is for documentation purpose only. In case where the measurement name is not the raw file name, these can be filled here, to know which raw data associates to which measurement. Otherwise, this can be used as "notes" to write some comments |
 | biological_replicate | (Optional) can be any string or number |
 | technical_replicate | (Optional) can be any string or number |
 | condition | (Optional) can be any string . Multiple condition columns can exist. In that case, the the column name keeps the "condition" prefix and add a suffix: e.g. "condition_1" |

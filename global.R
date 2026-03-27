@@ -556,7 +556,6 @@ check_annotation_table <- function(df) {
   attr(df, "replicate_cols") <- replicate_cols
   attr(df, "condition_cols") <- condition_cols
   attr(df, "has_measurement") <- has_measurement
-  attr(df, "has_raw")         <- "raw"         %in% header
   
   df
   

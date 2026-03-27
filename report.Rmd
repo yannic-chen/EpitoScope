@@ -27,6 +27,7 @@ params:
   binder_unique:       NULL
   group_list:          NULL
   group_comp_data:     NULL
+  annotation_table:    NULL
 ---
 
 <style>
@@ -249,11 +250,36 @@ group_list      <- params$group_list
 group_comp_stats <- params$group_comp_data
 min_presence_fraction <- params$filters$min_presence_fraction
 data_mod_map <- params$data_mod_map
+annotation_table <- params$annotation_table
 
 motif_plot_length <- 7:13 # should be the same as in Shiny.R
 ```
 
-# Analysis Parameters
+# Settings and Documentation {.tabset}
+
+## Column Map
+
+```{r}
+DT::datatable(
+  Colum_mapping_table(data_info),
+  escape   = FALSE,   # <-- this is the key, allows the HTML spans to render
+  options  = list(pageLength = 20, scrollX = TRUE, autoWidth = TRUE),
+  rownames = FALSE
+)
+```
+
+## Annotation Table
+
+```{r}
+if (!is.null(annotation_table)) {
+  DT::datatable(annotation_table)
+} else {
+  cat("No annotation table was provided.")
+}
+```
+
+## Analysis Parameters
+
 ```{r filter_summary, results='asis'}
 f <- params$filters
 
@@ -282,17 +308,6 @@ knitr::kable(filter_df, row.names = FALSE)
 ```
 
 # RAW Summary {.tabset}
-
-## Column Map
-
-```{r}
-DT::datatable(
-  Colum_mapping_table(data_info),
-  escape   = FALSE,   # <-- this is the key, allows the HTML spans to render
-  options  = list(pageLength = 20, scrollX = TRUE, autoWidth = TRUE),
-  rownames = FALSE
-)
-```
 
 ## Unique Entries {.tabset}
 
@@ -437,12 +452,12 @@ quantity_cols <- data_info %>%
   unlist(recursive = TRUE, use.names = FALSE)
 
 if (length(quantity_cols) == 0) {
-  cat("_No QUANTITY columns found._")
+  cat("No QUANTITY columns found.")
 } else {
   pep_mat <- prepare_measurement_matrix(processed_list, quantity_cols)
   
   if (ncol(pep_mat) < 2 || nrow(pep_mat) == 0) {
-    cat("_Not enough data to compute correlation._")
+    cat("_Not enough data to compute correlation.")
   } else {
     
     cor_mat <- cor(pep_mat, method = "pearson", use = "complete.obs")

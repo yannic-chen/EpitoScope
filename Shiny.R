@@ -28,7 +28,7 @@ source("ui.R") #ui.R must be in the same folder. Otherwise change this path.
 options(shiny.maxRequestSize = 5*1024^3) #Increase upload limit (in bytes) if needed. 1024^3 = 1 GB
 options(width=10000) #This allows for text to not be text-wrapped.
 
-server <- function(input, output, session, preloaded_data = NULL, generate_pseudo_sequence = FALSE, custom_schema = NULL, custom_signature = NULL, replace_schema = FALSE) {
+server <- function(input, output, session, preloaded_data, generate_pseudo_sequence = FALSE, custom_schema = NULL, custom_signature = NULL, replace_schema = FALSE) {
 #------------------State Check---------------------
   ## State container
   startup_done <- reactiveVal(FALSE)
@@ -103,6 +103,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
   prediction_cache <- reactiveVal(data.frame(Peptide = character())) #This is to save netMHCpan predictions
   binder_summary_all <- reactive(NULL)
   peptide_wide_unique <- reactive(NULL)
+  annotation_provided <- reactiveVal(FALSE)
   
   #Preloaded Data
   observe({
@@ -123,8 +124,17 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
         }
       }
       
-      raw_list_r(preloaded_data)
-      processed <- lapply(preloaded_data, normalize_df)
+      if (is.data.frame(preloaded_data)) {
+        # Annotation table provided — load data from it
+        loaded       <- load_from_annotation(preloaded_data)
+        annotation_provided(TRUE)
+        raw_list_r(loaded)
+      } else {
+        # Named list provided — proceed as usual
+        raw_list_r(preloaded_data)
+      }
+      
+      processed <- lapply(raw_list_r(), normalize_df)
       print(Sys.time() - start)
       
       #Add the PTM_Pseudo sequence to each dataframe in the list. We do it outside of normalize_df() function because it unifies the mod_map across all dataframes in the list
@@ -326,7 +336,8 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
           binder_summary_all = binder_summary_all(),
           binder_unique = peptide_wide_unique(),
           group_list = safe_reactive(group_list),
-          group_comp_data = safe_reactive(group_comp_data)
+          group_comp_data = safe_reactive(group_comp_data),
+          annotation_table = if (is.data.frame(preloaded_data)) preloaded_data else NULL
         ),
         envir = new.env(parent = globalenv())
       )
@@ -362,6 +373,47 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
       escape = FALSE,
       rownames = FALSE
     )
+  })
+  
+  ## ---------Annotation Table----------------
+  output$annotation_card <- renderUI({
+    if (!annotation_provided()) return(NULL)
+    
+    ann <- preloaded_data
+    
+    bs4Card(
+      title       = tagList(icon("table"), "Sample Annotation"),
+      width       = 12,
+      maximizable = TRUE,
+      
+      if (length(attr(ann, "condition_cols")) > 0) {
+        tags$p(
+          tags$strong("Condition columns: "),
+          lapply(attr(ann, "condition_cols"), function(col) {
+            tags$span(class = "badge badge-info mr-1", col)
+          })
+        )
+      },
+      
+      DT::DTOutput("annotation_table")
+    )
+  })
+  
+  output$annotation_table <- DT::renderDT({
+    req(annotation_provided())
+    ann <- preloaded_data
+    req(ann)
+    
+    DT::datatable(
+      ann,
+      rownames = FALSE,
+      options  = list(pageLength = 10, scrollX = TRUE, dom = "frtip")
+    ) %>%
+      DT::formatStyle(
+        attr(ann, "condition_cols"),
+        backgroundColor = "#e8f4f8",
+        fontWeight      = "bold"
+      )
   })
   
   ## ----Number of peptides and peptidoforms----
@@ -1465,7 +1517,7 @@ server <- function(input, output, session, preloaded_data = NULL, generate_pseud
       arrange(Sample, STRIPPED) %>%
       mutate(across(any_of(numeric_cols), as.numeric))
     
-    combined <- combined[,c(1,2,3,4,5,6,7,8,9,11,12,10)]
+    combined <- combined[,c(1,2,3,4,5,6,7,8,9,11,12,10)] #rearramge column
     
     shiny::validate(shiny::need(nrow(combined) > 0, "No Peptide"))
     
@@ -1488,7 +1540,8 @@ shinyApp(
   ui = ui,
   server = function(input, output, session) {
     server(input, output, session, 
-           preloaded_data = preloaded_data, 
+           #preloaded_data = preloaded_data, 
+           preloaded_data = test_annotation, 
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 
