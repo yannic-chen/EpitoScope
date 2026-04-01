@@ -49,7 +49,7 @@ ui <- bs4DashPage(
       navbarTab(
         text = "ExtraMenu",
         dropdownHeader("Dropdown header"),
-        navbarTab(tabName = "Tab3", text = "Tab 3"),
+        navbarTab(tabName = "dev_console", text = "Console"),
         dropdownDivider(),
         navbarTab(
           text = "Sub menu",
@@ -89,7 +89,11 @@ ui <- bs4DashPage(
                   ),
           
           ### ---- Annotation Table (if given) ----
-          uiOutput("annotation_card"),
+          bs4Card(inputId = "annotation_card", title = tagList("Annotation Table", bs4Dash::tooltip(icon("info-circle"),"This is the original input annotation table.", placement = "right")
+          ), width = 12, maximizable = TRUE,
+          DT::DTOutput("annotation_table")
+          ),
+          
           
           ### ---- Unique Entries ----
           bs4Card(title = "Unique entries", width = 12, maximizable = TRUE, 
@@ -482,7 +486,25 @@ ui <- bs4DashPage(
                   DT::DTOutput("peptide_table")
                   )
           )
+        ),
+      
+      ## ---- Dev Console ----
+      bs4TabItem(
+        tabName = "dev_console",
+        fluidRow(
+          bs4Card(title = "R Console", width = 12,
+                  textAreaInput("console_input", NULL,
+                                value    = "",
+                                rows     = 6,
+                                width    = "100%",
+                                placeholder = "Type R code here..."),
+                  actionButton("console_run", "Run", class = "btn-primary"),
+                  actionButton("console_clear", "Clear", class = "btn-secondary ml-2"),
+                  tags$hr(),
+                  verbatimTextOutput("console_output")
+          )
         )
+      )
       )
     )
   )

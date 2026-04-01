@@ -32,9 +32,10 @@ Task List
 
 ### Maybe?
 - [ ] Flexible Length Range Percentage plot for MHC2 and perhaps other species
-- [ ] Call GibbsCluster or HLA-HD from WSL
+- [ ] Call GibbsCluster from WSL or mix MHCpred for allele preidtion. Otherwise pre-generated database would also be ok fine.
 - [ ] Calculate theoretical mass if m/z is not available, but mass and charge are
 - [ ] UI for data loading
+- [ ] Have specific analysis for groups displayed in upset plot
 
 ## Features
 - Interactive visualization of immunopeptidomics datasets.

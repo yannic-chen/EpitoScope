@@ -609,6 +609,36 @@ load_from_annotation <- function(annotation_df) {
   data_list
 }
 
+# Evaluate a condition expression against an annotation data.frame.
+# expr_terms: list of list(col, val, op)
+#   col — condition column name
+#   val — character vector of selected values
+#   op  — NULL for first term; "AND", "OR", or "NOT" for subsequent terms
+# Returns a named logical vector: sample_name → TRUE/FALSE
+eval_condition_expr <- function(expr_terms, ann_df) {
+  if (length(expr_terms) == 0) return(setNames(logical(0), character(0)))
+  
+  sample_names <- unique(ann_df$name)
+  ann_unique   <- ann_df[match(sample_names, ann_df$name), , drop = FALSE]
+  
+  t1     <- expr_terms[[1]]
+  result <- setNames(ann_unique[[t1$col]] %in% t1$val, sample_names)
+  
+  if (length(expr_terms) > 1) {
+    for (i in 2:length(expr_terms)) {
+      t      <- expr_terms[[i]]
+      tmask  <- setNames(ann_unique[[t$col]] %in% t$val, sample_names)
+      result <- switch(t$op,
+                       "AND" = result & tmask,
+                       "OR"  = result | tmask,
+                       "NOT" = result & !tmask,
+                       stop(paste("Unknown operator:", t$op))
+      )
+    }
+  }
+  result
+}
+
 detect_software <- function(df, signature, fallback = "Generic") {
   
   df_cols <- tolower(colnames(df))
@@ -2816,7 +2846,7 @@ run_go_enrichment <- function(df) {
   check <- safe_validate(!is.null(uni_ids) && nrow(as.data.frame(uni_ids)) > 0, "No significant IDs")
   if (!is.null(check)) return(check)
   
-  gene_map <- clusterProfiler::bitr(uni_ids, fromType = "UNIPROT", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+  gene_map <- suppressWarnings(clusterProfiler::bitr(uni_ids, fromType = "UNIPROT", toType = "ENTREZID", OrgDb = org.Hs.eg.db))
   
   check <- safe_validate(nrow(gene_map) > 0, "No valid UniProt→Entrez mapping")
   if (!is.null(check)) return(check)
@@ -2834,7 +2864,7 @@ run_go_enrichment <- function(df) {
   check <- safe_validate(!is.null(ego) && nrow(as.data.frame(ego)) > 0, "No significant GO terms")
   if (!is.null(check)) return(check)
   
-  barplot(ego, showCategory = 10)
+  suppressWarnings(barplot(ego, showCategory = 10))
   
 }
 
