@@ -314,7 +314,7 @@ check_data_error <- function(data, required_cols = NULL, na_policy = c("any", "a
   
   # Single data.frame case
   if (is.data.frame(data)) {
-    missing_cols <- setdiff(required_cols, colnames(data))
+    missing_cols <- dplyr::setdiff(required_cols, colnames(data))
     if (length(missing_cols) > 0) stop_with_msg(
       paste("Missing column(s):", paste(missing_cols, collapse = ", "))
     )
@@ -514,7 +514,7 @@ check_annotation_table <- function(df) {
   
   has_measurement <- "measurement" %in% header
   condition_cols  <- grep("^condition", header, value = TRUE)
-  replicate_cols  <- intersect(c("biological_replicate", "technical_replicate"), header)
+  replicate_cols  <- dplyr::intersect(c("biological_replicate", "technical_replicate"), header)
   
   
   # ── Type coercion ─────────────────────────────────────────────────────────
@@ -543,9 +543,9 @@ check_annotation_table <- function(df) {
     message("no measurement column found.")
 
     df %>%
-      select(all_of(c("name", condition_cols, replicate_cols))) %>%
-      group_by(name) %>%
-      summarise(n = n(), .groups = "drop") %>%
+      dplyr::select(all_of(c("name", condition_cols, replicate_cols))) %>%
+      dplyr::group_by(name) %>%
+      dplyr::summarise(n = n(), .groups = "drop") %>%
       { 
         if (any(.$n > 1)) {
           stop("Multiple condition + replicate rows identified for the same sample name. 
@@ -751,24 +751,24 @@ aggregate_fragpipe_psm <- function(df) {
   #' We collapse by taking the row with maximum PeptideProphet.Probability or Probability.
   
   df <- df %>%
-    mutate(
+    dplyr::mutate(
       RawFile = sub("\\.\\d+\\..*$", "", Spectrum)
     )
   
   num_cols <- df %>%
     dplyr::select(where(is.numeric)) %>%
     names() %>%
-    setdiff(c("RawFile", "Modified.Peptide"))
+    dplyr::setdiff(c("RawFile", "Modified.Peptide"))
   
   char_cols <- df %>%
     dplyr::select(where(is.character)) %>%
     names() %>%
-    setdiff(c("RawFile", "Modified.Peptide", "Spectrum", "Spectrum.File"))
+    dplyr::setdiff(c("RawFile", "Modified.Peptide", "Spectrum", "Spectrum.File"))
   
   df %>%
-    group_by(RawFile, Modified.Peptide) %>%
-    slice_max(
-      .data[[intersect(c("PeptideProphet.Probability", "Probability"), names(df))[1]]], #Try "PeptideProphet.Probability", then "Probability" column
+    dplyr::group_by(RawFile, Modified.Peptide) %>%
+    dplyr::slice_max(
+      .data[[dplyr::intersect(c("PeptideProphet.Probability", "Probability"), names(df))[1]]], #Try "PeptideProphet.Probability", then "Probability" column
       n = 1,
       with_ties = FALSE
     ) %>%
@@ -806,7 +806,7 @@ normalize_df <- function(df) {
     #Here we detect the long format used in Frapipe psm.tsv file. So that we convert to wide format
     if(any(tolower(colnames(df)) == "modified.peptide")) { # Only psm.tsv has this column. in combined_modified_peptide.tsv this is called modified.sequence.
       #For the psm.tsv file, we need to convert from long format to wide format for the intensities and filter unique.
-      df <- df %>% mutate(Modified.Peptide = coalesce(na_if(Modified.Peptide, ""), na_if(Peptide, "")))
+      df <- df %>% dplyr::mutate(Modified.Peptide = dplyr::coalesce(na_if(Modified.Peptide, ""), na_if(Peptide, "")))
       
       #This function group_by on rawfile and modified.peptide.
       df <- aggregate_fragpipe_psm(df)
@@ -824,13 +824,13 @@ normalize_df <- function(df) {
       
       #Finally unique for the representative peptide, using the row with the best PeptideProphet.probability.
       df<- df %>%
-        group_by(Modified.Peptide) %>%
-        slice_max(
-          .data[[intersect(c("PeptideProphet.Probability", "Probability"), names(df))[1]]], #Try "PeptideProphet.Probability", then "Probability" column
+        dplyr::group_by(Modified.Peptide) %>%
+        dplyr::slice_max(
+          .data[[dplyr::intersect(c("PeptideProphet.Probability", "Probability"), names(df))[1]]], #Try "PeptideProphet.Probability", then "Probability" column
           n = 1,
           with_ties = FALSE
         ) %>%
-        ungroup() %>%
+        dplyr::ungroup() %>%
         dplyr::select(-Intensity)
       
       if (nrow(df) != nrow(df_wide)) {
@@ -843,7 +843,7 @@ normalize_df <- function(df) {
     
     #Here we combine the Proteins and Mapped.Proteins together, to get all Accessions
     df <- df %>%
-      mutate(
+      dplyr::mutate(
         # Replace commas in Mapped.Protein with ;
         Mapped.Proteins = str_replace_all(Mapped.Proteins, ", ", ";"),
         
@@ -891,9 +891,9 @@ normalize_df <- function(df) {
         )
     
     df_top <- df %>%
-      group_by(Modified.Sequence) %>%
-      arrange(Q.Value, .by_group = TRUE) %>%
-      slice_head(n = 1) %>%
+      dplyr::group_by(Modified.Sequence) %>%
+      dplyr::arrange(Q.Value, .by_group = TRUE) %>%
+      dplyr::slice_head(n = 1) %>%
       ungroup()
     
     df <- left_join(df_top %>% dplyr::select(-Run), df_wide, by = "Modified.Sequence")
@@ -955,7 +955,7 @@ normalize_df <- function(df) {
       df <- res$df
       original <- log_rename(original, res, "K0")
       if (is.character(df$K0)){ #This is only for PEAKS, since it returns a range.
-        df <- df %>% mutate(K0 = get_midpoint(K0))
+        df <- df %>% dplyr::mutate(K0 = get_midpoint(K0))
       }
     } else {
       df$K0 <- 0
@@ -1028,13 +1028,13 @@ normalize_df <- function(df) {
   
   #Only keep cols that were found
   keep_cols <- original %>%
-    filter(!is.na(original_name)) %>%
-    filter(purrr::map_lgl(final_name, ~ is.character(.x) && length(.x) == 1)) %>% #This removes entries where the original column names are a list of strings. These are added separately.
-    pull(final_name)
+    dplyr::filter(!is.na(original_name)) %>%
+    dplyr::filter(purrr::map_lgl(final_name, ~ is.character(.x) && length(.x) == 1)) %>% #This removes entries where the original column names are a list of strings. These are added separately.
+    dplyr::pull(final_name)
   keep_cols <- c(keep_cols, colnames(df)[sample], colnames(df)[spec], "STRIPPED", "MAX_QUANTITY")
   
   #Now we can prepare the summary table since we have the columns to keep.
-  original <- original %>% mutate(coalesced = do.call(coalesce, across(-1))) %>% dplyr::select(1, coalesced) %>% group_by(final_name) %>% summarise(coalesced_list = list(coalesced), .groups = "drop")
+  original <- original %>% dplyr::mutate(coalesced = do.call(coalesce, across(-1))) %>% dplyr::select(1, coalesced) %>% dplyr::group_by(final_name) %>% dplyr::summarise(coalesced_list = list(coalesced), .groups = "drop")
   
   return(list(df = df %>% dplyr::select(any_of(unique(keep_cols))), table = original))
 }
@@ -1127,7 +1127,7 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
     # Combine all samples in group
     df_group <- bind_rows(lapply(samples, function(s) {
       df <- lst[[s]]
-      cols <- intersect(c("PEPTIDE", quantity_cols), colnames(df))
+      cols <- dplyr::intersect(c("PEPTIDE", quantity_cols), colnames(df))
       if (length(cols) < 2) return(NULL)
       df[, cols, drop = FALSE]
     }))
@@ -1139,8 +1139,8 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
     
     # Aggregate: take max (or mean) per peptide across samples
     agg <- df_group %>%
-      group_by(PEPTIDE) %>%
-      summarise(value = max(c_across(any_of(quantity_cols)), na.rm = TRUE), .groups = "drop")
+      dplyr::group_by(PEPTIDE) %>%
+      dplyr::summarise(value = max(c_across(any_of(quantity_cols)), na.rm = TRUE), .groups = "drop")
     
     pep_mat[agg$PEPTIDE, g] <- agg$value
   }
@@ -1153,7 +1153,7 @@ prepare_measurement_matrix <- function(lst, quantity_cols) {
   peptides_all <- unique(unlist(lapply(lst, function(df) df$PEPTIDE)))
   
   col_names <- unlist(lapply(names(lst), function(nm) {
-    cols <- intersect(quantity_cols, colnames(lst[[nm]]))
+    cols <- dplyr::intersect(quantity_cols, colnames(lst[[nm]]))
     paste0(nm, " | ", cols)
   }))
   
@@ -1169,15 +1169,15 @@ prepare_measurement_matrix <- function(lst, quantity_cols) {
   
   for (nm in names(lst)) {
     df   <- lst[[nm]]
-    cols <- intersect(quantity_cols, colnames(df))
+    cols <- dplyr::intersect(quantity_cols, colnames(df))
     if (length(cols) == 0 || !"PEPTIDE" %in% colnames(df)) next
     
     df_sub <- df[, c("PEPTIDE", cols), drop = FALSE]
     
     for (col in cols) {
       agg <- df_sub %>%
-        group_by(PEPTIDE) %>%
-        summarise(value = safe_max(.data[[col]]), .groups = "drop")
+        dplyr::group_by(PEPTIDE) %>%
+        dplyr::summarise(value = safe_max(.data[[col]]), .groups = "drop")
       
       pep_mat[agg$PEPTIDE, paste0(nm, " | ", col)] <- agg$value
     }
@@ -1285,16 +1285,16 @@ plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, 
   # Compute counts or percentages
   if (percentage) {
     combined <- combined %>%
-      group_by(Sample) %>%
-      mutate(perc = 100 * (n() / n())) %>%  # initially gives 100%, will correct below
+      dplyr::group_by(Sample) %>%
+      dplyr::mutate(perc = 100 * (n() / n())) %>%  # initially gives 100%, will correct below
       ungroup()
     
     # Actually, we need % per factor level per sample
     perc_df <- combined %>%
-      group_by(Sample, !!sym(column)) %>%
-      summarise(count = n(), .groups = "drop") %>%
-      group_by(Sample) %>%
-      mutate(perc = 100 * count / sum(count)) %>%
+      dplyr::group_by(Sample, !!sym(column)) %>%
+      dplyr::summarise(count = n(), .groups = "drop") %>%
+      dplyr::group_by(Sample) %>%
+      dplyr::mutate(perc = 100 * count / sum(count)) %>%
       ungroup()
     
     p <- ggplot(perc_df, aes(x = Sample, y = perc, fill = !!sym(column))) +
@@ -1418,12 +1418,12 @@ plot_length_distribution <- function(lst, color = "default") {
   req(nrow(combined) > 0)
   
   combined$LENGTH <- as.numeric(combined$LENGTH)
-  combined <- combined %>% mutate(Length_bin = factor(LENGTH))
+  combined <- combined %>% dplyr::mutate(Length_bin = factor(LENGTH))
   
   # Compute counts and percentages
-  count_df <- combined %>% count(Length_bin, Sample, name = "Count")
-  percent_df <- count_df %>% group_by(Sample) %>%
-    mutate(Percent = Count / sum(Count) * 100)
+  count_df <- combined %>% dplyr::count(Length_bin, Sample, name = "Count")
+  percent_df <- count_df %>% dplyr::group_by(Sample) %>%
+    dplyr::mutate(Percent = Count / sum(Count) * 100)
   
   samples <- unique(count_df$Sample)
   n <- length(samples)
@@ -1521,7 +1521,7 @@ plot_seqlogo <- function(peptides, title = "Motif", namespace = NULL) {
   df <- data.frame(seq = peptides)
   
   if (is.null(namespace)) {
-    ggseqlogo(peptides, method = 'bits') +
+    suppressWarnings(ggseqlogo(peptides, method = 'bits') +
       ggtitle(title) +
       theme_minimal() +
       theme(
@@ -1529,9 +1529,9 @@ plot_seqlogo <- function(peptides, title = "Motif", namespace = NULL) {
         axis.text.x = element_text(size = 10),
         axis.text.y = element_text(size = 10),
         legend.position = "none"
-      )
+      ))
   } else {
-    ggseqlogo(peptides, method = 'bits', namespace = namespace, seq_type = "other") +
+    suppressWarnings(ggseqlogo(peptides, method = 'bits', namespace = namespace, seq_type = "other") +
       ggtitle(title) +
       theme_minimal() +
       theme(
@@ -1539,7 +1539,7 @@ plot_seqlogo <- function(peptides, title = "Motif", namespace = NULL) {
         axis.text.x = element_text(size = 10),
         axis.text.y = element_text(size = 10),
         legend.position = "none"
-      )
+      ))
   }
 
 }
@@ -1602,7 +1602,8 @@ dynamic_range_plot <- function(df, data_col = "MAX_QUANTITY", title_name = "Dyna
           data = highlight_df,
           aes(x = Rank, y = log2(.data[[data_col]]), label = Gene),
           color = "red",
-          box.padding = 0.5
+          box.padding = 0.5,
+          max.overlaps = Inf
         )
     }
   } 
@@ -1648,8 +1649,8 @@ dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", colo
   }
   
   df_all <- df_all %>%
-    group_by(Sample) %>%
-    mutate(Rank = rank(-.data[[data_col]], ties.method = "first")) %>%
+    dplyr::group_by(Sample) %>%
+    dplyr::mutate(Rank = rank(-.data[[data_col]], ties.method = "first")) %>%
     ungroup()
   
   p <- ggplot(df_all, aes(x = Rank, y = log2(.data[[data_col]]), color = Sample)) +
@@ -1707,14 +1708,14 @@ plot_completeness <- function(lst, spectra_cols, percent = FALSE, title = "Data 
   
   make_completeness <- function(df, spectra_cols) {
     
-    spectra_cols <- intersect(spectra_cols, colnames(df))
+    spectra_cols <- dplyr::intersect(spectra_cols, colnames(df))
     
     df %>%
       transmute(
         Non_NA_Count = rowSums(!is.na(across(all_of(spectra_cols))))
       ) %>%
       arrange(desc(Non_NA_Count)) %>%
-      mutate(
+      dplyr::mutate(
         Rank = row_number(),
         Percent_Non_NA = 100 * Non_NA_Count / length(spectra_cols),
         Percent_Rank = 100 * Rank / max(Rank)
@@ -1794,14 +1795,14 @@ plot_upset <- function(data_list, min_size = 2, title = "Upset Plot",stripped = 
   }
   
   # Upset plot
-  p <- ComplexUpset::upset(
+  p <- suppressWarnings(ComplexUpset::upset(
     df_upset,
     intersect = names(df_upset),
     name = "Sample",
     min_size = min_size,
     width_ratio=0.1
   ) +
-    ggtitle(title)
+    ggtitle(title))
   
   return(p)
 }
@@ -1820,7 +1821,7 @@ plot_shared_peptide <- function(lst, color = "default", mode = c("count", "perce
   
   for (i in samples) {
     for (j in samples) {
-      shared <- length(intersect(peptides[[i]], peptides[[j]]))
+      shared <- length(dplyr::intersect(peptides[[i]], peptides[[j]]))
       
       if (mode == "count") {
         shared_mat[i, j] <- shared
@@ -2143,7 +2144,7 @@ summarize_binders <- function(df) {
   df %>%
     dplyr::select(all_of(hla_cols)) %>%
     pivot_longer(cols = everything(), names_to = "Allele", values_to = "Affinity") %>%
-    mutate(
+    dplyr::mutate(
       Binder = case_when(
         is.na(Affinity) ~ "NA",
         Affinity < 0.5  ~ "Strong",
@@ -2151,8 +2152,8 @@ summarize_binders <- function(df) {
         Affinity > 1 ~ "Non"
       )
     ) %>%
-    group_by(Allele, Binder) %>%
-    summarise(Count = n(), .groups = "drop") %>%
+    dplyr::group_by(Allele, Binder) %>%
+    dplyr::summarise(Count = n(), .groups = "drop") %>%
     pivot_wider(names_from = Binder, values_from = Count, values_fill = 0)
 }
 
@@ -2298,7 +2299,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
   bind_group <- function(groups, allowed_peptides) {
     dplyr::bind_rows(lapply(groups, function(s) {
       df <- lst[[s]]
-      cols <- intersect(keep_cols, colnames(df))
+      cols <- dplyr::intersect(keep_cols, colnames(df))
       if (length(cols) < 2) return(NULL)  # need peptide column + ≥1 quantity column
       df[, cols, drop = FALSE]
       df[df[[pep_col]] %in% allowed_peptides, , drop = FALSE]
@@ -2313,7 +2314,6 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
       nrow(df_g1) == 0 || nrow(df_g2) == 0) {
     return(NULL)
   }
-  
   df_long <- bind_rows(
     df_g1 %>%
       pivot_longer(
@@ -2321,7 +2321,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
         names_to = "Sample",
         values_to = "Quantity"
       ) %>%
-      mutate(Group = g1),
+      dplyr::mutate(Group = g1),
     
     df_g2 %>%
       pivot_longer(
@@ -2329,7 +2329,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
         names_to = "Sample",
         values_to = "Quantity"
       ) %>%
-      mutate(Group = g2)
+      dplyr::mutate(Group = g2)
   )
   
   #safe_mean <- function(x) if(length(x) > 0) mean(x, na.rm = TRUE) else NA_real_
@@ -2340,8 +2340,8 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
   }
   
   volcano_df <- df_long %>%
-    group_by(.data[[pep_col]]) %>%
-    summarise(
+    dplyr::group_by(.data[[pep_col]]) %>%
+    dplyr::summarise(
       PROTEIN = dplyr::first(PROTEIN),
       Mean_G1 = mean(Quantity[Group == g1], na.rm = TRUE),
       Mean_G2 = mean(Quantity[Group == g2], na.rm = TRUE),
@@ -2353,14 +2353,14 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
       .groups = "drop"
     ) %>%
     ungroup() %>%  # important before applying p.adjust
-    mutate(
+    dplyr::mutate(
       adj_pval_BH = p.adjust(pval, method = "BH"),          # Benjamini-Hochberg FDR
       adj_pval_Bonf = p.adjust(pval, method = "bonferroni"),# Bonferroni
       negLog10P = -log10(pval),
       negLog10AdjP_BH = -log10(adj_pval_BH),
       negLog10AdjP_Bonf = -log10(adj_pval_Bonf)
     ) %>% #this is for MAplot
-    mutate(
+    dplyr::mutate(
       A = 0.5 * (log2(Mean_G1 + 1) + log2(Mean_G2 + 1)),
     )
   volcano_df
@@ -2425,12 +2425,12 @@ group_volcano_plot <- function(df,sel,plot_name) {
   
   # Add 'selected' column
   volc_df <- df %>%
-    mutate(selected = !is.na(sel) & PEPTIDE == sel)
+    dplyr::mutate(selected = !is.na(sel) & PEPTIDE == sel)
   
   # Split by significance for plotting
-  ns_df        <- volc_df %>% filter(Significance == "Not significant")
-  sig_df       <- volc_df %>% filter(Significance == "Significant", !selected)
-  selected_df  <- volc_df %>% filter(selected)
+  ns_df        <- volc_df %>% dplyr::filter(Significance == "Not significant")
+  sig_df       <- volc_df %>% dplyr::filter(Significance == "Significant", !selected)
+  selected_df  <- volc_df %>% dplyr::filter(selected)
   
   #Axis setting
   safe_max_neglogp <- suppressWarnings(max(df$negLog10AdjP_BH, na.rm = TRUE))
@@ -2538,12 +2538,12 @@ group_MA_plot <- function(df,sel,plot_name) {
   
   # Add 'selected' column
   ma_df <- df %>%
-    mutate(selected = !is.na(sel) & PEPTIDE == sel)
+    dplyr::mutate(selected = !is.na(sel) & PEPTIDE == sel)
   
   # Split by significance for plotting
-  ns_df        <- ma_df %>% filter(Significance == "Not significant")
-  sig_df       <- ma_df %>% filter(Significance == "Significant", !selected)
-  selected_df  <- ma_df %>% filter(selected)
+  ns_df        <- ma_df %>% dplyr::filter(Significance == "Not significant")
+  sig_df       <- ma_df %>% dplyr::filter(Significance == "Significant", !selected)
+  selected_df  <- ma_df %>% dplyr::filter(selected)
   
   plot_ly(source = "group_diff") %>%
     add_trace(
@@ -2595,15 +2595,15 @@ group_rank_FC <- function(df,plot_name,sel) {
   if (is.null(sel)) sel <- NA_character_
   
   rank_df <- df %>%
-    filter(!is.na(log2FC)) %>%
+    dplyr::filter(!is.na(log2FC)) %>%
     arrange(log2FC) %>%          # ascending; use desc(log2FC) if you prefer
-    mutate(
+    dplyr::mutate(
       rank = row_number(),
       selected = !is.na(sel) & PEPTIDE == sel
     )
   
-  selected_df <- rank_df %>% filter(selected)
-  rest_df     <- rank_df %>% filter(!selected)
+  selected_df <- rank_df %>% dplyr::filter(selected)
+  rest_df     <- rank_df %>% dplyr::filter(!selected)
   
   plot_ly(source = "group_diff") %>%
     
@@ -2653,7 +2653,7 @@ group_rank_FC <- function(df,plot_name,sel) {
 #group comparison: Fold Change table
 group_FC_table <- function(df) {
   table_df <- df %>%
-    filter(!is.na(log2FC)) %>%
+    dplyr::filter(!is.na(log2FC)) %>%
     dplyr::select(
       PEPTIDE,
       log2FC,
@@ -2726,9 +2726,9 @@ group_p_histogram_static <- function(df, plot_name) {
 
 group_rank_FC_static <- function(df, plot_name) {
   rank_df <- df %>%
-    filter(!is.na(log2FC)) %>%
+    dplyr::filter(!is.na(log2FC)) %>%
     arrange(log2FC) %>%
-    mutate(rank = row_number())
+    dplyr::mutate(rank = row_number())
   
   ggplot(rank_df, aes(x = rank, y = log2FC, colour = Significance)) +
     geom_point(size = 1.5, alpha = 0.7) +
@@ -2887,8 +2887,8 @@ run_go_enrichment <- function(df) {
 
 run_string <- function(df) {
   df <- df %>%
-    filter(!is.na(log2FC)) %>%
-    filter(Significance == "Significant") %>%
+    dplyr::filter(!is.na(log2FC)) %>%
+    dplyr::filter(Significance == "Significant") %>%
     dplyr::select(PEPTIDE, Significance, PROTEIN)
   
   uni_ids <- df$PROTEIN %>%

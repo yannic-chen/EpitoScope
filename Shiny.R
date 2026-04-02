@@ -517,9 +517,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
   ## ---- Motif Plot ----
-  global_legend_plot <- ggseqlogo::ggseqlogo("ACDEFGHIKLMNPQRSTVWY") +
+  global_legend_plot <- suppressWarnings(ggseqlogo::ggseqlogo("ACDEFGHIKLMNPQRSTVWY") +
     ggplot2::theme_minimal() +
-    ggplot2::ggtitle("Amino Acid Colors")
+    ggplot2::ggtitle("Amino Acid Colors"))
   
   for (L in motif_plot_length) {
     local({
@@ -676,7 +676,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     check_data_error(lst, na_policy = "ignore")
     
     quantity_cols <- data_info_r() %>%
-      filter(final_name == "QUANTITY") %>%          #Should be SPECTRA, but cannot currently do because 0 is missing in PEAKS, while 0 is existing in Fragpipe and NA is missing here.
+      dplyr::filter(final_name == "QUANTITY") %>%          #Should be SPECTRA, but cannot currently do because 0 is missing in PEAKS, while 0 is existing in Fragpipe and NA is missing here.
       dplyr::select(-final_name) %>%   # all sample columns.
       unlist(recursive = TRUE, use.names = FALSE)
     
@@ -747,7 +747,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     req(lst)
     
     spectra_cols <- data_info_r() %>%
-      filter(final_name == "SPECTRA") %>%          #Should be SPECTRA, but cannot currently do because 0 is missing in PEAKS, while 0 is existing in Fragpipe and NA is missing here.
+      dplyr::filter(final_name == "SPECTRA") %>%          #Should be SPECTRA, but cannot currently do because 0 is missing in PEAKS, while 0 is existing in Fragpipe and NA is missing here.
       dplyr::select(-final_name) %>%   # all sample columns.
       unlist(recursive = TRUE, use.names = FALSE)
     
@@ -759,7 +759,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     req(lst)
     
     spectra_cols <- data_info_r() %>%
-      filter(final_name == "SPECTRA") %>%
+      dplyr::filter(final_name == "SPECTRA") %>%
       dplyr::select(-final_name) %>%   # all sample columns.
       unlist(recursive = TRUE, use.names = FALSE)
     
@@ -1274,7 +1274,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     req(lst, groups, data_info)
     
     quantity_cols <- data_info %>%
-      filter(final_name == "QUANTITY") %>%
+      dplyr::filter(final_name == "QUANTITY") %>%
       dplyr::select(-final_name) %>% 
       unlist(recursive = TRUE, use.names = FALSE)
     
@@ -1294,7 +1294,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     #Get all columns containing the quantity info.
     quantity_cols <- data_info_r() %>%
-      filter(final_name == "QUANTITY") %>%
+      dplyr::filter(final_name == "QUANTITY") %>%
       dplyr::select(-final_name) %>%   # all sample columns.
       unlist(recursive = TRUE, use.names = FALSE)
 
@@ -1444,11 +1444,11 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     lst <- lapply(lst, function(df) {
       
       df %>%
-        mutate(
+        dplyr::mutate(
           PTM = ifelse(is.na(PTM) | PTM == "", "Unmodified", PTM)
         ) %>%
         tidyr::separate_rows(PTM, sep = "\\s*[,;]\\s*") %>%
-        mutate(
+        dplyr::mutate(
           PTM = gsub("^\\d+", "", PTM) #This is specifically for fragpipe to remove the position information on PTMs
         )
     })
@@ -1606,7 +1606,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
           cache <- distinct(cache, Peptide, .keep_all = TRUE)
           
           cache <- full_join(cache, res, by = "Peptide") %>%
-            mutate(
+            dplyr::mutate(
               !!al_conversion := coalesce(.data[[paste0(al_conversion, ".x")]],
                                .data[[paste0(al_conversion, ".y")]])
             ) %>%
@@ -1700,8 +1700,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     # Collapse rows by peptide
     df_collapsed <- peptide_wide_unique() %>%
-      group_by(STRIPPED) %>%
-      summarise_all(~ {
+      dplyr::group_by(STRIPPED) %>%
+      dplyr::summarise_all(~ {
         vals <- unique(.)
         vals <- vals[!is.na(vals)]
         if(length(vals) == 0) NA else paste(vals, collapse = ",")
@@ -1772,15 +1772,15 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     keep_cols <- c("Sample", "PEPTIDE", "STRIPPED", "MAX_QUANTITY","LENGTH" ,"MASS" ,"CHARGE", "MZ" ,"K0", "RT", "PROTEIN")
     
-    combined <- imap_dfr(lst, ~ dplyr::select(.x, intersect(keep_cols, colnames(.x))) %>% mutate(Sample = .y))
+    combined <- imap_dfr(lst, ~ dplyr::select(.x, dplyr::intersect(keep_cols, colnames(.x))) %>% dplyr::mutate(Sample = .y))
     
-    peptide_counts <- combined %>% distinct(STRIPPED, Sample) %>% count(STRIPPED, name = "n_datasets")
+    peptide_counts <- combined %>% dplyr::distinct(STRIPPED, Sample) %>% dplyr::count(STRIPPED, name = "n_datasets")
     
     numeric_cols <- c("LENGTH", "MASS", "CHARGE", "MZ", "K0", "RT")
     
-    combined <- combined %>% inner_join(peptide_counts, by = "STRIPPED") %>%
-      arrange(Sample, STRIPPED) %>%
-      mutate(across(any_of(numeric_cols), as.numeric))
+    combined <- combined %>% dplyr::inner_join(peptide_counts, by = "STRIPPED") %>%
+      dplyr::arrange(Sample, STRIPPED) %>%
+      dplyr::mutate(across(any_of(numeric_cols), as.numeric))
     
     combined <- combined[,c(1,2,3,4,5,6,7,8,9,11,12,10)] #rearramge column
     
