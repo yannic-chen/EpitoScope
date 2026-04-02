@@ -58,7 +58,10 @@ library(ggraph)
 library(tidyverse)
 
 #-----------Column extraction------------
-#Here we initiate all the possible column names important for us from all different input formats
+# Here we initiate all the possible column names important for us from all different input formats
+# QUANTITY and SPECTRA values are treated as column name string to be searchs, since one column exists for each measurement in the sample.
+# It is likely that they are a combination of a word and the measurement name, mostly a suffix or prefix + measurement name.
+
 column_schema <- list(
   #If multiple column for a stat is detected, an error will occur.
   PEAKS = list( #Only checked for peptide.tsv
@@ -73,8 +76,8 @@ column_schema <- list(
     K0             = c("X1.k0.Range"),          #PEAKS 12 and 13 uses "X1.k0.Start" and "X1.k0.End", for which the K0 needs to be calculated from the middle value. PEAKS Online returns "X1.k0.Range"
     PPM            = c("ppm"),
     PROTEIN        = c("Accession"),
-    QUANTITY       = c("area"),                 # prefer area later
-    SPECTRA        = c("x.feature", "X.Spec"),  #X.Spec for PEAKS 11 Online. X.Feature for PEAKS 12 studio. PEAKS 13 returns both. Prefer x.spec over x.feature.
+    QUANTITY       = c("area."),                 #Prefix. Some versions also has intensity, but we prefer area.
+    SPECTRA        = c("x.feature.", "X.Spec."),  #Prefix. X.Spec for PEAKS 11 Online. X.Feature for PEAKS 12 studio. PEAKS 13 returns both. Prefer x.spec over x.feature. PEAKS is unique in that peptides can be found but still have 0 or NA quantity, hence using spectra here is crucial
     PTM            = c("PTM")
   ),
   
@@ -89,9 +92,9 @@ column_schema <- list(
     RT             = c("Retention"),                             #not present in combined_modified_peptide.tsv, combined_peptide.tsv
     K0             = c("ion.mobility"),                          #not present in combined_modified_peptide.tsv, combined_peptide.tsv
     PPM            = c("Delta.Mass"),                            #not present in combined_modified_peptide.tsv, combined_peptide.tsv
-    PROTEIN      = c("Protein_Mapped.Proteins"),               #This column is created later from Protein and Mapped.Protein column. #combined_modified_peptide.tsv, combined_peptide.tsv only has Protein column.
-    QUANTITY       = c("maxlfq.intensity", "Intensity"),         #prefer maxlfq.intensity (exist in peptide.tsv, but not psm.tsv).
-    SPECTRA        = c("Spectrum", "Spectral.Count"),            #However, this will be transformed anyway.
+    PROTEIN        = c("Protein_Mapped.Proteins"),               #This column is created later from Protein and Mapped.Protein column. #combined_modified_peptide.tsv, combined_peptide.tsv only has Protein column.
+    QUANTITY       = c("maxlfq.intensity", "Intensity"),         #suffix. prefer maxlfq.intensity (exist in peptide.tsv, but not psm.tsv).
+    SPECTRA        = c("Spectrum", "Spectral.Count"),            #suffix.
     PTM            = c("Assigned.Modifications")                 #not present in combined_modified_peptide.tsv, combined_peptide.tsv
   ),
   
@@ -106,10 +109,10 @@ column_schema <- list(
     RT             = c(),                  # not present in report.pr_matrix.tsv
     K0             = c(),                  # not present in report.pr_matrix.tsv
     PPM            = c(),                  # not present in report.pr_matrix.tsv
-    PROTEIN      = c("Protein.names"),   #Can also switch with Protein.IDs, Protein.Group or Genes (although some proteins lack gene, like the CONTAs)
-    QUANTITY       = c("D..data"), #Here NA means not found I guess
-    SPECTRA        = c("D..data"), #However, this will be transformed anyway.
-    PTM            = c("")                  # not present in report.pr_matrix.tsv
+    PROTEIN        = c("Protein.names"),   #Can also switch with Protein.IDs, Protein.Group or Genes (although some proteins lack gene, like the CONTAs)
+    QUANTITY       = c("D..data"),         #This is actually the path to the file. So its a prefix.
+    SPECTRA        = c("D..data"),         #Can use the same as quantity.
+    PTM            = c("")                 # not present in report.pr_matrix.tsv
   ),
   
   DIANN_parquet = list( #This is for DIANN parquet file, which is in long format.
@@ -664,26 +667,23 @@ detect_software <- function(df, signature, fallback = "Generic") {
   return(fallback)
 }
 
-find_transform_column <- function(df, list, name) {
-  # Match independent of capitalization
-  match <- which(tolower(colnames(df)) %in% tolower(list))
-  
-  if (length(match) == 1) {
-    original_name <- colnames(df)[match]
-    colnames(df)[match] <- name
-  } else if (length(match) > 1) {
-    stop("Multiple columns detected: ", name, ": ",
-         paste(colnames(df)[match], collapse = ", "))
-  } else {
-    # No match found
-    print(paste0("No matching column found for: ", name))
-    return(NULL)
+find_transform_column <- function(df, candidates, name) {
+  for (cand in candidates) {
+    match <- which(tolower(colnames(df)) == tolower(cand))
+    
+    if (length(match) == 1) {
+      original_name    <- colnames(df)[match]
+      colnames(df)[match] <- name
+      return(list(df = df, matched_column = original_name))
+    } else if (length(match) > 1) {
+      stop("Ambiguous: multiple columns match '", cand, "' for ", name, ": ",
+           paste(colnames(df)[match], collapse = ", "))
+    }
+    # length == 0 → try next candidate
   }
   
-  return(list(
-    df = df,
-    matched_column = original_name
-  ))
+  message(paste0("No matching column found for: ", name))
+  return(NULL)
 }
 
 transform_columns <- function(df, schema, software, targets = c("PEPTIDE", "STRIPPED", "LENGTH", "MASS", "MZ", "SCORE", "CHARGE", "RT", "PPM", "PROTEIN", "PTM")) {
@@ -909,7 +909,7 @@ normalize_df <- function(df) {
     stop(sprintf("Either PEPTIDE or STRIPPED column missing in one or more dataframes."))
     }
   
-  #Fill in some missing columns.
+  #-------------Derive missing columns if possible----------------
   #CHARGE
   if (!"CHARGE" %in% colnames(df)) {
     df$CHARGE <- 0
@@ -964,41 +964,56 @@ normalize_df <- function(df) {
     }
   }
   
-  #Area/Intensity <- make this more elegant.
-  sample  <- which(startsWith(tolower(colnames(df)), "area"))
-  if (length(sample) == 0) {
-    sample  <- which(startsWith(tolower(colnames(df)), "maxlfq.intensity"))
-  } 
-  if (length(sample) == 0) {
-    sample  <- grep("intensity", tolower(colnames(df)))
-  }
-  if (length(sample) == 0) { #For DIANN report.pr_matrix.tsv this assumes that the file name is the absolute path of the file. Meaning it starts with the Drive letter e.g. D:\ -> d..
-    sample  <-  which(grepl("^[a-z]\\.\\.", tolower(colnames(df)))) 
-  }
-  if (length(sample) == 0) {
-    stop("No Area or Intensity columns")
+  
+  #-------------Quantity -----------------
+  # 1. Check schema-defined candidates first (prefix match to capture multi-sample columns)
+  schema_qty <- column_schema[[software]][["QUANTITY"]]
+  sample <- integer(0)
+  
+  if (length(schema_qty) > 0) {
+    for (cand in schema_qty) {
+      hits <- which(grepl(tolower(cand), tolower(colnames(df)), fixed = TRUE))
+      if (length(hits) > 0) { sample <- hits; break }
+    }
   }
   
-  original <- bind_rows(original, data.frame(final_name="QUANTITY", original_name=list(colnames(df[,sample, drop = FALSE]))))
+  # 2. Hard-coded fallbacks (existing behaviour for known software)
+  if (software %in% c("DIANN", "DIANN_parquet")) {
+    sample <- which(grepl("^[a-z]\\.\\.", tolower(colnames(df)))) #this is the path to the file.
+  }
+  
+  if (length(sample) == 0) {
+    warning("No quantity/intensity columns found. Define QUANTITY in your custom_schema.")
+  }
+  
+  original <- bind_rows(original, data.frame(final_name = "QUANTITY",
+                                             original_name = list(colnames(df[, sample, drop = FALSE]))))
   
   df$MAX_QUANTITY <- apply(df[, sample, drop = FALSE], 1, function(x) {
-    if (all(is.na(x))) {
-      NA
-    } else {
-      max(x, na.rm = TRUE)
-    }
+    if (all(is.na(x))) NA else max(x, na.rm = TRUE)
   })
   
-  #We need another column to know how many samples the peptide was found in.
-  #In X.Spec for PEAKS 11 Online. X.Feature for PEAKS 12 studio. PEAKS 13 returns both. Prefer x.spec over x.feature.
-  if (any(tolower(colnames(df)) == "x.spec")) {
-    spec <- grep("^x\\.spec", tolower(colnames(df)))
-    spec <- spec[colnames(df)[spec] != "X.Spec"] #This column in PEAKS sums all Spectra found by all samples, however, one sample can find the peptide multiple times.
-  } else if (any(tolower(colnames(df)) == "x.feature")) {
-    spec <- grep("x.feature", tolower(colnames(df)))
-    spec <- spec[colnames(df)[spec] != "X.Feature"]
-  } else {
-    spec <- integer(0)
+  #-------------Quantity -----------------
+  schema_spec <- column_schema[[software]][["SPECTRA"]]
+  spec <- integer(0)
+  
+  if (length(schema_spec) > 0 && !identical(sort(schema_spec), sort(schema_qty))) {
+    for (cand in schema_spec) {
+      hits <- which(grepl(tolower(cand), tolower(colnames(df)), fixed = TRUE) &
+                      !seq_along(colnames(df)) %in% sample)
+      if (length(hits) > 0) { spec <- hits; break }
+    }
+  }
+  
+  if (software == "PEAKS") {
+    if (any(startsWith(tolower(colnames(df)),"x.spec."))) {
+      spec <- startsWith(tolower(colnames(df)),"x.spec.")
+    } else if(any(startsWith(tolower(colnames(df)),"x.feature."))) {
+      spec <- startsWith(tolower(colnames(df)),"x.feature.")
+    } else {
+      warning("PEAKS format detected, but no spectra column found.")
+      spec <- integer(0)
+    }
   }
 
   #In case we can use Quantity columns (sample) as indicator of Spectral match
@@ -1008,6 +1023,8 @@ normalize_df <- function(df) {
     df[, spec][df[, spec] == 0] <- NA #For spectra column, the 0 actually means not identified. We need these to be converted to 0 to work with FragPipe format for data completeness plot.
     original <- bind_rows(original, data.frame(final_name="SPECTRA", original_name=colnames(df[, spec, drop = FALSE]), stringsAsFactors=FALSE))
   }
+  
+  #-------------Finalize dataframe and generate mapping table-----------------
   
   #Only keep cols that were found
   keep_cols <- original %>%
