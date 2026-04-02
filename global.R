@@ -141,6 +141,62 @@ signature <- list(
   DIANN_parquet    = c("Run.Index")
 )
 
+#read netMHCpan allelenames.
+hla_alleles <- tryCatch({
+  lines <- readLines(file.path(getwd(), "allelenames.netMHCpan"))
+  lines <- trimws(lines)
+  lines <- lines[nchar(lines) > 0 & !startsWith(lines, "#")]
+  # First column is the allele name passed to netMHCpan
+  alleles <- sapply(strsplit(lines, "\\s+"), `[`, 1)
+  # Group by species prefix (HLA-A, HLA-B, BoLA, etc.) for organised dropdown
+  prefixes <- sub("([^-]+-[^:0-9]*).*", "\\1", alleles)
+  split(alleles, prefixes)
+}, error = function(e) {
+  warning("allelenames.netMHCpan not found, using default allele list.")
+  list(
+    "HLA-A" = c(
+      "HLA-A01:01",
+      "HLA-A02:01", "HLA-A02:03", "HLA-A02:06",
+      "HLA-A03:01",
+      "HLA-A11:01",
+      "HLA-A23:01",
+      "HLA-A24:02",
+      "HLA-A26:01",
+      "HLA-A29:02",
+      "HLA-A30:01", "HLA-A30:02",
+      "HLA-A31:01",
+      "HLA-A32:01",
+      "HLA-A33:01",
+      "HLA-A68:01", "HLA-A68:02"
+    ),
+    "HLA-B" = c(
+      "HLA-B07:02",
+      "HLA-B08:01",
+      "HLA-B13:01",
+      "HLA-B15:01",
+      "HLA-B18:01",
+      "HLA-B27:05",
+      "HLA-B35:01",
+      "HLA-B39:01",
+      "HLA-B40:01",
+      "HLA-B44:02", "HLA-B44:03",
+      "HLA-B51:01",
+      "HLA-B57:01",
+      "HLA-B58:01"
+    ),
+    "HLA-C" = c(
+      "HLA-C03:03", "HLA-C03:04",
+      "HLA-C04:01",
+      "HLA-C05:01",
+      "HLA-C06:02",
+      "HLA-C07:01", "HLA-C07:02",
+      "HLA-C08:02",
+      "HLA-C12:03"
+    )
+  )
+  
+})
+
 #-----------Helper functions------------------
 safe_reactive <- function(x) {
   tryCatch(

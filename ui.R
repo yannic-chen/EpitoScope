@@ -419,17 +419,7 @@ ui <- bs4DashPage(
                   selectInput(
                     "HLA_alleles",
                     "Select HLA allele(s):",
-                    choices = c(
-                      "HLA-A02:01",
-                      "HLA-A01:01",
-                      "HLA-A03:01",
-                      "HLA-A24:02",
-                      "HLA-B07:02",
-                      "HLA-B08:01",
-                      "HLA-B15:01",
-                      "HLA-C07:01",
-                      "HLA-C07:02"
-                    ),
+                    choices  = hla_alleles,   # named list → renders as grouped optgroups
                     selected = "HLA-A02:01",
                     multiple = TRUE
                   ),
