@@ -2088,8 +2088,12 @@ plot_PCA <- function(lst, color = "default") {
   }
 }
 
-plot_binders <- function(df, color = "default", percent = TRUE) {
+plot_binders <- function(df, color = "default", percent = TRUE, alleles = NULL) {
   allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+  
+  if (!is.null(alleles) && length(alleles) > 0) {
+    allele_cols <- intersect(allele_cols, alleles)
+  }
   
   df$min <- do.call(pmin, c(df[,allele_cols], na.rm=TRUE))
   
@@ -2423,8 +2427,11 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
 }
 
 #binding prediction summary
-compute_binder_summary <- function(df) {
+compute_binder_summary <- function(df, alleles = NULL) {
   allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+  if (!is.null(alleles) && length(alleles) > 0){
+    allele_cols <- intersect(allele_cols, alleles)
+  }
   
   df %>%
     tidyr::pivot_longer(cols = dplyr::all_of(allele_cols), names_to = "Allele", values_to = "Rank") %>%

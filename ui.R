@@ -426,6 +426,10 @@ ui <- bs4DashPage(
                   actionButton("run_netmhc", "Run netMHCpan"),
                   textOutput("netmhc_status")
           ),
+          
+          ### ---- Allele selection ----
+          uiOutput("allele_viz_selector_ui"),
+          
           ### ---- Summary Table ----
           bs4Card(title = tagList("Summary Table", bs4Dash::tooltip(icon("info-circle"),"On default the threshold for weak binder is 2.0 and for strong binder is 0.5 Rank_EL. (Hard coded).", placement = "right")
                                   ), width = 12, maximizable = TRUE,

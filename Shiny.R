@@ -1620,6 +1620,20 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     prediction_cache(cache)
   })
   
+  output$allele_viz_selector_ui <- renderUI({
+    df <- peptide_wide_unique()
+    req(!is.null(df), ncol(df) > 1)
+    allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+    req(length(allele_cols) > 0)
+    selectInput(
+      "allele_viz_select",
+      tagList(icon("filter"), "Alleles to visualize:"),
+      choices  = allele_cols,
+      selected = allele_cols,   # all selected by default
+      multiple = TRUE
+    )
+  })
+  
   peptide_wide_all <- reactive({
       lst <- processed_data_list()
       cache <- prediction_cache()
@@ -1671,40 +1685,42 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   binder_summary_all <- reactive({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    compute_binder_summary(peptide_wide_unique())
+    compute_binder_summary(peptide_wide_unique(), alleles = input$allele_viz_select)
   })
   
   output$binding_summary <- DT::renderDT({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    
     binder_summary_all()
-
   })
   
   output$binding_plot_percent <- renderPlot({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    plot_binders(peptide_wide_unique(), color = input$color_palette, percent = TRUE)
+    plot_binders(peptide_wide_unique(), color = input$color_palette, percent = TRUE, alleles = input$allele_viz_select)
   })
   
   output$binding_plot_absolute <- renderPlot({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    plot_binders(peptide_wide_unique(), color = input$color_palette, percent = FALSE)
+    plot_binders(peptide_wide_unique(), color = input$color_palette, percent = FALSE, alleles = input$allele_viz_select)
   })
   
   output$binding_table <- DT::renderDT({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
     
-    # Collapse rows by peptide
+    selected_alleles <- input$allele_viz_select
+    
     df_collapsed <- peptide_wide_unique() %>%
+      dplyr::select(-dplyr::any_of(
+        setdiff(grep("^HLA", colnames(.), value = TRUE), selected_alleles)
+      )) %>%
       dplyr::group_by(STRIPPED) %>%
       dplyr::summarise_all(~ {
         vals <- unique(.)
         vals <- vals[!is.na(vals)]
-        if(length(vals) == 0) NA else paste(vals, collapse = ",")
+        if (length(vals) == 0) NA else paste(vals, collapse = ",")
       })
     
     DT::datatable(

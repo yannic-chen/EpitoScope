@@ -20,7 +20,8 @@ Task List
 - [ ] Unify PTM nomenclature between output. Translate mass difference to PTM.
 - [ ] Double check netmHCpan precomputed data, if it indeed analysed all possible peptides.
 - [ ] Make the precomputed data more efficient. Parquet for reading and merge the different length together, by using the first # letters for each max_length peptide as the #mer peptide.
-- [ ] Limit HLA allele for binding prediction, so the plots and stats only incorporate relevant HLA and not everything.
+- [x] Limit HLA allele for binding prediction, so the plots and stats only incorporate relevant HLA and not everything.
+- [ ] MHC prediction supports all alleles that netMHCpan supports, but visualization only uses "HLA" prefix to find the necessary columns.
 - [ ] Add option of different binding prediction binder threshold (e.g. for HLA2)
 - [ ] Add more plots to binding prediction to better mimic MhcVizPip
 - [ ] Decide on how to download the binding Data.
