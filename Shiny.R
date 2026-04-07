@@ -1073,14 +1073,10 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$cond_mask_table <- renderTable({
     expr <- active_expr_r()
     req(length(expr) > 0, annotation_provided())
-    
-    mask_df <- eval_condition_expr(expr, annotation_df_r())
-    
-    # Add a readable "Match" column
-    mask_df$Match <- ifelse(mask_df$result, "Yes", "No")
-    
-    # Select columns to show
-    mask_df[, c("name", "measurement", "Match")]
+    result_df        <- eval_condition_expr(expr, annotation_df_r())
+    result_df$Match  <- ifelse(result_df$result, "Yes", "No")
+    result_df$result <- NULL
+    result_df
   }, striped = TRUE, bordered = TRUE, hover = TRUE)
   
   # Edit mode banner
@@ -1111,32 +1107,31 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     groups <- condition_groups_r()
     
-    # Apply same 2-5 group limit as manual mode.
-    # Only block if this name would occupy a new slot (not an update/overwrite).
     if (is.null(groups[[nm]]) && length(groups) >= input$n_groups) {
-      showNotification(
-        paste0("Maximum of ", input$n_groups, " group(s) reached. Delete one or increase the group limit."),
-        type = "warning"
-      )
+      showNotification(paste0("Maximum of ", input$n_groups, " group(s) reached."), type = "warning")
       return()
     }
     
-    mask_df <- eval_condition_expr(expr, annotation_df_r())
+    result_df <- eval_condition_expr(expr, annotation_df_r())
+    selected  <- if (isTRUE(attr(annotation_df_r(), "has_measurement"))) {
+      list(name = result_df$name[result_df$result], measurement = result_df$measurement[result_df$result], expr = expr)
+    } else {
+      list(name = result_df$name[result_df$result], expr = expr)
+    }
     
-    samples <- mask_df$name[mask_df$result]  
-    
-    if (length(samples) == 0) {
+    if (length(selected) == 0) {
       showNotification("Expression matches no samples.", type = "warning")
       return()
     }
     
-    groups[[nm]] <- list(samples = samples, expr = expr)
+    groups[[nm]] <- selected
+    tmp_groups <<- groups
     condition_groups_r(groups)
     
     active_expr_r(list())
     editing_group_r(NULL)
     updateTextInput(session, "cond_group_name", value = "")
-    showNotification(paste0("Group '", nm, "' saved (", length(samples), " samples)."), type = "message")
+    showNotification(paste0("Group '", nm, "' saved (", length(selected), " samples)."), type = "message")
   })
   
   # Register per-group edit/delete observers dynamically
@@ -1203,13 +1198,33 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$cond_membership_table <- renderTable({
     groups <- condition_groups_r()
     req(length(groups) > 0)
-    all_samples <- names(active_data_list())
-    mem <- data.frame(Sample = all_samples, stringsAsFactors = FALSE)
-    for (nm in names(groups)) {
-      mem[[nm]] <- ifelse(all_samples %in% groups[[nm]]$samples, "X", "")
+    
+    ann <- annotation_df_r()
+    colnames(ann) <- tolower(colnames(ann))
+    has_meas <- isTRUE(attr(annotation_df_r(), "has_measurement"))
+    
+    if (has_meas) {
+      mem <- ann[, c("name", "measurement")]
+    } else {
+      mem <- data.frame(name = names(active_data_list()), 
+                        measurement = NA_character_, 
+                        stringsAsFactors = FALSE)
     }
+    
+    for (nm in names(groups)) {
+      grp <- groups[[nm]]
+      if (has_meas) {
+        mem[[nm]] <- mem$name %in% grp$name & mem$measurement %in% grp$measurement
+      } else {
+        mem[[nm]] <- mem$name %in% grp$name
+      }
+      mem[[nm]] <- ifelse(mem[[nm]], "X", "")
+    }
+    
+    # Compute Status
     n_in <- rowSums(mem[, names(groups), drop = FALSE] == "X")
     mem$Status <- ifelse(n_in == 0, "excluded", ifelse(n_in > 1, "overlap", ""))
+    
     mem
   }, striped = TRUE, bordered = TRUE, hover = TRUE)
   
@@ -1254,6 +1269,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     }
     
     showNotification("Groups updated successfully!", type = "message")
+    tmp_groups <<- groups
     groups
     
   }, ignoreNULL = TRUE)
@@ -1884,7 +1900,7 @@ shinyApp(
   ui = ui,
   server = function(input, output, session) {
     server(input, output, session, 
-           input_variable = test_annotation3, 
+           input_variable = test_annotation, 
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 

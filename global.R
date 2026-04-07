@@ -752,8 +752,10 @@ eval_condition_expr <- function(expr_terms, ann_df) {
     }
   }
   
-  # Keep sample, measurement, and result columns
-  ann_df[, c("name", "measurement", "result")]
+  out_cols <- c("name",
+                if (isTRUE(attr(ann_df, "has_measurement"))) "measurement",
+                "result")
+  ann_df[, out_cols, drop = FALSE]
 }
 
 detect_software <- function(df, signature, fallback = "Generic") {
@@ -2416,7 +2418,15 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
   use_measurements <- !is.null(col_map)
   grp_g1 <- groups[[g1]]
   grp_g2 <- groups[[g2]]
-  use_limma <- length(grp_g1) == 1 || length(grp_g2) == 1
+ 
+  if (!use_measurements) {
+    n_g1 <- sum(sapply(grp_g1, function(s) length(intersect(quantity_cols, colnames(lst[[s]])))))
+    n_g2 <- sum(sapply(grp_g2, function(s) length(intersect(quantity_cols, colnames(lst[[s]])))))
+  } else {
+    n_g1 <- length(grp_g1)
+    n_g2 <- length(grp_g2)
+  }
+  use_limma <- n_g1 == 1 || n_g2 == 1
   
   # ── Build long-format data ──────────────────────────────────────────────────
   build_long <- function(grp_items, grp_name, allowed) {
