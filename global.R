@@ -35,6 +35,7 @@ library(data.table)
 library(stringr)
 library(reshape2)
 library(curl)
+library(limma) #only for grouped comparison when only 1 measurement exists in the group. Limma is used to infer p-value.
 #These are for plotting
 library(viridis)
 library(ggplot2)
@@ -56,6 +57,7 @@ library(jsonlite)
 library(igraph)
 library(ggraph)
 library(tidyverse)
+
 
 #-----------Column extraction------------
 # Here we initiate all the possible column names important for us from all different input formats
@@ -544,6 +546,7 @@ register_custom_schema <- function(custom_schema    = NULL, custom_signature = N
 check_annotation_table <- function(df) {
   #check the file headers
   message("Annotation file given.")
+  df <- distinct(df)
   colnames(df) <- tolower(colnames(df))
   header <- colnames(df)
   
@@ -601,6 +604,7 @@ check_annotation_table <- function(df) {
     df %>%
       dplyr::select(all_of(c("name", condition_cols, replicate_cols))) %>%
       dplyr::group_by(name) %>%
+      dplyr::distinct(name) %>%
       dplyr::summarise(n = n(), .groups = "drop") %>%
       { 
         if (any(.$n > 1)) {
@@ -668,6 +672,38 @@ load_from_annotation <- function(annotation_df) {
   data_list
 }
 
+build_measurement_col_map <- function(data_list, annotation_df) {
+  if (!isTRUE(attr(annotation_df, "has_measurement"))) return(NULL)
+  
+  col_map <- list()
+  
+  for (nm in unique(annotation_df$name)) {
+    sub_ann <- annotation_df[annotation_df$name == nm, ]
+    df_cols <- colnames(data_list[[nm]])
+    
+    for (meas in sub_ann$measurement) {
+      hits <- grep(tolower(meas), tolower(df_cols), value = TRUE, fixed = TRUE)
+      
+      if (length(hits) == 0) {
+        stop(paste0("Measurement '", meas, "' (sample '", nm, "') ",
+                    "not found in any column of the data. ",
+                    "Ensure the measurement name appears in the quantity column names."))
+      }
+      if (length(hits) > 1) {
+        stop(paste0("Measurement '", meas, "' (sample '", nm, "') ",
+                    "matches multiple columns: ",
+                    paste(hits, collapse = ", "), ". ",
+                    "Measurement names must be unique enough to identify exactly one column."))
+      }
+      
+      col_map[[meas]] <- list(name = nm, col = hits)
+    }
+  }
+  
+  col_map
+}
+
+
 # Evaluate a condition expression against an annotation data.frame.
 # expr_terms: list of list(col, val, op)
 #   col — condition column name
@@ -677,25 +713,47 @@ load_from_annotation <- function(annotation_df) {
 eval_condition_expr <- function(expr_terms, ann_df) {
   if (length(expr_terms) == 0) return(setNames(logical(0), character(0)))
   
+  # Keep all rows, no collapsing to unique sample
   sample_names <- unique(ann_df$name)
-  ann_unique   <- ann_df[match(sample_names, ann_df$name), , drop = FALSE]
   
-  t1     <- expr_terms[[1]]
-  result <- setNames(ann_unique[[t1$col]] %in% t1$val, sample_names)
+  # Base mask for the first term
+  t1 <- expr_terms[[1]]
   
+  # Evaluate value mask
+  val_mask <- ann_df[[t1$col]] %in% t1$val
+  
+  # Evaluate measurement mask if provided (case-insensitive)
+  if (isTRUE(attr(ann_df, "has_measurement")) && !is.null(t1$measurement)) {
+    meas_mask <- tolower(ann_df$measurement) %in% tolower(t1$measurement)
+    val_mask <- val_mask & meas_mask
+  }
+  
+  # Create a result column per row instead of collapsing yet
+  ann_df$result <- val_mask
+  
+  # Process remaining terms
   if (length(expr_terms) > 1) {
     for (i in 2:length(expr_terms)) {
-      t      <- expr_terms[[i]]
-      tmask  <- setNames(ann_unique[[t$col]] %in% t$val, sample_names)
-      result <- switch(t$op,
-                       "AND" = result & tmask,
-                       "OR"  = result | tmask,
-                       "NOT" = result & !tmask,
-                       stop(paste("Unknown operator:", t$op))
+      t <- expr_terms[[i]]
+      tmask <- ann_df[[t$col]] %in% t$val
+      
+      if (isTRUE(attr(ann_df, "has_measurement")) && !is.null(t$measurement)) {
+        meas_mask <- tolower(ann_df$measurement) %in% tolower(t$measurement)
+        tmask <- tmask & meas_mask
+      }
+      
+      # Combine row-wise
+      ann_df$result <- switch(t$op,
+                              "AND" = ann_df$result & tmask,
+                              "OR"  = ann_df$result | tmask,
+                              "NOT" = ann_df$result & !tmask,
+                              stop(paste("Unknown operator:", t$op))
       )
     }
   }
-  result
+  
+  # Keep sample, measurement, and result columns
+  ann_df[, c("name", "measurement", "result")]
 }
 
 detect_software <- function(df, signature, fallback = "Generic") {
@@ -2352,79 +2410,110 @@ plot_aa_composition <- function(lst, color = "default",show_numbers = TRUE) {
 
 #------Statistical caluclations-------
 #calcualte group comparison statistics
-compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_peptides_g2, g1, g2, pep_col, quantity_cols) {
+compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_peptides_g2,
+                                     g1, g2, pep_col, quantity_cols, col_map = NULL) {
   
-  keep_cols <- c(pep_col, quantity_cols, "PROTEIN")
+  use_measurements <- !is.null(col_map)
+  grp_g1 <- groups[[g1]]
+  grp_g2 <- groups[[g2]]
+  use_limma <- length(grp_g1) == 1 || length(grp_g2) == 1
   
-  bind_group <- function(groups, allowed_peptides) {
-    dplyr::bind_rows(lapply(groups, function(s) {
-      df <- lst[[s]]
-      cols <- dplyr::intersect(keep_cols, colnames(df))
-      if (length(cols) < 2) return(NULL)  # need peptide column + ≥1 quantity column
-      df[, cols, drop = FALSE]
-      df[df[[pep_col]] %in% allowed_peptides, , drop = FALSE]
-    }))
+  # ── Build long-format data ──────────────────────────────────────────────────
+  build_long <- function(grp_items, grp_name, allowed) {
+    if (!use_measurements) {
+      dplyr::bind_rows(lapply(grp_items, function(s) {
+        df <- lst[[s]]
+        cols <- intersect(c(pep_col, quantity_cols, "PROTEIN"), colnames(df))
+        df[df[[pep_col]] %in% allowed, cols, drop = FALSE]
+      })) %>%
+        tidyr::pivot_longer(cols = dplyr::any_of(quantity_cols),
+                            names_to = "Sample", values_to = "Quantity") %>%
+        dplyr::mutate(Group = grp_name)
+    } else {
+      dplyr::bind_rows(lapply(grp_items, function(col_name) {
+        entry <- col_map[[col_name]]
+        df    <- lst[[entry$name]]
+        df    <- df[df[[pep_col]] %in% allowed,
+                    c(pep_col, "PROTEIN", entry$col), drop = FALSE]
+        names(df)[names(df) == entry$col] <- "Quantity"
+        df$Sample <- col_name
+        df$Group  <- grp_name
+        df
+      }))
+    }
   }
   
-  df_g1 <- bind_group(groups[[g1]], allowed_peptides_g1)
-  df_g2 <- bind_group(groups[[g2]], allowed_peptides_g2)
-  
-  # Skip pair if either group is empty
-  if (is.null(df_g1) || is.null(df_g2) ||
-      nrow(df_g1) == 0 || nrow(df_g2) == 0) {
-    return(NULL)
-  }
-  df_long <- bind_rows(
-    df_g1 %>%
-      pivot_longer(
-        cols = any_of(quantity_cols),
-        names_to = "Sample",
-        values_to = "Quantity"
-      ) %>%
-      dplyr::mutate(Group = g1),
-    
-    df_g2 %>%
-      pivot_longer(
-        cols = any_of(quantity_cols),
-        names_to = "Sample",
-        values_to = "Quantity"
-      ) %>%
-      dplyr::mutate(Group = g2)
+  df_long <- dplyr::bind_rows(
+    build_long(grp_g1, g1, allowed_peptides_g1),
+    build_long(grp_g2, g2, allowed_peptides_g2)
   )
   
-  #safe_mean <- function(x) if(length(x) > 0) mean(x, na.rm = TRUE) else NA_real_
-  safe_ttest <- function(x, y) {
-    x <- x[is.finite(x)]; y <- y[is.finite(y)]
-    if (length(x) < 2 || length(y) < 2) return(NA_real_)
-    tryCatch(t.test(x, y)$p.value, error = function(e) NA_real_)
-  }
+  if (nrow(df_long) == 0) return(NULL)
   
-  volcano_df <- df_long %>%
+  # ── Means and FC ─────────────────────────────────────────────────────────────
+  summary_df <- df_long %>%
     dplyr::group_by(.data[[pep_col]]) %>%
     dplyr::summarise(
       PROTEIN = dplyr::first(PROTEIN),
       Mean_G1 = mean(Quantity[Group == g1], na.rm = TRUE),
       Mean_G2 = mean(Quantity[Group == g2], na.rm = TRUE),
-      log2FC = log2(Mean_G2 + 1) - log2(Mean_G1 + 1),
-      pval = safe_ttest(
-        Quantity[Group == g2],
-        Quantity[Group == g1]
-      ),
+      log2FC  = log2(Mean_G2 + 1) - log2(Mean_G1 + 1),
+      A       = 0.5 * (log2(Mean_G1 + 1) + log2(Mean_G2 + 1)),
       .groups = "drop"
-    ) %>%
-    ungroup() %>%  # important before applying p.adjust
-    dplyr::mutate(
-      adj_pval_BH = p.adjust(pval, method = "BH"),          # Benjamini-Hochberg FDR
-      adj_pval_Bonf = p.adjust(pval, method = "bonferroni"),# Bonferroni
-      negLog10P = -log10(pval),
-      negLog10AdjP_BH = -log10(adj_pval_BH),
-      negLog10AdjP_Bonf = -log10(adj_pval_Bonf)
-    ) %>% #this is for MAplot
-    dplyr::mutate(
-      A = 0.5 * (log2(Mean_G1 + 1) + log2(Mean_G2 + 1)),
     )
-  volcano_df
+  
+  # ── P-values ──────────────────────────────────────────────────────────────────
+  safe_limma_pvals <- function(df_g1, df_g2, qty_g1, qty_g2, pep_col) {
+    if (!requireNamespace("limma", quietly = TRUE))
+      stop("Package 'limma' is required for n=1 testing. Install via BiocManager::install('limma')")
+    
+    mat_g1 <- as.matrix(df_g1 %>% dplyr::select(any_of(qty_g1)) %>% log2())
+    mat_g2 <- as.matrix(df_g2 %>% dplyr::select(any_of(qty_g2)) %>% log2())
+    
+    # align peptide rows
+    peps   <- intersect(df_g1[[pep_col]], df_g2[[pep_col]])
+    mat_g1 <- mat_g1[df_g1[[pep_col]] %in% peps, , drop = FALSE]
+    mat_g2 <- mat_g2[df_g2[[pep_col]] %in% peps, , drop = FALSE]
+    
+    combined <- cbind(mat_g1, mat_g2)
+    group    <- factor(c(rep("g1", ncol(mat_g1)), rep("g2", ncol(mat_g2))))
+    design   <- model.matrix(~group)
+    
+    fit  <- limma::lmFit(combined, design)
+    fit  <- limma::eBayes(fit)
+    limma::topTable(fit, coef = 2, number = Inf, sort.by = "none")$P.Value
+  }
+  
+  if (use_limma) {
+    pval_df     <- safe_limma_pvals(df_long, g1, g2, pep_col)
+    test_method <- "limma (n=1 fallback)"
+  } else {
+    pval_df <- df_long %>%
+      dplyr::group_by(.data[[pep_col]]) %>%
+      dplyr::summarise(
+        pval = {
+          x <- Quantity[Group == g1 & is.finite(Quantity)]
+          y <- Quantity[Group == g2 & is.finite(Quantity)]
+          if (length(x) < 2 || length(y) < 2) NA_real_
+          else tryCatch(t.test(x, y)$p.value, error = function(e) NA_real_)
+        },
+        .groups = "drop"
+      )
+    test_method <- "t-test"
+  }
+  
+  # ── Combine and adjust ────────────────────────────────────────────────────────
+  dplyr::left_join(summary_df, pval_df, by = pep_col) %>%
+    dplyr::mutate(
+      adj_pval_BH       = p.adjust(pval, method = "BH"),
+      adj_pval_Bonf     = p.adjust(pval, method = "bonferroni"),
+      negLog10P         = -log10(pval),
+      negLog10AdjP_BH   = -log10(adj_pval_BH),
+      negLog10AdjP_Bonf = -log10(adj_pval_Bonf),
+      test_method       = test_method
+    )
 }
+
 
 #binding prediction summary
 compute_binder_summary <- function(df, alleles = NULL) {

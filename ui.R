@@ -113,7 +113,7 @@ ui <- bs4DashPage(
                     )
                   ),
           
-          ### ---- Unique Entries ----
+          ### ---- Other Numeric Columns ----
           bs4Card(title = "Other Numeric Columns", width = 12, maximizable = TRUE, 
                   tabsetPanel(
                     tabPanel("Charge",
@@ -416,12 +416,13 @@ ui <- bs4DashPage(
           
           ### ---- Call netMHCpan from windows subsystem for linux ----
           bs4Card(title = "run netMHCpan", width = 12, maximizable = TRUE,
-                  selectInput(
+                  selectizeInput(
                     "HLA_alleles",
                     "Select HLA allele(s):",
-                    choices  = hla_alleles,   # named list → renders as grouped optgroups
-                    selected = "HLA-A02:01",
-                    multiple = TRUE
+                    choices  = NULL,
+                    selected = NULL,
+                    multiple = TRUE,
+                    options  = list(placeholder = "Type to search alleles...")
                   ),
                   actionButton("run_netmhc", "Run netMHCpan"),
                   textOutput("netmhc_status")

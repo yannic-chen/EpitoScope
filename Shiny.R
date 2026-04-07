@@ -108,6 +108,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   condition_groups_r <- reactiveVal(list())  # list(name → list(samples, expr))
   active_expr_r      <- reactiveVal(list())  # expression being built
   editing_group_r    <- reactiveVal(NULL)    # name of group being edited, or NULL
+  measurement_col_map_r <- reactiveVal(NULL)
   
   #Preloaded Data
   observe({
@@ -223,6 +224,21 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         purrr::reduce(full_join, by = "final_name")
 
       print(Sys.time() - start)
+      
+      if(annotation_provided()) {
+        quantity_cols <- merged_info %>%
+          dplyr::filter(final_name == "QUANTITY") %>%          #Should be SPECTRA, but cannot currently do because 0 is missing in PEAKS, while 0 is existing in Fragpipe and NA is missing here.
+          dplyr::select(-final_name) %>%   # all sample columns.
+          unlist(recursive = TRUE, use.names = FALSE)
+        
+        dfs_subset <- lapply(dfs, function(df) {
+          df[, intersect(colnames(df), quantity_cols), drop = FALSE]
+        })
+        
+        measurement_col_map_r(
+          build_measurement_col_map(dfs_subset, attr(loaded, "annotation"))
+        )
+      }
   
       prediction_cache(distinct(prediction))
       data_list_r(dfs)
@@ -916,7 +932,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
           title = tagList(
             "Condition-based",
             if (!has_conditions)
-              tags$small(" (no annotation)", style = "color:#aaa; font-weight:normal;")
+              tags$small(" (no annotation/condition)", style = "color:#aaa; font-weight:normal;")
           ),
           value = "condition",
           tags$br(),
@@ -997,6 +1013,13 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     )
   })
   
+  observe({
+    updateSelectizeInput(session, "HLA_alleles",
+                         choices  = unname(unlist(hla_alleles)),
+                         selected = "HLA-A02:01",
+                         server   = TRUE)
+  })
+  
   # Populate value choices when column selection changes
   observeEvent(input$cond_col, {
     req(annotation_provided(), input$cond_col)
@@ -1050,9 +1073,14 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$cond_mask_table <- renderTable({
     expr <- active_expr_r()
     req(length(expr) > 0, annotation_provided())
-    mask <- eval_condition_expr(expr, annotation_df_r())
-    data.frame(Sample = names(mask), Match = ifelse(mask, "Yes", "No"),
-               stringsAsFactors = FALSE)
+    
+    mask_df <- eval_condition_expr(expr, annotation_df_r())
+    
+    # Add a readable "Match" column
+    mask_df$Match <- ifelse(mask_df$result, "Yes", "No")
+    
+    # Select columns to show
+    mask_df[, c("name", "measurement", "Match")]
   }, striped = TRUE, bordered = TRUE, hover = TRUE)
   
   # Edit mode banner
@@ -1093,8 +1121,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       return()
     }
     
-    mask    <- eval_condition_expr(expr, annotation_df_r())
-    samples <- names(mask)[mask]
+    mask_df <- eval_condition_expr(expr, annotation_df_r())
+    
+    samples <- mask_df$name[mask_df$result]  
     
     if (length(samples) == 0) {
       showNotification("Expression matches no samples.", type = "warning")
@@ -1685,24 +1714,28 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   binder_summary_all <- reactive({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
+    req(!is.null(peptide_wide_unique()))
     compute_binder_summary(peptide_wide_unique(), alleles = input$allele_viz_select)
   })
   
   output$binding_summary <- DT::renderDT({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
+    req(!is.null(peptide_wide_unique()))
     binder_summary_all()
   })
   
   output$binding_plot_percent <- renderPlot({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
+    req(!is.null(peptide_wide_unique()))
     plot_binders(peptide_wide_unique(), color = input$color_palette, percent = TRUE, alleles = input$allele_viz_select)
   })
   
   output$binding_plot_absolute <- renderPlot({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
+    req(!is.null(peptide_wide_unique()))
     plot_binders(peptide_wide_unique(), color = input$color_palette, percent = FALSE, alleles = input$allele_viz_select)
   })
   
@@ -1851,8 +1884,8 @@ shinyApp(
   ui = ui,
   server = function(input, output, session) {
     server(input, output, session, 
-           input_variable = test_annotation, 
-           generate_pseudo_sequence = TRUE, 
+           input_variable = test_annotation3, 
+           generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 
            replace_schema = FALSE)
