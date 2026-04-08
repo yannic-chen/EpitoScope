@@ -1238,21 +1238,27 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
 
   for (g in names(groups)) {
     group_items    <- groups[[g]]
-    # Normalise: condition groups may arrive as list(name=..., measurement=..., expr=...)
+    # Normalise: strip $expr, keep list(name, measurement) or plain char vector
     if (!is.null(col_map) && is.list(group_items) && !is.null(group_items$measurement)) {
-      group_items <- group_items$measurement
+      group_items <- list(name = group_items$name, measurement = group_items$measurement)
     }
     allowed_peptides <- group_peptide_sets[[g]]
 
     if (!is.null(col_map)) {
-      # Measurement mode: each item is a measurement name resolved via col_map
-      df_group <- dplyr::bind_rows(lapply(group_items, function(item) {
-        entry <- col_map[[item]]
+      # Measurement mode: grp_items = list(name=c(...), measurement=c(...))
+      measurements <- group_items$measurement
+      names_vec    <- group_items$name
+      df_group <- dplyr::bind_rows(lapply(seq_along(measurements), function(i) {
+        nm   <- names_vec[i]
+        meas <- measurements[i]
+        entry <- col_map[[meas]]
         if (is.null(entry)) return(NULL)
-        df <- lst[[entry$name]]
-        if (is.null(df) || !"PEPTIDE" %in% colnames(df) || !entry$col %in% colnames(df)) return(NULL)
-        df_sub <- df[df$PEPTIDE %in% allowed_peptides, c("PEPTIDE", entry$col), drop = FALSE]
-        names(df_sub)[names(df_sub) == entry$col] <- "Quantity"
+        df <- lst[[nm]]
+        if (is.null(df) || !"PEPTIDE" %in% colnames(df)) return(NULL)
+        actual_col <- colnames(df)[tolower(colnames(df)) == tolower(entry$col)][1]
+        if (is.na(actual_col)) return(NULL)
+        df_sub <- df[df$PEPTIDE %in% allowed_peptides, c("PEPTIDE", actual_col), drop = FALSE]
+        names(df_sub)[names(df_sub) == actual_col] <- "Quantity"
         df_sub
       }))
 
@@ -2441,21 +2447,23 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
   grp_g1 <- groups[[g1]]
   grp_g2 <- groups[[g2]]
 
-  # Normalise: condition groups may arrive as list(name=..., measurement=..., expr=...)
-  # In measurement mode we only need the measurement name vector.
+  # Strip $expr so grp is consistently list(name, measurement) or a plain char vector
   if (use_measurements) {
-    if (is.list(grp_g1) && !is.null(grp_g1$measurement)) grp_g1 <- grp_g1$measurement
-    if (is.list(grp_g2) && !is.null(grp_g2$measurement)) grp_g2 <- grp_g2$measurement
+    if (is.list(grp_g1) && !is.null(grp_g1$measurement))
+      grp_g1 <- list(name = grp_g1$name, measurement = grp_g1$measurement)
+    if (is.list(grp_g2) && !is.null(grp_g2$measurement))
+      grp_g2 <- list(name = grp_g2$name, measurement = grp_g2$measurement)
   }
+
   if (!use_measurements) {
     n_g1 <- sum(sapply(grp_g1, function(s) length(intersect(quantity_cols, colnames(lst[[s]])))))
     n_g2 <- sum(sapply(grp_g2, function(s) length(intersect(quantity_cols, colnames(lst[[s]])))))
   } else {
-    n_g1 <- length(grp_g1)
-    n_g2 <- length(grp_g2)
+    n_g1 <- if (is.list(grp_g1)) length(grp_g1$measurement) else length(grp_g1)
+    n_g2 <- if (is.list(grp_g2)) length(grp_g2$measurement) else length(grp_g2)
   }
   use_limma <- n_g1 == 1 || n_g2 == 1
-  
+
   # ── Build long-format data ──────────────────────────────────────────────────
   build_long <- function(grp_items, grp_name, allowed) {
     if (!use_measurements) {
@@ -2468,28 +2476,33 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
                             names_to = "Sample", values_to = "Quantity") %>%
         dplyr::mutate(Group = grp_name)
     } else {
-      dplyr::bind_rows(lapply(grp_items, function(col_name) {
-        entry <- col_map[[col_name]]
+      # grp_items = list(name = c(...), measurement = c(...)), parallel vectors
+      measurements <- grp_items$measurement
+      names_vec    <- grp_items$name
+      dplyr::bind_rows(lapply(seq_along(measurements), function(i) {
+        nm   <- names_vec[i]
+        meas <- measurements[i]
+        entry <- col_map[[meas]]
         if (is.null(entry)) {
-          warning(paste0("[build_long] No col_map entry for measurement '", col_name, "'"))
+          warning(paste0("[build_long] No col_map entry for measurement '", meas, "'"))
           return(NULL)
         }
-        df    <- lst[[entry$name]]
+        df <- lst[[nm]]
         if (is.null(df)) {
-          warning(paste0("[build_long] No data in lst for sample '", entry$name, "'"))
+          warning(paste0("[build_long] No data in lst for sample '", nm, "'"))
           return(NULL)
         }
-        if (!entry$col %in% colnames(df)) {
-          warning(paste0("[build_long] Column '", entry$col, "' not found in sample '",
-                         entry$name, "'. Available cols: ",
-                         paste(head(colnames(df), 30), collapse = ", ")))
+        actual_col <- colnames(df)[tolower(colnames(df)) == tolower(entry$col)][1]
+        if (is.na(actual_col)) {
+          warning(paste0("[build_long] Column '", entry$col, "' not found (case-insensitive) in '",
+                         nm, "'. Available cols: ", paste(head(colnames(df), 30), collapse = ", ")))
           return(NULL)
         }
-        keep_cols <- intersect(c(pep_col, "PROTEIN", entry$col), colnames(df))
-        df    <- df[df[[pep_col]] %in% allowed, keep_cols, drop = FALSE]
-        names(df)[names(df) == entry$col] <- "Quantity"
+        keep_cols <- intersect(c(pep_col, "PROTEIN", actual_col), colnames(df))
+        df <- df[df[[pep_col]] %in% allowed, keep_cols, drop = FALSE]
+        names(df)[names(df) == actual_col] <- "Quantity"
         if (!"PROTEIN" %in% colnames(df)) df$PROTEIN <- NA_character_
-        df$Sample <- col_name
+        df$Sample <- meas
         df$Group  <- grp_name
         df
       }))
