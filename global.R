@@ -2460,9 +2460,21 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
     } else {
       dplyr::bind_rows(lapply(grp_items, function(col_name) {
         entry <- col_map[[col_name]]
-        if (is.null(entry)) return(NULL)
+        if (is.null(entry)) {
+          warning(paste0("[build_long] No col_map entry for measurement '", col_name, "'"))
+          return(NULL)
+        }
         df    <- lst[[entry$name]]
-        if (is.null(df)) return(NULL)
+        if (is.null(df)) {
+          warning(paste0("[build_long] No data in lst for sample '", entry$name, "'"))
+          return(NULL)
+        }
+        if (!entry$col %in% colnames(df)) {
+          warning(paste0("[build_long] Column '", entry$col, "' not found in sample '",
+                         entry$name, "'. Available cols: ",
+                         paste(head(colnames(df), 30), collapse = ", ")))
+          return(NULL)
+        }
         keep_cols <- intersect(c(pep_col, "PROTEIN", entry$col), colnames(df))
         df    <- df[df[[pep_col]] %in% allowed, keep_cols, drop = FALSE]
         names(df)[names(df) == entry$col] <- "Quantity"
@@ -2480,7 +2492,13 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
   )
   
   if (nrow(df_long) == 0) return(NULL)
-  
+  if (!"Quantity" %in% colnames(df_long)) {
+    warning(paste0("[compute_group_comp_stats] 'Quantity' column missing from df_long. ",
+                   "use_measurements=", use_measurements,
+                   "; colnames=[", paste(colnames(df_long), collapse = ", "), "]"))
+    return(NULL)
+  }
+
   # ── Means and FC ─────────────────────────────────────────────────────────────
   summary_df <- df_long %>%
     dplyr::group_by(.data[[pep_col]]) %>%
