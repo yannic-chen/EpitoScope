@@ -2459,10 +2459,13 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
     } else {
       dplyr::bind_rows(lapply(grp_items, function(col_name) {
         entry <- col_map[[col_name]]
+        if (is.null(entry)) return(NULL)
         df    <- lst[[entry$name]]
-        df    <- df[df[[pep_col]] %in% allowed,
-                    c(pep_col, "PROTEIN", entry$col), drop = FALSE]
+        if (is.null(df)) return(NULL)
+        keep_cols <- intersect(c(pep_col, "PROTEIN", entry$col), colnames(df))
+        df    <- df[df[[pep_col]] %in% allowed, keep_cols, drop = FALSE]
         names(df)[names(df) == entry$col] <- "Quantity"
+        if (!"PROTEIN" %in% colnames(df)) df$PROTEIN <- NA_character_
         df$Sample <- col_name
         df$Group  <- grp_name
         df
