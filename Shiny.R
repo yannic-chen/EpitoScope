@@ -29,7 +29,7 @@ source("ui.R") #ui.R must be in the same folder. Otherwise change this path.
 options(shiny.maxRequestSize = 5*1024^3) #Increase upload limit (in bytes) if needed. 1024^3 = 1 GB
 options(width=10000) #This allows for text to not be text-wrapped.
 
-server <- function(input, output, session, preloaded_data, generate_pseudo_sequence = FALSE, custom_schema = NULL, custom_signature = NULL, replace_schema = FALSE) {
+server <- function(input, output, session, input_variable, generate_pseudo_sequence = FALSE, custom_schema = NULL, custom_signature = NULL, replace_schema = FALSE) {
 #------------------State Check---------------------
   ## State container
   startup_done <- reactiveVal(FALSE)
@@ -105,6 +105,11 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
   binder_summary_all <- reactive(NULL)
   peptide_wide_unique <- reactive(NULL)
   annotation_provided <- reactiveVal(FALSE)
+  annotation_df_r <- reactiveVal(NULL)
+  condition_groups_r <- reactiveVal(list())  # list(name → list(samples, expr))
+  active_expr_r      <- reactiveVal(list())  # expression being built
+  editing_group_r    <- reactiveVal(NULL)    # name of group being edited, or NULL
+  measurement_col_map_r <- reactiveVal(NULL)
   
   #Preloaded Data
   observe({
@@ -125,14 +130,24 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
         }
       }
       
-      if (is.data.frame(preloaded_data)) {
+      if (is.data.frame(input_variable)) {
         # Annotation table provided — load data from it
-        loaded       <- load_from_annotation(preloaded_data)
+        loaded <- load_from_annotation(input_variable)
         annotation_provided(TRUE)
         raw_list_r(loaded)
+        annotation_df_r(attr(loaded, "annotation"))
+      } else if(is.list(input_variable)) {
+        annotation_provided(FALSE)
+        # must be named
+        if (is.null(names(input_variable)) || any(names(input_variable) == "")) {
+        }
+        
+        # all elements must be data.frames
+        if (!all(vapply(input_variable, is.data.frame, logical(1)))) {
+        }
+        raw_list_r(input_variable)
       } else {
-        # Named list provided — proceed as usual
-        raw_list_r(preloaded_data)
+        stop("input must be either a data.frame or a named list of data.frames.")
       }
       
       processed <- lapply(raw_list_r(), normalize_df)
@@ -210,6 +225,21 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
         purrr::reduce(full_join, by = "final_name")
 
       print(Sys.time() - start)
+      
+      if(annotation_provided()) {
+        quantity_cols <- merged_info %>%
+          dplyr::filter(final_name == "QUANTITY") %>%          #Should be SPECTRA, but cannot currently do because 0 is missing in PEAKS, while 0 is existing in Fragpipe and NA is missing here.
+          dplyr::select(-final_name) %>%   # all sample columns.
+          unlist(recursive = TRUE, use.names = FALSE)
+        
+        dfs_subset <- lapply(dfs, function(df) {
+          df[, intersect(colnames(df), quantity_cols), drop = FALSE]
+        })
+        
+        measurement_col_map_r(
+          build_measurement_col_map(dfs_subset, attr(loaded, "annotation"))
+        )
+      }
   
       prediction_cache(distinct(prediction))
       data_list_r(dfs)
@@ -338,7 +368,7 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
           binder_unique = peptide_wide_unique(),
           group_list = safe_reactive(group_list),
           group_comp_data = safe_reactive(group_comp_data),
-          annotation_table = if (is.data.frame(preloaded_data)) preloaded_data else NULL
+          annotation_table = if (is.data.frame(input_variable)) input_variable else NULL
         ),
         envir = new.env(parent = globalenv())
       )
@@ -377,44 +407,20 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
   })
   
   ## ---------Annotation Table----------------
-  output$annotation_card <- renderUI({
-    if (!annotation_provided()) return(NULL)
-    
-    ann <- preloaded_data
-    
-    bs4Card(
-      title       = tagList(icon("table"), "Sample Annotation"),
-      width       = 12,
-      maximizable = TRUE,
-      
-      if (length(attr(ann, "condition_cols")) > 0) {
-        tags$p(
-          tags$strong("Condition columns: "),
-          lapply(attr(ann, "condition_cols"), function(col) {
-            tags$span(class = "badge badge-info mr-1", col)
-          })
-        )
-      },
-      
-      DT::DTOutput("annotation_table")
-    )
-  })
-  
   output$annotation_table <- DT::renderDT({
-    req(annotation_provided())
-    ann <- preloaded_data
-    req(ann)
+    if(!annotation_provided()){
+      updatebs4Card(id = "annotation_card", session = session, action = "remove")
+      shiny::validate("No annotation table provided.")
+    }
+    
+    ann <- input_variable
     
     DT::datatable(
       ann,
       rownames = FALSE,
-      options  = list(pageLength = 10, scrollX = TRUE, dom = "frtip")
-    ) %>%
-      DT::formatStyle(
-        attr(ann, "condition_cols"),
-        backgroundColor = "#e8f4f8",
-        fontWeight      = "bold"
-      )
+      options  = list(pageLength = 10, scrollX = TRUE, autoWidth = TRUE),
+      escape = FALSE,
+    )
   })
   
   ## ----Number of peptides and peptidoforms----
@@ -473,7 +479,7 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
   observe({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "RT", na_policy = "any")
-    
+
     for (sample_name in names(lst)) {
       
       local({
@@ -528,9 +534,9 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
   })
   
   ## ---- Motif Plot ----
-  global_legend_plot <- ggseqlogo::ggseqlogo("ACDEFGHIKLMNPQRSTVWY") +
+  global_legend_plot <- suppressWarnings(ggseqlogo::ggseqlogo("ACDEFGHIKLMNPQRSTVWY") +
     ggplot2::theme_minimal() +
-    ggplot2::ggtitle("Amino Acid Colors")
+    ggplot2::ggtitle("Amino Acid Colors"))
   
   for (L in motif_plot_length) {
     local({
@@ -687,7 +693,7 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
     check_data_error(lst, na_policy = "ignore")
     
     quantity_cols <- data_info_r() %>%
-      filter(final_name == "QUANTITY") %>%          #Should be SPECTRA, but cannot currently do because 0 is missing in PEAKS, while 0 is existing in Fragpipe and NA is missing here.
+      dplyr::filter(final_name == "QUANTITY") %>%          #Should be SPECTRA, but cannot currently do because 0 is missing in PEAKS, while 0 is existing in Fragpipe and NA is missing here.
       dplyr::select(-final_name) %>%   # all sample columns.
       unlist(recursive = TRUE, use.names = FALSE)
     
@@ -758,7 +764,7 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
     req(lst)
     
     spectra_cols <- data_info_r() %>%
-      filter(final_name == "SPECTRA") %>%          #Should be SPECTRA, but cannot currently do because 0 is missing in PEAKS, while 0 is existing in Fragpipe and NA is missing here.
+      dplyr::filter(final_name == "SPECTRA") %>%          #Should be SPECTRA, but cannot currently do because 0 is missing in PEAKS, while 0 is existing in Fragpipe and NA is missing here.
       dplyr::select(-final_name) %>%   # all sample columns.
       unlist(recursive = TRUE, use.names = FALSE)
     
@@ -770,7 +776,7 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
     req(lst)
     
     spectra_cols <- data_info_r() %>%
-      filter(final_name == "SPECTRA") %>%
+      dplyr::filter(final_name == "SPECTRA") %>%
       dplyr::select(-final_name) %>%   # all sample columns.
       unlist(recursive = TRUE, use.names = FALSE)
     
@@ -909,63 +915,367 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
   ## ----Render the UI for group assignment----
   output$group_assign_ui <- renderUI({
     req(names(active_data_list()))
-    n <- input$n_groups
+    has_conditions <- annotation_provided() &&
+      length(attr(annotation_df_r(), "condition_cols")) > 0
     
-    # Wrap everything in a tagList so Shiny renders the list properly
+    tagList(
+      tabsetPanel(
+        id = "group_mode_tabs",
+        
+        tabPanel(
+          title = "Manual (Samples)",
+          value = "manual",
+          tags$br(),
+          uiOutput("manual_group_selector_ui")
+        ),
+        
+        tabPanel(
+          title = tagList(
+            "Condition-based",
+            if (!has_conditions)
+              tags$small(" (no annotation/condition)", style = "color:#aaa; font-weight:normal;")
+          ),
+          value = "condition",
+          tags$br(),
+          if (!has_conditions) {
+            tags$p(tags$em("Load an annotation table with condition columns to enable this feature."),
+                   style = "color:grey;")
+          } else {
+            uiOutput("condition_group_builder_ui")
+          }
+        )
+      ),
+      
+      # Grey out the condition tab when unavailable
+      if (!has_conditions) {
+        tags$script(HTML("
+        setTimeout(function() {
+          $('#group_mode_tabs a[data-value=\"condition\"]').css({
+            'pointer-events': 'none',
+            'color': '#aaa',
+            'opacity': '0.55',
+            'cursor': 'not-allowed'
+          });
+        }, 100);
+      "))
+      }
+    )
+  })
+  
+  #Manually select samples to group
+  output$manual_group_selector_ui <- renderUI({
+    req(names(active_data_list()))
+    n <- input$n_groups
     tagList(lapply(seq_len(n), function(i) {
       tagList(
-        textInput(
-          inputId = paste0("group_name_", i),
-          label   = paste("Group", i, "name"),
-          value   = paste("Group", i)  # default name
-        ),
-        selectInput(
-          inputId = paste0("group_", i),
-          label   = paste("Select samples for", paste0("Group ", i)),
-          choices = names(active_data_list()),
-          multiple = TRUE
-        ),
+        textInput(paste0("group_name_", i), paste("Group", i, "name"), paste("Group", i)),
+        selectInput(paste0("group_", i), paste("Select samples for Group", i),
+                    choices = names(active_data_list()), multiple = TRUE),
         tags$hr()
       )
     }))
   })
   
+  #build groups by condition
+  output$condition_group_builder_ui <- renderUI({
+    req(annotation_provided())
+    cond_cols <- attr(annotation_df_r(), "condition_cols")
+    req(length(cond_cols) > 0)
+    
+    tagList(
+      # ── Expression builder ──────────────────────────────────────────
+      tags$div(class = "well",
+               tags$h6(tags$strong("Build expression")),
+               fluidRow(
+                 column(4, selectInput("cond_col", "Condition column:", choices = cond_cols)),
+                 column(4, selectInput("cond_val", "Values:", choices = character(0), multiple = TRUE)),
+                 column(4, selectInput("cond_op",  "Operator (2nd+ term):", choices = c("AND", "OR", "NOT")))
+               ),
+               actionButton("cond_add_term",   "Add term",  class = "btn-sm btn-primary mr-1"),
+               actionButton("cond_undo_term",  "Undo last", class = "btn-sm btn-warning mr-1"),
+               actionButton("cond_clear_expr", "Clear all", class = "btn-sm btn-danger"),
+               tags$hr(),
+               tags$h6(tags$strong("Current expression:")),
+               verbatimTextOutput("cond_expr_text"),
+               tags$h6(tags$strong("Sample mask preview:")),
+               tableOutput("cond_mask_table")
+      ),
+      # ── Save / update group ─────────────────────────────────────────
+      tags$div(class = "well",
+               uiOutput("cond_edit_banner"),
+               fluidRow(
+                 column(8, textInput("cond_group_name", "Group name:", "")),
+                 column(4, tags$br(), uiOutput("cond_save_btn_ui"))
+               )
+      ),
+      # ── Saved groups ────────────────────────────────────────────────
+      uiOutput("cond_saved_groups_ui"),
+      tableOutput("cond_membership_table")
+    )
+  })
+  
+  observe({
+    updateSelectizeInput(session, "HLA_alleles",
+                         choices  = unname(unlist(hla_alleles)),
+                         selected = "HLA-A02:01",
+                         server   = TRUE)
+  })
+  
+  # Populate value choices when column selection changes
+  observeEvent(input$cond_col, {
+    req(annotation_provided(), input$cond_col)
+    vals <- sort(unique(as.character(annotation_df_r()[[input$cond_col]])))
+    vals <- vals[!is.na(vals)]
+    updateSelectInput(session, "cond_val", choices = vals, selected = character(0))
+  })
+  
+  # Add a term to the expression
+  observeEvent(input$cond_add_term, {
+    req(input$cond_col, length(input$cond_val) > 0)
+    expr <- active_expr_r()
+    op   <- if (length(expr) == 0) NULL else input$cond_op
+    expr[[length(expr) + 1]] <- list(col = input$cond_col, val = input$cond_val, op = op)
+    active_expr_r(expr)
+  })
+  
+  # Undo last term
+  observeEvent(input$cond_undo_term, {
+    expr <- active_expr_r()
+    if (length(expr) > 0) active_expr_r(expr[-length(expr)])
+  })
+  
+  # Clear expression
+  observeEvent(input$cond_clear_expr, {
+    active_expr_r(list())
+    editing_group_r(NULL)
+    updateTextInput(session, "cond_group_name", value = "")
+  })
+  
+  # Cancel edit
+  observeEvent(input$cond_cancel_edit, {
+    active_expr_r(list())
+    editing_group_r(NULL)
+    updateTextInput(session, "cond_group_name", value = "")
+  })
+  
+  # Expression text preview
+  output$cond_expr_text <- renderText({
+    expr <- active_expr_r()
+    if (length(expr) == 0) return("(empty)")
+    parts <- sapply(seq_along(expr), function(i) {
+      t        <- expr[[i]]
+      term_str <- paste0(t$col, " IN [", paste(t$val, collapse = ", "), "]")
+      if (i == 1) term_str else paste(t$op, term_str)
+    })
+    paste(parts, collapse = " ")
+  })
+  
+  # Sample mask preview
+  output$cond_mask_table <- renderTable({
+    expr <- active_expr_r()
+    req(length(expr) > 0, annotation_provided())
+    result_df        <- eval_condition_expr(expr, annotation_df_r())
+    result_df$Match  <- ifelse(result_df$result, "Yes", "No")
+    result_df$result <- NULL
+    result_df
+  }, striped = TRUE, bordered = TRUE, hover = TRUE)
+  
+  # Edit mode banner
+  output$cond_edit_banner <- renderUI({
+    nm <- editing_group_r()
+    if (is.null(nm)) return(NULL)
+    tags$div(class = "alert alert-info py-1 mb-2",
+             tags$strong("Editing: "), nm,
+             actionButton("cond_cancel_edit", "Cancel", class = "btn-sm btn-secondary ml-2")
+    )
+  })
+  
+  # Save/Update button label
+  output$cond_save_btn_ui <- renderUI({
+    if (is.null(editing_group_r())) {
+      actionButton("cond_save_group", "Save as group", class = "btn-success btn-sm")
+    } else {
+      actionButton("cond_save_group", "Update group",  class = "btn-primary btn-sm")
+    }
+  })
+  
+  # Save or update group
+  observeEvent(input$cond_save_group, {
+    nm <- trimws(input$cond_group_name)
+    req(nchar(nm) > 0)
+    expr <- active_expr_r()
+    req(length(expr) > 0, annotation_provided())
+    
+    groups <- condition_groups_r()
+    
+    if (is.null(groups[[nm]]) && length(groups) >= input$n_groups) {
+      showNotification(paste0("Maximum of ", input$n_groups, " group(s) reached."), type = "warning")
+      return()
+    }
+    
+    result_df <- eval_condition_expr(expr, annotation_df_r())
+    selected  <- if (isTRUE(attr(annotation_df_r(), "has_measurement"))) {
+      list(name = result_df$name[result_df$result], measurement = result_df$measurement[result_df$result], expr = expr)
+    } else {
+      list(name = result_df$name[result_df$result], expr = expr)
+    }
+    
+    if (length(selected) == 0) {
+      showNotification("Expression matches no samples.", type = "warning")
+      return()
+    }
+    
+    groups[[nm]] <- selected
+    tmp_groups <<- groups
+    condition_groups_r(groups)
+    
+    active_expr_r(list())
+    editing_group_r(NULL)
+    updateTextInput(session, "cond_group_name", value = "")
+    showNotification(paste0("Group '", nm, "' saved (", length(selected), " samples)."), type = "message")
+  })
+  
+  # Register per-group edit/delete observers dynamically
+  observe({
+    grps <- condition_groups_r()
+    lapply(names(grps), function(nm) {
+      local({
+        local_nm <- nm
+        observeEvent(input[[paste0("cond_delete_", local_nm)]], {
+          g <- condition_groups_r()
+          if (!is.null(g[[local_nm]])) {
+            g[[local_nm]] <- NULL
+            condition_groups_r(g)
+            if (identical(editing_group_r(), local_nm)) {
+              editing_group_r(NULL)
+              active_expr_r(list())
+              updateTextInput(session, "cond_group_name", value = "")
+            }
+          }
+        }, ignoreInit = TRUE)
+        
+        observeEvent(input[[paste0("cond_edit_", local_nm)]], {
+          g <- condition_groups_r()
+          if (!is.null(g[[local_nm]])) {
+            active_expr_r(g[[local_nm]]$expr)
+            editing_group_r(local_nm)
+            updateTextInput(session, "cond_group_name", value = local_nm)
+          }
+        }, ignoreInit = TRUE)
+      })
+    })
+  })
+  
+  # Saved groups cards
+  output$cond_saved_groups_ui <- renderUI({
+    groups <- condition_groups_r()
+    if (length(groups) == 0) return(tags$p(tags$em("No groups saved yet.")))
+    
+    cards <- lapply(names(groups), function(nm) {
+      g          <- groups[[nm]]
+      is_editing <- identical(editing_group_r(), nm)
+      tags$div(
+        class = paste("card mb-2", if (is_editing) "border-primary" else ""),
+        tags$div(class = "card-body py-2",
+                 tags$div(class = "d-flex justify-content-between align-items-center",
+                          tags$strong(nm),
+                          tags$span(class = "badge badge-secondary mr-auto ml-2",
+                                    paste(length(g$samples), "samples")),
+                          tags$div(
+                            actionButton(paste0("cond_edit_",   nm), icon("pencil-alt"),
+                                         class = "btn-sm btn-outline-primary mr-1",   title = "Edit"),
+                            actionButton(paste0("cond_delete_", nm), icon("trash"),
+                                         class = "btn-sm btn-outline-danger",          title = "Delete")
+                          )
+                 )
+        )
+      )
+    })
+    
+    tagList(tags$h6(tags$strong("Saved groups:")), tagList(cards))
+  })
+  
+  # Sample membership summary table
+  output$cond_membership_table <- renderTable({
+    groups <- condition_groups_r()
+    req(length(groups) > 0)
+    
+    ann <- annotation_df_r()
+    colnames(ann) <- tolower(colnames(ann))
+    has_meas <- isTRUE(attr(annotation_df_r(), "has_measurement"))
+    
+    if (has_meas) {
+      mem <- ann[, c("name", "measurement")]
+    } else {
+      mem <- data.frame(name = names(active_data_list()), 
+                        measurement = NA_character_, 
+                        stringsAsFactors = FALSE)
+    }
+    
+    for (nm in names(groups)) {
+      grp <- groups[[nm]]
+      if (has_meas) {
+        mem[[nm]] <- mem$name %in% grp$name & mem$measurement %in% grp$measurement
+      } else {
+        mem[[nm]] <- mem$name %in% grp$name
+      }
+      mem[[nm]] <- ifelse(mem[[nm]], "X", "")
+    }
+    
+    # Compute Status
+    n_in <- rowSums(mem[, names(groups), drop = FALSE] == "X")
+    mem$Status <- ifelse(n_in == 0, "excluded", ifelse(n_in > 1, "overlap", ""))
+    
+    mem
+  }, striped = TRUE, bordered = TRUE, hover = TRUE)
+  
+  
   # Update group list
   group_list <- eventReactive(input$update_group_comp, {
     
-    n <- input$n_groups
-    groups <- list()
+    # Condition-based mode
+    if (isTRUE(input$group_mode_tabs == "condition")) {
+      groups_raw <- condition_groups_r()
+      if (length(groups_raw) < 2) {
+        showNotification("Need at least 2 saved condition groups before updating.", type = "error")
+        return(NULL)
+      }
+      showNotification("Groups updated successfully!", type = "message")
+      return(lapply(groups_raw, `[[`, "samples"))
+    }
+    
+    # Manual mode (unchanged)
+    n            <- input$n_groups
+    groups       <- list()
     empty_groups <- c()
     
     for (i in seq_len(n)) {
       custom_name <- input[[paste0("group_name_", i)]]
       samples     <- input[[paste0("group_", i)]]
-      
-      # Check if the group is empty or has no name
-      if (is.null(custom_name) || nchar(custom_name) == 0 || is.null(samples) || length(samples) == 0) {
+      if (is.null(custom_name) || nchar(custom_name) == 0 ||
+          is.null(samples)     || length(samples) == 0) {
         empty_groups <- c(empty_groups, paste("Group", i))
       } else {
         groups[[custom_name]] <- samples
       }
     }
     
-    # If any group is empty → show error and return NULL
     if (length(empty_groups) > 0) {
       showNotification(
-        paste(
-          "The following group(s) are empty or have no name and must be filled before continuing:", 
-          paste(empty_groups, collapse = ", ")
-        ),
+        paste("The following group(s) are empty or have no name:",
+              paste(empty_groups, collapse = ", ")),
         type = "error"
       )
       return(NULL)
     }
     
-    # If all groups are valid → success message
     showNotification("Groups updated successfully!", type = "message")
-    
+    tmp_groups <<- groups
     groups
-  },ignoreNULL = TRUE)
+    
+  }, ignoreNULL = TRUE)
+  
+  
   
   ## ----Group Comparison----
   group_peptide_sets <- reactive({
@@ -1010,7 +1320,7 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
     req(lst, groups, data_info)
     
     quantity_cols <- data_info %>%
-      filter(final_name == "QUANTITY") %>%
+      dplyr::filter(final_name == "QUANTITY") %>%
       dplyr::select(-final_name) %>% 
       unlist(recursive = TRUE, use.names = FALSE)
     
@@ -1030,7 +1340,7 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
     
     #Get all columns containing the quantity info.
     quantity_cols <- data_info_r() %>%
-      filter(final_name == "QUANTITY") %>%
+      dplyr::filter(final_name == "QUANTITY") %>%
       dplyr::select(-final_name) %>%   # all sample columns.
       unlist(recursive = TRUE, use.names = FALSE)
 
@@ -1180,11 +1490,11 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
     lst <- lapply(lst, function(df) {
       
       df %>%
-        mutate(
+        dplyr::mutate(
           PTM = ifelse(is.na(PTM) | PTM == "", "Unmodified", PTM)
         ) %>%
         tidyr::separate_rows(PTM, sep = "\\s*[,;]\\s*") %>%
-        mutate(
+        dplyr::mutate(
           PTM = gsub("^\\d+", "", PTM) #This is specifically for fragpipe to remove the position information on PTMs
         )
     })
@@ -1342,7 +1652,7 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
           cache <- distinct(cache, Peptide, .keep_all = TRUE)
           
           cache <- full_join(cache, res, by = "Peptide") %>%
-            mutate(
+            dplyr::mutate(
               !!al_conversion := coalesce(.data[[paste0(al_conversion, ".x")]],
                                .data[[paste0(al_conversion, ".y")]])
             ) %>%
@@ -1354,6 +1664,20 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
     
     # Update reactive cache once at the end
     prediction_cache(cache)
+  })
+  
+  output$allele_viz_selector_ui <- renderUI({
+    df <- peptide_wide_unique()
+    req(!is.null(df), ncol(df) > 1)
+    allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+    req(length(allele_cols) > 0)
+    selectInput(
+      "allele_viz_select",
+      tagList(icon("filter"), "Alleles to visualize:"),
+      choices  = allele_cols,
+      selected = allele_cols,   # all selected by default
+      multiple = TRUE
+    )
   })
   
   peptide_wide_all <- reactive({
@@ -1407,40 +1731,46 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
   binder_summary_all <- reactive({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    compute_binder_summary(peptide_wide_unique())
+    req(!is.null(peptide_wide_unique()))
+    compute_binder_summary(peptide_wide_unique(), alleles = input$allele_viz_select)
   })
   
   output$binding_summary <- DT::renderDT({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    
+    req(!is.null(peptide_wide_unique()))
     binder_summary_all()
-
   })
   
   output$binding_plot_percent <- renderPlot({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    plot_binders(peptide_wide_unique(), color = input$color_palette, percent = TRUE)
+    req(!is.null(peptide_wide_unique()))
+    plot_binders(peptide_wide_unique(), color = input$color_palette, percent = TRUE, alleles = input$allele_viz_select)
   })
   
   output$binding_plot_absolute <- renderPlot({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    plot_binders(peptide_wide_unique(), color = input$color_palette, percent = FALSE)
+    req(!is.null(peptide_wide_unique()))
+    plot_binders(peptide_wide_unique(), color = input$color_palette, percent = FALSE, alleles = input$allele_viz_select)
   })
   
   output$binding_table <- DT::renderDT({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
     
-    # Collapse rows by peptide
+    selected_alleles <- input$allele_viz_select
+    
     df_collapsed <- peptide_wide_unique() %>%
-      group_by(STRIPPED) %>%
-      summarise_all(~ {
+      dplyr::select(-dplyr::any_of(
+        setdiff(grep("^HLA", colnames(.), value = TRUE), selected_alleles)
+      )) %>%
+      dplyr::group_by(STRIPPED) %>%
+      dplyr::summarise_all(~ {
         vals <- unique(.)
         vals <- vals[!is.na(vals)]
-        if(length(vals) == 0) NA else paste(vals, collapse = ",")
+        if (length(vals) == 0) NA else paste(vals, collapse = ",")
       })
     
     DT::datatable(
@@ -1508,15 +1838,15 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
     
     keep_cols <- c("Sample", "PEPTIDE", "STRIPPED", "MAX_QUANTITY","LENGTH" ,"MASS" ,"CHARGE", "MZ" ,"K0", "RT", "PROTEIN")
     
-    combined <- imap_dfr(lst, ~ dplyr::select(.x, intersect(keep_cols, colnames(.x))) %>% mutate(Sample = .y))
+    combined <- imap_dfr(lst, ~ dplyr::select(.x, dplyr::intersect(keep_cols, colnames(.x))) %>% dplyr::mutate(Sample = .y))
     
-    peptide_counts <- combined %>% distinct(STRIPPED, Sample) %>% count(STRIPPED, name = "n_datasets")
+    peptide_counts <- combined %>% dplyr::distinct(STRIPPED, Sample) %>% dplyr::count(STRIPPED, name = "n_datasets")
     
     numeric_cols <- c("LENGTH", "MASS", "CHARGE", "MZ", "K0", "RT")
     
-    combined <- combined %>% inner_join(peptide_counts, by = "STRIPPED") %>%
-      arrange(Sample, STRIPPED) %>%
-      mutate(across(any_of(numeric_cols), as.numeric))
+    combined <- combined %>% dplyr::inner_join(peptide_counts, by = "STRIPPED") %>%
+      dplyr::arrange(Sample, STRIPPED) %>%
+      dplyr::mutate(across(any_of(numeric_cols), as.numeric))
     
     combined <- combined[,c(1,2,3,4,5,6,7,8,9,11,12,10)] #rearramge column
     
@@ -1534,6 +1864,36 @@ server <- function(input, output, session, preloaded_data, generate_pseudo_seque
     )
   })
   
+  #---------------------Dev Console-------------------------
+  console_history <- reactiveVal("")
+  
+  observeEvent(input$console_run, {
+    req(nchar(trimws(input$console_input)) > 0)
+    
+    result <- tryCatch(
+      paste(capture.output(eval(parse(text = input$console_input),
+                                envir = environment())),
+            collapse = "\n"),
+      error   = function(e) paste("Error:", conditionMessage(e)),
+      warning = function(w) paste("Warning:", conditionMessage(w))
+    )
+    
+    new_entry <- paste0(
+      "> ", input$console_input, "\n",
+      result, "\n",
+      "---\n"
+    )
+    console_history(paste0(new_entry, console_history()))
+  })
+  
+  observeEvent(input$console_clear, {
+    console_history("")
+  })
+  
+  output$console_output <- renderText({
+    console_history()
+  })
+  
 }
 ##---------------End------------
 
@@ -1541,8 +1901,7 @@ shinyApp(
   ui = ui,
   server = function(input, output, session) {
     server(input, output, session, 
-           #preloaded_data = preloaded_data, 
-           preloaded_data = test_annotation, 
+           input_variable = test_annotation, 
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 

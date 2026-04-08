@@ -49,7 +49,7 @@ ui <- bs4DashPage(
       navbarTab(
         text = "ExtraMenu",
         dropdownHeader("Dropdown header"),
-        navbarTab(tabName = "Tab3", text = "Tab 3"),
+        navbarTab(tabName = "dev_console", text = "Console"),
         dropdownDivider(),
         navbarTab(
           text = "Sub menu",
@@ -89,7 +89,11 @@ ui <- bs4DashPage(
                   ),
           
           ### ---- Annotation Table (if given) ----
-          uiOutput("annotation_card"),
+          bs4Card(inputId = "annotation_card", title = tagList("Annotation Table", bs4Dash::tooltip(icon("info-circle"),"This is the original input annotation table.", placement = "right")
+          ), width = 12, maximizable = TRUE,
+          DT::DTOutput("annotation_table")
+          ),
+          
           
           ### ---- Unique Entries ----
           bs4Card(title = "Unique entries", width = 12, maximizable = TRUE, 
@@ -109,7 +113,7 @@ ui <- bs4DashPage(
                     )
                   ),
           
-          ### ---- Unique Entries ----
+          ### ---- Other Numeric Columns ----
           bs4Card(title = "Other Numeric Columns", width = 12, maximizable = TRUE, 
                   tabsetPanel(
                     tabPanel("Charge",
@@ -412,26 +416,21 @@ ui <- bs4DashPage(
           
           ### ---- Call netMHCpan from windows subsystem for linux ----
           bs4Card(title = "run netMHCpan", width = 12, maximizable = TRUE,
-                  selectInput(
+                  selectizeInput(
                     "HLA_alleles",
                     "Select HLA allele(s):",
-                    choices = c(
-                      "HLA-A02:01",
-                      "HLA-A01:01",
-                      "HLA-A03:01",
-                      "HLA-A24:02",
-                      "HLA-B07:02",
-                      "HLA-B08:01",
-                      "HLA-B15:01",
-                      "HLA-C07:01",
-                      "HLA-C07:02"
-                    ),
-                    selected = "HLA-A02:01",
-                    multiple = TRUE
+                    choices  = NULL,
+                    selected = NULL,
+                    multiple = TRUE,
+                    options  = list(placeholder = "Type to search alleles...")
                   ),
                   actionButton("run_netmhc", "Run netMHCpan"),
                   textOutput("netmhc_status")
           ),
+          
+          ### ---- Allele selection ----
+          uiOutput("allele_viz_selector_ui"),
+          
           ### ---- Summary Table ----
           bs4Card(title = tagList("Summary Table", bs4Dash::tooltip(icon("info-circle"),"On default the threshold for weak binder is 2.0 and for strong binder is 0.5 Rank_EL. (Hard coded).", placement = "right")
                                   ), width = 12, maximizable = TRUE,
@@ -482,7 +481,25 @@ ui <- bs4DashPage(
                   DT::DTOutput("peptide_table")
                   )
           )
+        ),
+      
+      ## ---- Dev Console ----
+      bs4TabItem(
+        tabName = "dev_console",
+        fluidRow(
+          bs4Card(title = "R Console", width = 12,
+                  textAreaInput("console_input", NULL,
+                                value    = "",
+                                rows     = 6,
+                                width    = "100%",
+                                placeholder = "Type R code here..."),
+                  actionButton("console_run", "Run", class = "btn-primary"),
+                  actionButton("console_clear", "Clear", class = "btn-secondary ml-2"),
+                  tags$hr(),
+                  verbatimTextOutput("console_output")
+          )
         )
+      )
       )
     )
   )
