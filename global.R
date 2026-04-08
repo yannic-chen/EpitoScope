@@ -2070,14 +2070,15 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
   }
   
   # Define color function
+  mat_range <- range(mat, na.rm = TRUE)
+  if (!is.finite(mat_range[1]) || mat_range[1] == mat_range[2]) {
+    mat_range <- c(mat_range[1] - 0.5, mat_range[1] + 0.5)
+  }
   if (color == "default") {
-    col_fun <- colorRamp2(
-      c(min(mat, na.rm = TRUE), max(mat, na.rm = TRUE)),
-      c("white", "red")
-    )
+    col_fun <- colorRamp2(mat_range, c("white", "red"))
   } else {
     cols <- viridis(100, option = color)
-    col_fun <- colorRamp2(range(mat, na.rm = TRUE), c(cols[1], cols[100]))
+    col_fun <- colorRamp2(mat_range, c(cols[1], cols[100]))
   }
   
   # ---- Handle grouping vs clustering ----
@@ -2484,9 +2485,9 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
   summary_df <- df_long %>%
     dplyr::group_by(.data[[pep_col]]) %>%
     dplyr::summarise(
-      PROTEIN = dplyr::first(PROTEIN),
-      Mean_G1 = mean(Quantity[Group == g1], na.rm = TRUE),
-      Mean_G2 = mean(Quantity[Group == g2], na.rm = TRUE),
+      PROTEIN = dplyr::first(.data[["PROTEIN"]]),
+      Mean_G1 = mean(.data[["Quantity"]][.data[["Group"]] == g1], na.rm = TRUE),
+      Mean_G2 = mean(.data[["Quantity"]][.data[["Group"]] == g2], na.rm = TRUE),
       log2FC  = log2(Mean_G2 + 1) - log2(Mean_G1 + 1),
       A       = 0.5 * (log2(Mean_G1 + 1) + log2(Mean_G2 + 1)),
       .groups = "drop"
