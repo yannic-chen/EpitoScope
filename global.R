@@ -1238,6 +1238,10 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
 
   for (g in names(groups)) {
     group_items    <- groups[[g]]
+    # Normalise: condition groups may arrive as list(name=..., measurement=..., expr=...)
+    if (!is.null(col_map) && is.list(group_items) && !is.null(group_items$measurement)) {
+      group_items <- group_items$measurement
+    }
     allowed_peptides <- group_peptide_sets[[g]]
 
     if (!is.null(col_map)) {
@@ -2436,7 +2440,13 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
   use_measurements <- !is.null(col_map)
   grp_g1 <- groups[[g1]]
   grp_g2 <- groups[[g2]]
- 
+
+  # Normalise: condition groups may arrive as list(name=..., measurement=..., expr=...)
+  # In measurement mode we only need the measurement name vector.
+  if (use_measurements) {
+    if (is.list(grp_g1) && !is.null(grp_g1$measurement)) grp_g1 <- grp_g1$measurement
+    if (is.list(grp_g2) && !is.null(grp_g2$measurement)) grp_g2 <- grp_g2$measurement
+  }
   if (!use_measurements) {
     n_g1 <- sum(sapply(grp_g1, function(s) length(intersect(quantity_cols, colnames(lst[[s]])))))
     n_g2 <- sum(sapply(grp_g2, function(s) length(intersect(quantity_cols, colnames(lst[[s]])))))
