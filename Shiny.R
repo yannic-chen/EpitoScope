@@ -1243,7 +1243,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       showNotification("Groups updated successfully!", type = "message")
       has_meas <- isTRUE(attr(annotation_df_r(), "has_measurement"))
       if (has_meas) {
-        return(lapply(groups_raw, `[[`, "measurement"))
+        return(lapply(groups_raw, function(g) list(measurement = g$measurement, name = g$name)))
       } else {
         return(lapply(groups_raw, `[[`, "name"))
       }
@@ -1294,22 +1294,34 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     #pep_col    <- if (!is.null(input$use_peptidoforms) && input$use_peptidoforms) "PEPTIDE" else "STRIPPED"
 
     lapply(names(groups), function(g) {
+      grp <- groups[[g]]
 
-      group_items <- groups[[g]]
+      if (!is.null(col_map) && is.list(grp) && !is.null(grp$measurement)) {
+        # Measurement mode: grp = list(measurement = c(...), name = c(...))
+        # A peptide counts for this measurement only if it has a non-NA quantity value
+        measurements <- grp$measurement
+        names_vec    <- grp$name
 
-      peptide_counts <- table(unlist(lapply(group_items, function(item) {
-        if (!is.null(col_map)) {
-          entry <- col_map[[item]]
+        peptide_counts <- table(unlist(lapply(seq_along(measurements), function(i) {
+          entry <- col_map[[measurements[i]]]
           if (is.null(entry)) return(character(0))
-          df <- lst[[entry$name]]
-        } else {
-          df <- lst[[item]]
-        }
-        if (is.null(df) || !pep_col %in% colnames(df)) return(character(0))
-        unique(df[[pep_col]])
-      })))
+          df <- lst[[names_vec[i]]]
+          if (is.null(df)) return(character(0))
+          if (!pep_col %in% colnames(df) || !entry$col %in% colnames(df)) return(character(0))
+          df[[pep_col]][!is.na(df[[entry$col]])]
+        })))
 
-      n_items <- length(group_items)
+        n_items <- length(measurements)
+      } else {
+        # Sample mode: grp is a character vector of sample names
+        peptide_counts <- table(unlist(lapply(grp, function(s) {
+          df <- lst[[s]]
+          if (is.null(df) || !pep_col %in% colnames(df)) return(character(0))
+          unique(df[[pep_col]])
+        })))
+
+        n_items <- length(grp)
+      }
 
       names(peptide_counts[
         peptide_counts / n_items >= input$min_presence_fraction
@@ -1338,7 +1350,11 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
     
-    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets(), col_map = measurement_col_map_r())
+    col_map_hm <- measurement_col_map_r()
+    groups_for_hm <- lapply(groups, function(g) {
+      if (!is.null(col_map_hm) && is.list(g) && !is.null(g$measurement)) g$measurement else g
+    })
+    pep_mat <- prepare_peptide_matrix(lst, groups_for_hm, quantity_cols, group_peptide_sets(), col_map = col_map_hm)
     
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
     
@@ -1359,16 +1375,22 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
 
     # Keep only non-empty groups
     groups <- groups[sapply(groups, function(g) {
-      any(sapply(g, function(item) {
-        if (!is.null(col_map)) {
-          entry <- col_map[[item]]
-          !is.null(entry) && nrow(lst[[entry$name]]) > 0
-        } else {
-          !is.null(lst[[item]]) && nrow(lst[[item]]) > 0
-        }
-      }))
+      if (!is.null(col_map) && is.list(g) && !is.null(g$measurement)) {
+        any(sapply(seq_along(g$measurement), function(i) {
+          entry <- col_map[[g$measurement[i]]]
+          !is.null(entry) && !is.null(lst[[g$name[i]]]) && nrow(lst[[g$name[i]]]) > 0
+        }))
+      } else {
+        any(sapply(g, function(item) !is.null(lst[[item]]) && nrow(lst[[item]]) > 0))
+      }
     })]
     shiny::validate(shiny::need(length(groups) >= 2, "Need 2 or more sets to compare"))
+
+    # Normalise to measurement-name vectors for compute_group_comp_stats
+    # (which iterates over items as measurement keys into col_map)
+    groups_for_stats <- lapply(groups, function(g) {
+      if (!is.null(col_map) && is.list(g) && !is.null(g$measurement)) g$measurement else g
+    })
 
     # Generate all unique pairwise combinations
     group_pairs <- combn(names(groups), 2, simplify = FALSE)
@@ -1386,7 +1408,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       allowed_peptides_g1 <- group_peptide_sets()[[g1]]
       allowed_peptides_g2 <- group_peptide_sets()[[g2]]
 
-      compute_group_comp_stats(lst, groups, allowed_peptides_g1, allowed_peptides_g2, g1, g2, pep_col, quantity_cols, col_map = col_map)
+      compute_group_comp_stats(lst, groups_for_stats, allowed_peptides_g1, allowed_peptides_g2, g1, g2, pep_col, quantity_cols, col_map = col_map)
     })
     
     names(group_comp_stats) <- sapply(group_pairs, function(pair) paste(pair, collapse = "_vs_"))
