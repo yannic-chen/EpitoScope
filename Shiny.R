@@ -1241,7 +1241,12 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         return(NULL)
       }
       showNotification("Groups updated successfully!", type = "message")
-      return(lapply(groups_raw, `[[`, "samples"))
+      has_meas <- isTRUE(attr(annotation_df_r(), "has_measurement"))
+      if (has_meas) {
+        return(lapply(groups_raw, `[[`, "measurement"))
+      } else {
+        return(lapply(groups_raw, `[[`, "name"))
+      }
     }
     
     # Manual mode (unchanged)
@@ -1283,24 +1288,31 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     check_data_error(lst, na_policy = "ignore")
     groups <- group_list()
     req(groups, length(groups) >= 2)
-    
+    col_map <- measurement_col_map_r()
+
     pep_col <- "PEPTIDE"
     #pep_col    <- if (!is.null(input$use_peptidoforms) && input$use_peptidoforms) "PEPTIDE" else "STRIPPED"
-    
+
     lapply(names(groups), function(g) {
-      
-      sample_names <- groups[[g]]
-      
-      peptide_counts <- table(unlist(lapply(sample_names, function(s) {
-        df <- lst[[s]]
-        if (!pep_col %in% colnames(df)) return(character(0))
+
+      group_items <- groups[[g]]
+
+      peptide_counts <- table(unlist(lapply(group_items, function(item) {
+        if (!is.null(col_map)) {
+          entry <- col_map[[item]]
+          if (is.null(entry)) return(character(0))
+          df <- lst[[entry$name]]
+        } else {
+          df <- lst[[item]]
+        }
+        if (is.null(df) || !pep_col %in% colnames(df)) return(character(0))
         unique(df[[pep_col]])
       })))
-      
-      n_samples <- length(sample_names)
-      
+
+      n_items <- length(group_items)
+
       names(peptide_counts[
-        peptide_counts / n_samples >= input$min_presence_fraction
+        peptide_counts / n_items >= input$min_presence_fraction
       ])
     }) |> setNames(names(groups))
   })
@@ -1326,7 +1338,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
     
-    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets())
+    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets(), col_map = measurement_col_map_r())
     
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
     
@@ -1337,7 +1349,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   group_comp_data <- eventReactive(input$update_group_comp, {
     lst <- processed_data_list()
     groups <- group_list()
-    
+    col_map <- measurement_col_map_r()
+
     #Get all columns containing the quantity info.
     quantity_cols <- data_info_r() %>%
       dplyr::filter(final_name == "QUANTITY") %>%
@@ -1346,27 +1359,34 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
 
     # Keep only non-empty groups
     groups <- groups[sapply(groups, function(g) {
-      any(sapply(g, function(s) nrow(lst[[s]]) > 0))
+      any(sapply(g, function(item) {
+        if (!is.null(col_map)) {
+          entry <- col_map[[item]]
+          !is.null(entry) && nrow(lst[[entry$name]]) > 0
+        } else {
+          !is.null(lst[[item]]) && nrow(lst[[item]]) > 0
+        }
+      }))
     })]
     shiny::validate(shiny::need(length(groups) >= 2, "Need 2 or more sets to compare"))
-    
+
     # Generate all unique pairwise combinations
     group_pairs <- combn(names(groups), 2, simplify = FALSE)
-    
+
     # Peptide column
     pep_col <- "PEPTIDE" #WIP: need to think how to solve the PTM problem? Do I just add the same peptidoform together?
     # pep_col    <- if (!is.null(input$use_peptidoforms) && input$use_peptidoforms) "PEPTIDE" else "STRIPPED"
-    
+
     # Compute volcano data for each pair
     group_comp_stats <- lapply(group_pairs, function(pair) {
       g1 <- pair[1]
       g2 <- pair[2]
-      
+
       #Here we filter based on union-intersect criteria
       allowed_peptides_g1 <- group_peptide_sets()[[g1]]
       allowed_peptides_g2 <- group_peptide_sets()[[g2]]
-      
-      compute_group_comp_stats(lst, groups, allowed_peptides_g1, allowed_peptides_g2, g1, g2, pep_col, quantity_cols)
+
+      compute_group_comp_stats(lst, groups, allowed_peptides_g1, allowed_peptides_g2, g1, g2, pep_col, quantity_cols, col_map = col_map)
     })
     
     names(group_comp_stats) <- sapply(group_pairs, function(pair) paste(pair, collapse = "_vs_"))

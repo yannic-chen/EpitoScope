@@ -1228,39 +1228,56 @@ make_range_slider_ui <- function(lst, col, input_id, label, step = NULL) {
 }
 
 #This is for creating a matrix used for the group-based peptide heatmap
-prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_sets) {
-  
+prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_sets, col_map = NULL) {
+
   peptides_all <- unique(unlist(group_peptide_sets))
-  pep_mat <- matrix(NA_real_, 
-                    nrow = length(peptides_all), 
+  pep_mat <- matrix(NA_real_,
+                    nrow = length(peptides_all),
                     ncol = length(groups),
                     dimnames = list(peptides_all, names(groups)))
-  
+
   for (g in names(groups)) {
-    samples <- groups[[g]]
+    group_items    <- groups[[g]]
     allowed_peptides <- group_peptide_sets[[g]]
-    
-    # Combine all samples in group
-    df_group <- bind_rows(lapply(samples, function(s) {
-      df <- lst[[s]]
-      cols <- dplyr::intersect(c("PEPTIDE", quantity_cols), colnames(df))
-      if (length(cols) < 2) return(NULL)
-      df[, cols, drop = FALSE]
-    }))
-    
-    if (is.null(df_group) || nrow(df_group) == 0) next
-    
-    # Filter to allowed peptides
-    df_group <- df_group[df_group$PEPTIDE %in% allowed_peptides, ]
-    
-    # Aggregate: take max (or mean) per peptide across samples
-    agg <- df_group %>%
-      dplyr::group_by(PEPTIDE) %>%
-      dplyr::summarise(value = max(c_across(any_of(quantity_cols)), na.rm = TRUE), .groups = "drop")
-    
+
+    if (!is.null(col_map)) {
+      # Measurement mode: each item is a measurement name resolved via col_map
+      df_group <- dplyr::bind_rows(lapply(group_items, function(item) {
+        entry <- col_map[[item]]
+        if (is.null(entry)) return(NULL)
+        df <- lst[[entry$name]]
+        if (is.null(df) || !"PEPTIDE" %in% colnames(df) || !entry$col %in% colnames(df)) return(NULL)
+        df_sub <- df[df$PEPTIDE %in% allowed_peptides, c("PEPTIDE", entry$col), drop = FALSE]
+        names(df_sub)[names(df_sub) == entry$col] <- "Quantity"
+        df_sub
+      }))
+
+      if (is.null(df_group) || nrow(df_group) == 0) next
+
+      agg <- df_group %>%
+        dplyr::group_by(PEPTIDE) %>%
+        dplyr::summarise(value = max(Quantity, na.rm = TRUE), .groups = "drop")
+    } else {
+      # Sample mode: each item is a sample name
+      df_group <- dplyr::bind_rows(lapply(group_items, function(s) {
+        df <- lst[[s]]
+        cols <- dplyr::intersect(c("PEPTIDE", quantity_cols), colnames(df))
+        if (length(cols) < 2) return(NULL)
+        df[, cols, drop = FALSE]
+      }))
+
+      if (is.null(df_group) || nrow(df_group) == 0) next
+
+      df_group <- df_group[df_group$PEPTIDE %in% allowed_peptides, ]
+
+      agg <- df_group %>%
+        dplyr::group_by(PEPTIDE) %>%
+        dplyr::summarise(value = max(dplyr::c_across(dplyr::any_of(quantity_cols)), na.rm = TRUE), .groups = "drop")
+    }
+
     pep_mat[agg$PEPTIDE, g] <- agg$value
   }
-  
+
   pep_mat
 }
 
