@@ -1412,8 +1412,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     })
     
     names(group_comp_stats) <- sapply(group_pairs, function(pair) paste(pair, collapse = "_vs_"))
-    
-    group_comp_stats[sapply(group_comp_stats, nrow) > 0]
+
+    Filter(function(x) !is.null(x) && nrow(x) > 0, group_comp_stats)
   },ignoreNULL = TRUE)
   
   # Render the volcano tabset UI
