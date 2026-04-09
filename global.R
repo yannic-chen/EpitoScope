@@ -785,8 +785,17 @@ detect_software <- function(df, signature, fallback = "Generic") {
 
 find_transform_column <- function(df, candidates, name) {
   for (cand in candidates) {
+    # Prefer exact case-sensitive match to avoid ambiguity when a prior rename
+    # produced a column that differs only in case (e.g. "Peptide" vs "PEPTIDE")
+    exact_match <- which(colnames(df) == cand)
+    if (length(exact_match) == 1) {
+      original_name       <- colnames(df)[exact_match]
+      colnames(df)[exact_match] <- name
+      return(list(df = df, matched_column = original_name))
+    }
+
+    # Fall back to case-insensitive when no exact match exists
     match <- which(tolower(colnames(df)) == tolower(cand))
-    
     if (length(match) == 1) {
       original_name    <- colnames(df)[match]
       colnames(df)[match] <- name
