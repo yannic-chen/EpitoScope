@@ -245,7 +245,7 @@ ui <- bs4DashPage(
                   ),
           
           ### ---- Pairwise shared peptide quantity comparison matrix ----
-          bs4Card(title = tagList("Pairwise shared peptide quantity comparison matrix", bs4Dash::tooltip(icon("info-circle"),"Pairwise comparison of peptide max quantity of shared peptides, using pearson correlation. Clustering distance is 'euclidean' and method is 'complete'.", placement = "right")
+          bs4Card(title = tagList("Pairwise shared peptide quantity comparison matrix", bs4Dash::tooltip(icon("info-circle"),"Pairwise comparison of peptide max quantity of shared peptides, using pearson correlation. Clustering distance is 'euclidean' and method is 'complete'. Grey values means no quantitative data to compare", placement = "right")
           ), width = 12, maximizable = TRUE,
           selectInput("cluster_mode", "Clustering:",
                       choices = c(

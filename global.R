@@ -84,8 +84,8 @@ column_schema <- list(
   ),
   
   Fragpipe = list( #Checked psm.tsv and combined.peptide.tsv
-    PEPTIDE        = c("Modified.Peptide", "modified.sequence"),
-    STRIPPED       = c("Peptide", "peptide.sequence"),           #not present in combined_peptide.tsv
+    PEPTIDE        = c("Modified.Peptide", "Modified.Sequence"),
+    STRIPPED       = c("Peptide", "Peptide.Sequence"),           #not present in combined_peptide.tsv
     LENGTH         = c("Peptide.Length"),                        #not present in combined_modified_peptide.tsv, combined_peptide.tsv
     MASS           = c("Observed.Mass"),                         #can also switch to Calculated.Peptide.Mass, #not present in combined_modified_peptide.tsv, combined_peptide.tsv
     MZ             = c("Observed.M.Z"),       #can also switch to Calibrated.Observed.M.Z or Calculated.M.Z , #not present in combined_modified_peptide.tsv, combined_peptide.tsv
@@ -784,35 +784,35 @@ detect_software <- function(df, signature, fallback = "Generic") {
   return(fallback)
 }
 
-find_transform_column <- function(df, candidates, name) {
+find_transform_column <- function(df, candidates, name, exclude = character(0)) {
   for (cand in candidates) {
-    # Prefer exact case-sensitive match to avoid ambiguity when a prior rename
-    # produced a column that differs only in case (e.g. "Peptide" vs "PEPTIDE")
-    exact_match <- which(colnames(df) == cand)
+    # Exact case-sensitive match, excluding already-renamed columns
+    exact_match <- which(colnames(df) == cand & !colnames(df) %in% exclude)
     if (length(exact_match) == 1) {
-      original_name       <- colnames(df)[exact_match]
+      original_name <- colnames(df)[exact_match]
       colnames(df)[exact_match] <- name
       return(list(df = df, matched_column = original_name))
     }
     
-    match <- which(tolower(colnames(df)) == tolower(cand))
-    
+    # Case-insensitive fallback, excluding already-renamed columns
+    match <- which(tolower(colnames(df)) == tolower(cand) & !colnames(df) %in% exclude)
     if (length(match) == 1) {
-      original_name    <- colnames(df)[match]
+      original_name <- colnames(df)[match]
       colnames(df)[match] <- name
       return(list(df = df, matched_column = original_name))
     } else if (length(match) > 1) {
       stop("Ambiguous: multiple columns match '", cand, "' for ", name, ": ",
            paste(colnames(df)[match], collapse = ", "))
     }
-    # length == 0 → try next candidate
   }
   
   message(paste0("No matching column found for: ", name))
   return(NULL)
 }
 
-transform_columns <- function(df, schema, software, targets = c("PEPTIDE", "STRIPPED", "LENGTH", "MASS", "MZ", "SCORE", "CHARGE", "RT", "PPM", "PROTEIN", "PTM")) {
+
+#!!!important, the order for stripped must be before peptide, since peptide is a rather ambiguous name, which can result in false assignment.
+transform_columns <- function(df, schema, software, targets = c("STRIPPED", "PEPTIDE", "LENGTH", "MASS", "MZ", "SCORE", "CHARGE", "RT", "PPM", "PROTEIN", "PTM")) {
   mapping_log <- data.frame(
     final_name = character(),
     original_name = character(),
@@ -827,15 +827,19 @@ transform_columns <- function(df, schema, software, targets = c("PEPTIDE", "STRI
     col_map <- col_map[names(col_map) %in% targets]
   }
   
+  already_renamed <- character(0)
+  
   for (target_name in names(col_map)) {
     candidates <- col_map[[target_name]]
     
     # Skip if no candidates defined
     if (length(candidates) == 0) next
     
-    res <- find_transform_column(df, candidates, target_name)
+    res <- find_transform_column(df, candidates, target_name, exclude = already_renamed)
     if (is.null(res)) next
     df <- res$df
+    
+    already_renamed <- c(already_renamed, target_name)
     
     # Log the mapping
     mapping_log <- rbind(mapping_log,
@@ -2042,21 +2046,25 @@ plot_pairwise_peptide_quant_correlation <- function(lst, method = "pearson", min
       )
       
       if (nrow(merged) >= min_shared) {
-        cor_mat[i, j] <- cor(
+        cor_mat[i, j] <- suppressWarnings(cor(
           merged$MAX_QUANTITY_i,
           merged$MAX_QUANTITY_j,
           method = method,
           use = "complete.obs"
-        )
+        ))
       }
     }
   }
   
+  mat_range <- range(cor_mat, na.rm = TRUE)
+  if (!is.finite(mat_range[1]) || mat_range[1] == mat_range[2]) {
+    mat_range <- c(mat_range[1] - 0.5, mat_range[1] + 0.5)
+  }
   if (color == "default") {
-    col_fun  <- colorRamp2(c(min(cor_mat), max(cor_mat)), c("white", "red"))
+    col_fun <- colorRamp2(mat_range, c("white", "red"))
   } else {
     cols <- viridis(100, option = color)
-    col_fun <- colorRamp2(range(cor_mat, na.rm = TRUE), c(cols[1], cols[100]))
+    col_fun <- colorRamp2(mat_range, c(cols[1], cols[100]))
   }
   
   Heatmap(
@@ -2151,7 +2159,11 @@ plot_PCA <- function(lst, color = "default") {
     df %>%
       dplyr::select(STRIPPED, MAX_QUANTITY) %>%
       dplyr::group_by(STRIPPED) %>%
-      dplyr::summarise(MAX_QUANTITY = max(MAX_QUANTITY, na.rm = TRUE), .groups = "drop") #this collapses for cases of PTM peptidoforms.
+      dplyr::summarise(MAX_QUANTITY = {
+        #this collapses for cases of PTM peptidoforms.
+        x <- MAX_QUANTITY[is.finite(MAX_QUANTITY)] #remove NA
+        if (length(x) == 0) NA_real_ else max(x)
+      }, .groups = "drop") 
   })
   
   # Merge all samples into one data frame
@@ -2166,6 +2178,11 @@ plot_PCA <- function(lst, color = "default") {
   
   #WIP: need to check how to solve missing values.
   mat[is.na(mat)] <- 0
+  
+  # Remove peptides with no variance across samples (e.g. all-zero after imputation)
+  keep <- apply(mat, 1, var) > 0
+  shiny::validate(shiny::need(sum(keep) >= 2, "Not enough variable peptides for PCA."))
+  mat <- mat[keep, , drop = FALSE]
   
   pca <- prcomp(t(mat), scale. = TRUE) 
   
