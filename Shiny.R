@@ -1351,10 +1351,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
     
     col_map_hm <- measurement_col_map_r()
-    groups_for_hm <- lapply(groups, function(g) {
-      if (!is.null(col_map_hm) && is.list(g) && !is.null(g$measurement)) g$measurement else g
-    })
-    pep_mat <- prepare_peptide_matrix(lst, groups_for_hm, quantity_cols, group_peptide_sets(), col_map = col_map_hm)
+    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets(), col_map = col_map_hm)
     
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
     
