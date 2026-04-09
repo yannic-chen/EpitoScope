@@ -341,6 +341,24 @@ check_data_error <- function(data, required_cols = NULL, na_policy = c("any", "a
   
   if (is.null(data)) stop_with_msg("Data not available")
   
+  # Single data.frame case
+  if (is.data.frame(data)) {
+    missing_cols <- dplyr::setdiff(required_cols, colnames(data))
+    if (length(missing_cols) > 0) stop_with_msg(
+      paste("Missing column(s):", paste(missing_cols, collapse = ", "))
+    )
+    
+    if (na_policy != "ignore") {
+      for (col in required_cols) {
+        if (na_policy == "any" && any(is.na(data[[col]]))) stop_with_msg(paste("NA in column:", col))
+        if (na_policy == "all" && all(is.na(data[[col]]))) stop_with_msg(paste("All NA in column:", col))
+      }
+    }
+    
+    return(TRUE)
+  }
+  
+  #named list case
   if (is.list(data)) {
     # Keep only data frames
     valid_dfs <- data[vapply(data, is.data.frame, logical(1))]
@@ -364,23 +382,6 @@ check_data_error <- function(data, required_cols = NULL, na_policy = c("any", "a
             stop_with_msg(paste("All values are NA in column:", col))
           }
         }
-      }
-    }
-    
-    return(TRUE)
-  }
-  
-  # Single data.frame case
-  if (is.data.frame(data)) {
-    missing_cols <- dplyr::setdiff(required_cols, colnames(data))
-    if (length(missing_cols) > 0) stop_with_msg(
-      paste("Missing column(s):", paste(missing_cols, collapse = ", "))
-    )
-    
-    if (na_policy != "ignore") {
-      for (col in required_cols) {
-        if (na_policy == "any" && any(is.na(data[[col]]))) stop_with_msg(paste("NA in column:", col))
-        if (na_policy == "all" && all(is.na(data[[col]]))) stop_with_msg(paste("All NA in column:", col))
       }
     }
     
@@ -1721,7 +1722,7 @@ dynamic_range_plot <- function(df, data_col = "MAX_QUANTITY", title_name = "Dyna
   if (all(is.na(df[[data_col]]))) {
     return(
       ggplot() +
-        annotate("text", x = 0.5, y = 0.5, label = "No data points available to display", size = 5) +
+        annotate("text", x = 0.5, y = 0.5, label = "All MAX_QUANTITY = 0 or NA", size = 5) +
         theme_void()
     )
   }
@@ -1825,40 +1826,32 @@ dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", colo
   return(p)
 }
 
-generate_scatterplots <- function(lst, color = "default") {
-  lapply(names(lst), function(s_name) {
-    df <- lst[[s_name]]
-    
-    if (nrow(df) == 0) {
-      p <- ggplot() + 
+generate_scatterplot <- function(df, s_name, color = "default") {
+  if (nrow(df) == 0) {
+    return(
+      ggplot() +
         annotate("text", x = 0.5, y = 0.5,
                  label = paste("No k0/mz data for sample:", s_name),
                  size = 6, color = "red") +
         theme_void()
-      return(p)
-    }
-    
-    charges <- sort(unique(df$CHARGE))
-    
-    if (color == "default") {
-      cols <- NULL
-    } else {
-      cols <- viridis(length(unique(charges)), option = color)
-      names(cols) <- charges
-    }
-    
-    p <- ggplot(df, aes(x = MZ, y = K0, color = as.factor(CHARGE))) +
-      geom_point(size = 1.5, alpha = 0.7) +
-      theme_minimal() +
-      labs(title = paste("1/k0 vs m/z:", s_name),
-           x = "m/z",
-           y = "1/k0",
-           color = "Charge")
-    if (!is.null(cols)) {
-      p <- p + scale_color_manual(values = cols)
-    }
-    return(p)
-  })
+    )
+  }
+  
+  charges <- sort(unique(df$CHARGE))
+  
+  cols <- if (color == "default") {
+    NULL
+  } else {
+    setNames(viridis(length(charges), option = color), charges)
+  }
+  
+  p <- ggplot(df, aes(x = MZ, y = K0, color = as.factor(CHARGE))) +
+    geom_point(size = 1.5, alpha = 0.7) +
+    theme_minimal() +
+    labs(title = paste("1/k0 vs m/z:", s_name), x = "m/z", y = "1/k0", color = "Charge")
+  
+  if (!is.null(cols)) p <- p + scale_color_manual(values = cols)
+  p
 }
 
 plot_completeness <- function(lst, spectra_cols, percent = FALSE, title = "Data Completeness",color = "default") {
@@ -1869,7 +1862,7 @@ plot_completeness <- function(lst, spectra_cols, percent = FALSE, title = "Data 
     
     df %>%
       transmute(
-        Non_NA_Count = rowSums(!is.na(across(all_of(spectra_cols))))
+        Non_NA_Count = rowSums(across(all_of(spectra_cols), ~ !is.na(.x) & .x != 0)) #both NA and 0 count as missing.
       ) %>%
       arrange(desc(Non_NA_Count)) %>%
       dplyr::mutate(

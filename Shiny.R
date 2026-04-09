@@ -466,7 +466,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   output$RT_plot <- renderUI({
     lst <- data_list_r()
-    check_data_error(lst, required_cols = "RT", na_policy = "any")
     # Wrap plots in a grid (like motif plots)
     layout_column_wrap(
       width = "400px",  # each plot approx width
@@ -478,7 +477,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   observe({
     lst <- data_list_r()
-    check_data_error(lst, required_cols = "RT", na_policy = "any")
 
     for (sample_name in names(lst)) {
       
@@ -487,6 +485,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         df_local <- lst[[sample_local]]
         
         output[[paste0("RT_", sample_local)]] <- renderPlot({
+          check_data_error(df_local, required_cols = "RT", na_policy = "any")
           plot_histogram(df = df_local, column = "RT", x_label = "Retention Time (min)", 
                          title_name = paste("RT Histogram –", sample_local), color = input$color_palette
           )
@@ -636,15 +635,16 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       
       local({
         df_local <- lst[[sample_name]]
+        sample_val <- sample_name
         
-        output[[paste0("dynrange_", sample_name)]] <- renderPlot({
+        output[[paste0("dynrange_", sample_val)]] <- renderPlot({
           
           shiny::validate(shiny::need(nrow(df_local) >= 10, "Not enough peptides. Need at least 10."))
           
           dynamic_range_plot(
             df = df_local,
             data_col = "MAX_QUANTITY",
-            title_name = paste("Dynamic Range –", sample_name),
+            title_name = paste("Dynamic Range –", sample_val),
             name_col = "PROTEIN",
             gene = "HLA",               # Default highlight can be HLA
             gene_regex = "HLA[A-C]+" #Only HLA-A,B and C
@@ -657,7 +657,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   ##----1/k0 vs m/z----
   output$scatterplots_ui <- renderUI({
     lst <- processed_data_list()
-    check_data_error(lst, required_cols = c("MZ","K0"), na_policy = "any")
     
     layout_column_wrap(
       width = "300px",
@@ -669,17 +668,15 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   observe({
     lst <- processed_data_list()
-    check_data_error(lst, required_cols = c("MZ","K0"), na_policy = "any")
     
-    plots <- generate_scatterplots(lst, color = input$color_palette)
-    
-    for (i in seq_along(names(lst))) {
+    for (sample_name in names(lst)) {
       local({
-        sample_name_local <- names(lst)[i]
-        plot_local <- plots[[i]]
+        sample_local <- sample_name
+        df_local     <- lst[[sample_local]]
         
-        output[[paste0("scatter_", sample_name_local)]] <- renderPlot({
-          plot_local
+        output[[paste0("scatter_", sample_local)]] <- renderPlot({
+          check_data_error(df_local, required_cols = c("MZ", "K0"), na_policy = "all")
+          generate_scatterplot(df_local, sample_local, color = input$color_palette)
         })
       })
     }
@@ -700,10 +697,17 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
     
     pep_mat <- prepare_measurement_matrix(lst, quantity_cols)
-    shiny::validate(shiny::need(ncol(pep_mat) >= 2, "Need at least 2 groups for correlation."))
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
     
-    cor_mat <- cor(pep_mat, method = "pearson", use = "complete.obs")
+    # Drop columns with no data at all (would make cor() fail entirely)
+    pep_mat <- pep_mat[, colSums(!is.na(pep_mat)) > 0, drop = FALSE]
+    shiny::validate(shiny::need(ncol(pep_mat) >= 2, "Need at least 2 measurements with data for correlation."))
+    
+    
+    cor_mat <- cor(pep_mat, method = "pearson", use = "pairwise.complete.obs")
+    
+    # Replace any remaining NAs (pairs with zero shared peptides) with 0
+    cor_mat[is.na(cor_mat)] <- 0
     
     cor_mat_cache(cor_mat)
     
@@ -868,7 +872,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   output$RT_plot2 <- renderUI({
     lst <- processed_data_list()
-    check_data_error(lst, required_cols = "RT" , na_policy = "all")
     
     # Wrap plots in a grid (like motif plots)
     layout_column_wrap(
@@ -881,7 +884,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   observe({
     lst <- processed_data_list()
-    check_data_error(lst, required_cols = "RT" , na_policy = "all")
     
     for (sample_name in names(lst)) {
       
@@ -890,6 +892,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         df_local <- lst[[sample_local]]
         
         output[[paste0("RT2_", sample_local)]] <- renderPlot({
+          check_data_error(df_local, required_cols = "RT", na_policy = "any")
           plot_histogram(df = df_local, column = "RT", x_label = "Retention Time (min)", 
                          title_name = paste("RT Histogram –", sample_local), color = input$color_palette
           )
