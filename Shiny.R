@@ -466,7 +466,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   output$RT_plot <- renderUI({
     lst <- data_list_r()
-    check_data_error(lst, required_cols = "RT", na_policy = "any")
+    check_data_error(lst, required_cols = "RT", na_policy = "all")
     # Wrap plots in a grid (like motif plots)
     layout_column_wrap(
       width = "400px",  # each plot approx width
@@ -478,7 +478,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   observe({
     lst <- data_list_r()
-    check_data_error(lst, required_cols = "RT", na_policy = "any")
+    check_data_error(lst, required_cols = "RT", na_policy = "all")
 
     for (sample_name in names(lst)) {
       

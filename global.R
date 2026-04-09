@@ -1381,11 +1381,22 @@ plot_unique_counts <- function(lst, column, y_label, transform_fn = identity, co
 }
 
 plot_histogram <- function(df, column, x_label, title_name = "RT plot", color = "default") {
-  
+
+  vals <- df[[column]]
+  if (is.null(vals) || !any(is.finite(vals))) {
+    return(
+      ggplot() +
+        annotate("text", x = 0.5, y = 0.5, label = paste("No data for", column),
+                 size = 5, color = "grey50") +
+        theme_void() +
+        labs(title = title_name)
+    )
+  }
+
   # Create 1-minute bins (change to 60 if your data is in seconds)
   breaks <- seq(
-    floor(min(df[[column]], na.rm = TRUE)),
-    ceiling(max(df[[column]], na.rm = TRUE)),
+    floor(min(vals, na.rm = TRUE)),
+    ceiling(max(vals, na.rm = TRUE)),
     by = 1
   )
   
