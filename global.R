@@ -1345,6 +1345,7 @@ prepare_measurement_matrix <- function(lst, quantity_cols) {
 plot_unique_counts <- function(lst, column, y_label, transform_fn = identity, color = "default") {
   stats <- lapply(names(lst), function(sample_name) {
     df <- lst[[sample_name]]
+    if (!column %in% colnames(df)) return(NULL)
     values <- df[[column]]
     
     # Apply optional transformation (e.g., extract protein prefixes)
@@ -1413,6 +1414,7 @@ plot_histogram <- function(df, column, x_label, title_name = "RT plot", color = 
 plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, percentage = FALSE, color = "default") {
   combined <- bind_rows(lapply(names(lst), function(name) {
     df <- lst[[name]]
+    if (!column %in% colnames(df)) return(NULL)  # skip samples missing the column
     df <- df[, column, drop = FALSE]    # only the column needed
     if (nrow(df) == 0) {
       return(data.frame(Sample = character(0), df[0, , drop = FALSE]))
@@ -1477,6 +1479,7 @@ plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, 
 plot_density <- function(lst, column, transform = NULL, x_label = NULL, alpha = 0.3, color = "default") {
   combined <- bind_rows(lapply(names(lst), function(name) {
     df <- lst[[name]]
+    if (!column %in% colnames(df)) return(NULL)  # skip samples missing the column
     df <- df[, column, drop = FALSE]
     if (nrow(df) == 0) return(NULL)
     df$Sample <- name
