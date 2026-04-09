@@ -109,6 +109,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   active_expr_r      <- reactiveVal(list())  # expression being built
   editing_group_r    <- reactiveVal(NULL)    # name of group being edited, or NULL
   measurement_col_map_r <- reactiveVal(NULL)
+  use_measurements <- reactiveVal(FALSE) # even when the measurement_col exist, sometimes we dont want to use the shortcut method without assigning groups by condition.
   
   #Preloaded Data
   observe({
@@ -1235,12 +1236,24 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     # Condition-based mode
     if (isTRUE(input$group_mode_tabs == "condition")) {
       groups_raw <- condition_groups_r()
+      use_measurements(TRUE)
       if (length(groups_raw) < 2) {
         showNotification("Need at least 2 saved condition groups before updating.", type = "error")
         return(NULL)
       }
       showNotification("Groups updated successfully!", type = "message")
-      return(lapply(groups_raw, `[[`, "samples"))
+      has_meas <- isTRUE(attr(annotation_df_r(), "has_measurement"))
+      if (has_meas) {
+        return(lapply(groups_raw, function(x) {
+          list(
+            measurement = x$measurement,
+            name = x$name
+          )
+        }))
+      } else {
+        use_measurements(FALSE)
+        return(lapply(groups_raw, `[[`, "name"))
+      }
     }
     
     # Manual mode (unchanged)
@@ -1269,7 +1282,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     }
     
     showNotification("Groups updated successfully!", type = "message")
-    tmp_groups <<- groups
     groups
     
   }, ignoreNULL = TRUE)
@@ -1282,24 +1294,43 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     check_data_error(lst, na_policy = "ignore")
     groups <- group_list()
     req(groups, length(groups) >= 2)
+    col_map <- measurement_col_map_r()
+    
+    temp_col_map <<- col_map
+    temp_lst <<- lst
     
     pep_col <- "PEPTIDE"
-    #pep_col    <- if (!is.null(input$use_peptidoforms) && input$use_peptidoforms) "PEPTIDE" else "STRIPPED"
     
     lapply(names(groups), function(g) {
+      grp <- groups[[g]]
       
-      sample_names <- groups[[g]]
-      
-      peptide_counts <- table(unlist(lapply(sample_names, function(s) {
-        df <- lst[[s]]
-        if (!pep_col %in% colnames(df)) return(character(0))
-        unique(df[[pep_col]])
-      })))
-      
-      n_samples <- length(sample_names)
+      if (!is.null(col_map) && is.list(grp) && !is.null(grp$measurement)) {
+        # Measurement mode: grp = list(measurement = c(...), name = c(...))
+        # A peptide counts for this measurement only if it has a non-NA quantity value
+        measurements <- grp$measurement
+        names_vec    <- grp$name
+        
+        peptide_counts <- table(unlist(lapply(seq_along(measurements), function(i) {
+          entry <- col_map[[measurements[i]]]
+          df <- lst[[names_vec[i]]]
+          actual_col <- colnames(df)[tolower(colnames(df)) == tolower(entry$col)][1]
+          df[[pep_col]][!is.na(df[[actual_col]])]
+        })))
+        
+        n_items <- length(measurements)
+      } else {
+        # Sample mode: grp is a character vector of sample names
+        peptide_counts <- table(unlist(lapply(grp, function(s) {
+          df <- lst[[s]]
+          if (is.null(df) || !pep_col %in% colnames(df)) return(character(0))
+          unique(df[[pep_col]])
+        })))
+        
+        n_items <- length(grp)
+      }
       
       names(peptide_counts[
-        peptide_counts / n_samples >= input$min_presence_fraction
+        peptide_counts / n_items >= input$min_presence_fraction
       ])
     }) |> setNames(names(groups))
   })
@@ -1325,7 +1356,11 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
     
-    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets())
+    if(use_measurements()){
+      pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets(), col_map = measurement_col_map_r())
+    } else {
+      pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets())
+    }
     
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
     
@@ -1336,23 +1371,29 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   group_comp_data <- eventReactive(input$update_group_comp, {
     lst <- processed_data_list()
     groups <- group_list()
+    col_map <- measurement_col_map_r()
     
     #Get all columns containing the quantity info.
     quantity_cols <- data_info_r() %>%
       dplyr::filter(final_name == "QUANTITY") %>%
-      dplyr::select(-final_name) %>%   # all sample columns.
+      dplyr::select(-final_name) %>%
       unlist(recursive = TRUE, use.names = FALSE)
-
+    
     # Keep only non-empty groups
     groups <- groups[sapply(groups, function(g) {
-      any(sapply(g, function(s) nrow(lst[[s]]) > 0))
+      if (!is.null(col_map) && is.list(g) && !is.null(g$measurement)) {
+        any(sapply(seq_along(g$measurement), function(i) {
+          entry <- col_map[[g$measurement[i]]]
+          !is.null(entry) && !is.null(lst[[g$name[i]]]) && nrow(lst[[g$name[i]]]) > 0
+        }))
+      } else {
+        any(sapply(g, function(item) !is.null(lst[[item]]) && nrow(lst[[item]]) > 0))
+      }
     })]
     shiny::validate(shiny::need(length(groups) >= 2, "Need 2 or more sets to compare"))
     
     # Generate all unique pairwise combinations
     group_pairs <- combn(names(groups), 2, simplify = FALSE)
-    
-    # Peptide column
     pep_col <- "PEPTIDE" #WIP: need to think how to solve the PTM problem? Do I just add the same peptidoform together?
     # pep_col    <- if (!is.null(input$use_peptidoforms) && input$use_peptidoforms) "PEPTIDE" else "STRIPPED"
     
@@ -1360,12 +1401,10 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     group_comp_stats <- lapply(group_pairs, function(pair) {
       g1 <- pair[1]
       g2 <- pair[2]
-      
-      #Here we filter based on union-intersect criteria
       allowed_peptides_g1 <- group_peptide_sets()[[g1]]
       allowed_peptides_g2 <- group_peptide_sets()[[g2]]
-      
-      compute_group_comp_stats(lst, groups, allowed_peptides_g1, allowed_peptides_g2, g1, g2, pep_col, quantity_cols)
+      compute_group_comp_stats(lst, groups, allowed_peptides_g1, allowed_peptides_g2,
+                               g1, g2, pep_col, quantity_cols, col_map = col_map, use_measurements = use_measurements())
     })
     
     names(group_comp_stats) <- sapply(group_pairs, function(pair) paste(pair, collapse = "_vs_"))
@@ -1900,7 +1939,7 @@ shinyApp(
   ui = ui,
   server = function(input, output, session) {
     server(input, output, session, 
-           input_variable = test_annotation, 
+           input_variable = preloaded_data, 
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 

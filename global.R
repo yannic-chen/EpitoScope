@@ -1093,8 +1093,8 @@ normalize_df <- function(df) {
     }
   }
   
-  # 2. Hard-coded fallbacks (existing behaviour for known software)
-  if (software %in% c("DIANN", "DIANN_parquet")) {
+  # 2. Hard-coded fallbacks for DIANN pr/pr_matrix
+  if (software %in% c("DIANN")) {
     sample <- which(grepl("^[a-z]\\.\\.", tolower(colnames(df)))) #this is the path to the file.
   }
   
@@ -1228,41 +1228,66 @@ make_range_slider_ui <- function(lst, col, input_id, label, step = NULL) {
 }
 
 #This is for creating a matrix used for the group-based peptide heatmap
-prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_sets) {
+prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_sets, col_map = NULL) {
   
   peptides_all <- unique(unlist(group_peptide_sets))
-  pep_mat <- matrix(NA_real_, 
-                    nrow = length(peptides_all), 
+  pep_mat <- matrix(NA_real_,
+                    nrow = length(peptides_all),
                     ncol = length(groups),
                     dimnames = list(peptides_all, names(groups)))
   
   for (g in names(groups)) {
-    samples <- groups[[g]]
+    group_items      <- groups[[g]]
     allowed_peptides <- group_peptide_sets[[g]]
     
-    # Combine all samples in group
-    df_group <- bind_rows(lapply(samples, function(s) {
-      df <- lst[[s]]
-      cols <- dplyr::intersect(c("PEPTIDE", quantity_cols), colnames(df))
-      if (length(cols) < 2) return(NULL)
-      df[, cols, drop = FALSE]
-    }))
-    
-    if (is.null(df_group) || nrow(df_group) == 0) next
-    
-    # Filter to allowed peptides
-    df_group <- df_group[df_group$PEPTIDE %in% allowed_peptides, ]
-    
-    # Aggregate: take max (or mean) per peptide across samples
-    agg <- df_group %>%
-      dplyr::group_by(PEPTIDE) %>%
-      dplyr::summarise(value = max(c_across(any_of(quantity_cols)), na.rm = TRUE), .groups = "drop")
+    if (!is.null(col_map)) {
+      # Measurement mode: grp_items = list(name=c(...), measurement=c(...))
+      measurements <- group_items$measurement
+      names_vec    <- group_items$name
+      df_group <- dplyr::bind_rows(lapply(seq_along(measurements), function(i) {
+        nm   <- names_vec[i]
+        meas <- measurements[i]
+        entry <- col_map[[meas]]
+        if (is.null(entry)) return(NULL)
+        df <- lst[[nm]]
+        if (is.null(df) || !"PEPTIDE" %in% colnames(df)) return(NULL)
+        actual_col <- colnames(df)[tolower(colnames(df)) == tolower(entry$col)][1]
+        if (is.na(actual_col)) return(NULL)
+        df_sub <- df[df$PEPTIDE %in% allowed_peptides, c("PEPTIDE", actual_col), drop = FALSE]
+        names(df_sub)[names(df_sub) == actual_col] <- "Quantity"
+        df_sub
+      }))
+      
+      if (is.null(df_group) || nrow(df_group) == 0) next
+      
+      agg <- df_group %>%
+        dplyr::group_by(PEPTIDE) %>%
+        dplyr::summarise(value = max(Quantity, na.rm = TRUE), .groups = "drop")
+    } else {
+      # Sample mode: each item is a sample name
+      df_group <- dplyr::bind_rows(lapply(group_items, function(s) {
+        df <- lst[[s]]
+        cols <- dplyr::intersect(c("PEPTIDE", quantity_cols), colnames(df))
+        if (length(cols) < 2) return(NULL)
+        df[, cols, drop = FALSE]
+      }))
+      
+      if (is.null(df_group) || nrow(df_group) == 0) next
+      
+      df_group <- df_group[df_group$PEPTIDE %in% allowed_peptides, ]
+      
+      agg <- df_group %>%
+        dplyr::group_by(PEPTIDE) %>%
+        dplyr::summarise(value = max(dplyr::c_across(dplyr::any_of(quantity_cols)), na.rm = TRUE), .groups = "drop")
+    }
     
     pep_mat[agg$PEPTIDE, g] <- agg$value
   }
   
   pep_mat
 }
+
+
 
 prepare_measurement_matrix <- function(lst, quantity_cols) {
   
@@ -2053,15 +2078,17 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
   }
   
   # Define color function
+  mat_range <- range(mat, na.rm = TRUE)
+  if (!is.finite(mat_range[1]) || mat_range[1] == mat_range[2]) {
+    mat_range <- c(mat_range[1] - 0.5, mat_range[1] + 0.5)
+  }
   if (color == "default") {
-    col_fun <- colorRamp2(
-      c(min(mat, na.rm = TRUE), max(mat, na.rm = TRUE)),
-      c("white", "red")
-    )
+    col_fun <- colorRamp2(mat_range, c("white", "red"))
   } else {
     cols <- viridis(100, option = color)
-    col_fun <- colorRamp2(range(mat, na.rm = TRUE), c(cols[1], cols[100]))
+    col_fun <- colorRamp2(mat_range, c(cols[1], cols[100]))
   }
+  
   
   # ---- Handle grouping vs clustering ----
   
@@ -2413,11 +2440,11 @@ plot_aa_composition <- function(lst, color = "default",show_numbers = TRUE) {
 #------Statistical caluclations-------
 #calcualte group comparison statistics
 compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_peptides_g2,
-                                     g1, g2, pep_col, quantity_cols, col_map = NULL) {
+                                     g1, g2, pep_col, quantity_cols, col_map = NULL, use_measurements = FALSE) {
   
-  use_measurements <- !is.null(col_map)
   grp_g1 <- groups[[g1]]
   grp_g2 <- groups[[g2]]
+
  
   if (!use_measurements) {
     n_g1 <- sum(sapply(grp_g1, function(s) length(intersect(quantity_cols, colnames(lst[[s]])))))
@@ -2426,7 +2453,9 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
     n_g1 <- length(grp_g1)
     n_g2 <- length(grp_g2)
   }
-  use_limma <- n_g1 == 1 || n_g2 == 1
+  
+  use_limma <- FALSE
+  #use_limma <- n_g1 == 1 || n_g2 == 1
   
   # ── Build long-format data ──────────────────────────────────────────────────
   build_long <- function(grp_items, grp_name, allowed) {
@@ -2440,17 +2469,38 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
                             names_to = "Sample", values_to = "Quantity") %>%
         dplyr::mutate(Group = grp_name)
     } else {
-      dplyr::bind_rows(lapply(grp_items, function(col_name) {
-        entry <- col_map[[col_name]]
-        df    <- lst[[entry$name]]
-        df    <- df[df[[pep_col]] %in% allowed,
-                    c(pep_col, "PROTEIN", entry$col), drop = FALSE]
-        names(df)[names(df) == entry$col] <- "Quantity"
-        df$Sample <- col_name
+      # grp_items = list(name = c(...), measurement = c(...)), parallel vectors
+      measurements <- grp_items$measurement
+      names_vec    <- grp_items$name
+      dplyr::bind_rows(lapply(seq_along(measurements), function(i) {
+        nm   <- names_vec[i]
+        meas <- measurements[i]
+        entry <- col_map[[meas]]
+        if (is.null(entry)) {
+          warning(paste0("[build_long] No col_map entry for measurement '", meas, "'"))
+          return(NULL)
+        }
+        df <- lst[[nm]]
+        if (is.null(df)) {
+          warning(paste0("[build_long] No data in lst for sample '", nm, "'"))
+          return(NULL)
+        }
+        actual_col <- colnames(df)[tolower(colnames(df)) == tolower(entry$col)][1]
+        if (is.na(actual_col)) {
+          warning(paste0("[build_long] Column '", entry$col, "' not found (case-insensitive) in '",
+                         nm, "'. Available cols: ", paste(head(colnames(df), 30), collapse = ", ")))
+          return(NULL)
+        }
+        keep_cols <- intersect(c(pep_col, "PROTEIN", actual_col), colnames(df))
+        df <- df[df[[pep_col]] %in% allowed, keep_cols, drop = FALSE]
+        names(df)[names(df) == actual_col] <- "Quantity"
+        if (!"PROTEIN" %in% colnames(df)) df$PROTEIN <- NA_character_
+        df$Sample <- meas
         df$Group  <- grp_name
         df
       }))
     }
+    
   }
   
   df_long <- dplyr::bind_rows(
@@ -2458,19 +2508,28 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
     build_long(grp_g2, g2, allowed_peptides_g2)
   )
   
+  tmp_df_long <<- df_long
+  
   if (nrow(df_long) == 0) return(NULL)
+  if (!"Quantity" %in% colnames(df_long)) {
+    warning(paste0("[compute_group_comp_stats] 'Quantity' column missing from df_long. ",
+                   "use_measurements=", use_measurements,
+                   "; colnames=[", paste(colnames(df_long), collapse = ", "), "]"))
+    return(NULL)
+  }
   
   # ── Means and FC ─────────────────────────────────────────────────────────────
   summary_df <- df_long %>%
     dplyr::group_by(.data[[pep_col]]) %>%
     dplyr::summarise(
-      PROTEIN = dplyr::first(PROTEIN),
-      Mean_G1 = mean(Quantity[Group == g1], na.rm = TRUE),
-      Mean_G2 = mean(Quantity[Group == g2], na.rm = TRUE),
+      PROTEIN = dplyr::first(.data[["PROTEIN"]]),
+      Mean_G1 = mean(.data[["Quantity"]][.data[["Group"]] == g1], na.rm = TRUE),
+      Mean_G2 = mean(.data[["Quantity"]][.data[["Group"]] == g2], na.rm = TRUE),
       log2FC  = log2(Mean_G2 + 1) - log2(Mean_G1 + 1),
       A       = 0.5 * (log2(Mean_G1 + 1) + log2(Mean_G2 + 1)),
       .groups = "drop"
     )
+  
   
   # ── P-values ──────────────────────────────────────────────────────────────────
   safe_limma_pvals <- function(df_g1, df_g2, qty_g1, qty_g2, pep_col) {

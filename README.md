@@ -169,7 +169,7 @@ It is possible to give a dataframe representing an annotation table from which d
 | --- | --- |
 | name | (Mandatory) This will be the displayed name for a dataset, also called sample name. Multiple sources can be associated to the same name. In that case the data will be row bound together. |
 | source | (Mandatory) This is path to the file to be read. Currently only .tsv, .csv, .txt and .parquet files are supported.|
-| measurement | (Optional) This is used to access individual measurements in a given dataset. As such, the name here must be the same as the identifier used by the software. This becomes mandatory when multiple conditions and replicates are given for the same sample. |
+| measurement | (Optional) This is used to access individual measurements in a given dataset. One measurement here must associate to exactly 1 data column. String search is used, so the name can be a substring of the official data column. It is case-insensitive.|
 | biological_replicate | (Optional) can be any string or number |
 | technical_replicate | (Optional) can be any string or number |
 | condition | (Optional) can be any string . Multiple condition columns can exist. In that case, the the column name keeps the "condition" prefix and add a suffix: e.g. "condition_1" |

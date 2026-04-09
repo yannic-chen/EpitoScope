@@ -50,6 +50,14 @@ preloaded_data <- lapply(preloaded_data, function(df) {
   df[rowSums(df[, maxlfq_cols, drop = FALSE] != 0) > 0, ]
 })
 
+preloaded_data <- list(
+  DIANN_parquet = DIANN_parquet,
+  NOA01_05_serum  = NOA01_05_serum,
+  fragpipe_combined_psm  = read.delim("C:/Users/Yannic/Downloads/combined_psm.tsv"),
+  DIANN_report.pr_matrix = read.delim("C:/Users/Yannic/Downloads/report.pr_matrix.tsv"),
+  fragpipe_combined_modified_peptide = read.delim("C:/Users/Yannic/Downloads/combined_modified_peptide.tsv"),
+  NOA01_01_tumor  = NOA01_01_tumor)
+
 custom_schema <- list(
   Software1 = list(PEPTIDE = c("output_sequence"), 
                    QUANTITY = c("relative_intensity")), 

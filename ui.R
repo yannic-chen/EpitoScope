@@ -366,10 +366,8 @@ ui <- bs4DashPage(
           
           ### ---- Statistical Plots ----
           bs4Card(title = tagList("Statistical Plots", bs4Dash::tooltip(icon("info-circle"),"Only significant datapoints are interactable (to improve speed). 
-                                                       Both Bonferroni and Benjamin-hochberg adjusted p-value are calculated. Only Benjamin-hochberg used for now. Could include a switch.
-                                                      Values for p-value and logFC calculations come from all columns designated as QUANTITY information from the 'Column Map' info.
-                                                      MA plot is helpful to determine whether the interesting hits are low or high expressed peptides 
-                                                      (while volcano plot gives you highly differential expressed peptides that are also significant).
+                                                       Both Bonferroni and Benjamin-hochberg adjusted p-value are calculated. Only Benjamin-hochberg used for now.
+                                                      p-value can only be calculated when more than 2 datapoints/measurements per peptide in each group exist. Otherwise, no p-value is calculated, which means no visualization.
                                                       Significant here means a corrected p-value of less than 0.05 and a log2FC larger than 1.", placement = "right")
                                   ), width = 12, maximizable = TRUE,
                   uiOutput("group_stats_tabs")
