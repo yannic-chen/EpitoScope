@@ -447,7 +447,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   ## ----Charge / Mass / mz / RT / ppm----
   output$charge_plot <- renderPlot({
     lst <- data_list_r()
-    check_data_error(lst, required_cols = "CHARGE", na_policy = "any") #Even if CHARGE is missing, preprocessing would add a charge of 1 to every row.
+    check_data_error(lst, required_cols = "CHARGE", na_policy = "all")
     plot_stacked_bar(lst, column = "CHARGE", fill_label = "Charge", percentage = FALSE, color = input$color_palette)
   })
   

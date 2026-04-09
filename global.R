@@ -1041,7 +1041,11 @@ normalize_df <- function(df) {
     message("Charge column missing → set to 0")
     original <- rbind(original, data.frame(final_name = "CHARGE", original_name = "[no CHARGE column]", stringsAsFactors = FALSE))
   } else {
-    df$CHARGE <- as.integer(df$CHARGE)
+    df$CHARGE <- sapply(as.character(df$CHARGE), function(x) {
+      nums <- suppressWarnings(as.integer(unlist(regmatches(x, gregexpr("[0-9]+", x)))))
+      nums <- nums[!is.na(nums)]
+      if (length(nums) == 0) NA_integer_ else min(nums)
+    }, USE.NAMES = FALSE)
   }
   #STRIPPED
   if (!"STRIPPED" %in% colnames(df)) {
