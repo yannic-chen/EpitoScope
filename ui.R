@@ -117,6 +117,7 @@ ui <- bs4DashPage(
           bs4Card(title = "Other Numeric Columns", width = 12, maximizable = TRUE, 
                   tabsetPanel(
                     tabPanel("Charge",
+                             bs4Dash::tooltip(icon("info-circle"),"In case multiple charges are given, the minimum is taken.", placement = "right"),
                              plotOutput("charge_plot")                               
                              ),
                     tabPanel("Mass",
