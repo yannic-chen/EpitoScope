@@ -1125,6 +1125,7 @@ normalize_df <- function(df) {
                                              original_name = list(colnames(df[, sample, drop = FALSE]))))
   
   df$MAX_QUANTITY <- apply(df[, sample, drop = FALSE], 1, function(x) {
+    x[x == 0] <- NA #Treats 0 also as NA, since it was not quantified
     if (all(is.na(x))) NA else max(x, na.rm = TRUE)
   })
   
@@ -1274,6 +1275,7 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
         if (is.na(actual_col)) return(NULL)
         df_sub <- df[df$PEPTIDE %in% allowed_peptides, c("PEPTIDE", actual_col), drop = FALSE]
         names(df_sub)[names(df_sub) == actual_col] <- "Quantity"
+        df_sub$Quantity[df_sub$Quantity == 0] <- NA #set 0 to NA
         df_sub
       }))
       
@@ -2496,7 +2498,8 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
       })) %>%
         tidyr::pivot_longer(cols = dplyr::any_of(quantity_cols),
                             names_to = "Sample", values_to = "Quantity") %>%
-        dplyr::mutate(Group = grp_name)
+        dplyr::mutate(Quantity = replace(Quantity, Quantity == 0, NA),
+                      Group = grp_name)
     } else {
       # grp_items = list(name = c(...), measurement = c(...)), parallel vectors
       measurements <- grp_items$measurement
@@ -2523,6 +2526,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
         keep_cols <- intersect(c(pep_col, "PROTEIN", actual_col), colnames(df))
         df <- df[df[[pep_col]] %in% allowed, keep_cols, drop = FALSE]
         names(df)[names(df) == actual_col] <- "Quantity"
+        df$Quantity[df$Quantity == 0] <- NA
         if (!"PROTEIN" %in% colnames(df)) df$PROTEIN <- NA_character_
         df$Sample <- meas
         df$Group  <- grp_name
