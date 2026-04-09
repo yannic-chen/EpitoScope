@@ -213,7 +213,8 @@ ui <- bs4DashPage(
         fluidRow(
           
           ### ---- Data Completeness ----
-          bs4Card(title = "Data Completeness", width = 12, maximizable = TRUE,
+          bs4Card(title = tagList("Data Completeness", bs4Dash::tooltip(icon("info-circle"),"NA is used for missing/not identified. If no NA exist, then 0 will be used for missing/not identified", placement = "right")
+                                  ), width = 12, maximizable = TRUE,
                   h6("WARNING: For PEAKS 12 Studio, the column X.Spec has been replaced with X.Feature. X.Feature returns 0 even when a peptide has been identified but could not be quantified. X.Spec on the other hand only returns 0 if it is not identified at all."),
                   tabsetPanel(
                     # --- absolute ---

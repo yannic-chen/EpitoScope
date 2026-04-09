@@ -96,7 +96,7 @@ column_schema <- list(
     PPM            = c("Delta.Mass"),                            #not present in combined_modified_peptide.tsv, combined_peptide.tsv
     PROTEIN        = c("Protein_Mapped.Proteins"),               #This column is created later from Protein and Mapped.Protein column. #combined_modified_peptide.tsv, combined_peptide.tsv only has Protein column.
     QUANTITY       = c("maxlfq.intensity", "Intensity"),         #suffix. prefer maxlfq.intensity (exist in peptide.tsv, but not psm.tsv).
-    SPECTRA        = c("Spectrum", "Spectral.Count"),            #suffix.
+    SPECTRA        = c("Spectral.Count"),                        #suffix. Cannot use spectrum in psm.csv file since these are only the names and are lost
     PTM            = c("Assigned.Modifications")                 #not present in combined_modified_peptide.tsv, combined_peptide.tsv
   ),
   
@@ -1011,7 +1011,7 @@ normalize_df <- function(df) {
       pivot_wider(
         names_from  = Run,
         values_from = Precursor.Quantity,
-        names_prefix = "Intensity.",
+        names_prefix = "Precursor.Quantity.",
         values_fn = ~ if (all(is.null(.x))) NA_real_ else max(.x, na.rm = TRUE),
         values_fill = NA_real_
         )
@@ -1025,6 +1025,7 @@ normalize_df <- function(df) {
     df <- left_join(df_top %>% dplyr::select(-Run), df_wide, by = "Modified.Sequence")
     
   }
+  
   res <- transform_columns(df, column_schema, software)
   
   df <- res$df
@@ -1123,7 +1124,7 @@ normalize_df <- function(df) {
     if (all(is.na(x))) NA else max(x, na.rm = TRUE)
   })
   
-  #-------------Quantity -----------------
+  #-------------Spectra -----------------
   schema_spec <- column_schema[[software]][["SPECTRA"]]
   spec <- integer(0)
   
@@ -1862,13 +1863,15 @@ plot_completeness <- function(lst, spectra_cols, percent = FALSE, title = "Data 
     
     df %>%
       transmute(
-        Non_NA_Count = rowSums(across(all_of(spectra_cols), ~ !is.na(.x) & .x != 0)) #both NA and 0 count as missing.
+        Non_NA_Count = rowSums(across(all_of(spectra_cols), ~ {
+          if (any(is.na(.x))) !is.na(.x) else .x > 0
+        }))
       ) %>%
       arrange(desc(Non_NA_Count)) %>%
       dplyr::mutate(
-        Rank = row_number(),
+        Rank           = row_number(),
         Percent_Non_NA = 100 * Non_NA_Count / length(spectra_cols),
-        Percent_Rank = 100 * Rank / max(Rank)
+        Percent_Rank   = 100 * Rank / max(Rank)
       )
   }
   
