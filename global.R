@@ -1301,6 +1301,9 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
     pep_mat[agg$PEPTIDE, g] <- agg$value
   }
 
+  # Drop peptides not identified in any group
+  pep_mat <- pep_mat[rowSums(!is.na(pep_mat)) > 0, , drop = FALSE]
+
   pep_mat
 }
 
@@ -2093,33 +2096,33 @@ plot_pairwise_peptide_quant_correlation <- function(lst, method = "pearson", min
 }
 
 plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster = "both", transpose = FALSE, row_groups = NULL, col_groups = NULL, label = "QUANTITY") {
-  
-  mat[is.na(mat)] <- 0
-  
-  # Log-transform if requested
+
+  # NA  = not identified      → transparent (na_col)
+  # 0   = identified, no qty  → grey (bottom of color scale)
+  # >0  = quantified          → color scale
+
+  # Log-transform if requested: log10(x + 1) so 0 → 0 (grey), NA stays NA
   if (log_transform) {
-    mat <- log10(mat)
-    mat[is.infinite(mat)] <- 0
+    mat <- log10(mat + 1)
   }
-  
+
   if (transpose) {
     mat <- t(mat)
   }
-  
-  # Define color function
-  mat_range <- range(mat, na.rm = TRUE)
-  if (!is.finite(mat_range[1]) || mat_range[1] == mat_range[2]) {
-    mat_range <- c(mat_range[1] - 0.5, mat_range[1] + 0.5)
-  }
+
+  # Define color function anchored at 0 (grey) → max (color)
+  mat_max <- max(mat, na.rm = TRUE)
+  if (!is.finite(mat_max) || mat_max == 0) mat_max <- 1
+
   if (color == "default") {
-    col_fun <- colorRamp2(mat_range, c("white", "red"))
+    col_fun <- colorRamp2(c(0, mat_max), c("grey80", "red"))
   } else {
     cols <- viridis(100, option = color)
-    col_fun <- colorRamp2(mat_range, c(cols[1], cols[100]))
+    col_fun <- colorRamp2(c(0, mat_max), c("grey80", cols[100]))
   }
-  
+
   # ---- Handle grouping vs clustering ----
-  
+
   # Rows
   if (!is.null(row_groups)) {
     row_groups <- as.factor(row_groups)
@@ -2127,7 +2130,7 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
   } else {
     cluster_rows <- cluster %in% c("rows", "both")
   }
-  
+
   # Columns
   if (!is.null(col_groups)) {
     col_groups <- as.factor(col_groups)
@@ -2135,28 +2138,31 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
   } else {
     cluster_cols <- cluster %in% c("columns", "both")
   }
-  
+
+  show_col_names <- ncol(mat) <= 50
+
   # ---- Build heatmap ----
-  
+
   Heatmap(
     mat,
-    name = if (log_transform) paste("log10(",label, ")") else label,
+    name = if (log_transform) paste("log10(",label, "+1)") else label,
     col = col_fun,
-    na_col = "grey90",
-    
+    na_col = "transparent",   # not-identified cells are invisible
+
     # clustering
     cluster_rows = cluster_rows,
     cluster_columns = cluster_cols,
-    
+
     clustering_distance_rows    = "euclidean",
     clustering_distance_columns = "euclidean",
     clustering_method_rows      = "complete",
     clustering_method_columns   = "complete",
-    
+
     # grouping (splitting)
     row_split = row_groups,
     column_split = col_groups,
-    
+
+    show_column_names = show_col_names,
     row_names_gp = gpar(fontsize = 8),
     column_names_gp = gpar(fontsize = 10)
   )

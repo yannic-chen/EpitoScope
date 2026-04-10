@@ -1314,10 +1314,15 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         n_items <- length(measurements)
       } else {
         # Sample mode: grp is a character vector of sample names
+        # Only count peptides that are identified (!is.na MAX_QUANTITY covers both 0 and >0)
         peptide_counts <- table(unlist(lapply(grp, function(s) {
           df <- lst[[s]]
           if (is.null(df) || !pep_col %in% colnames(df)) return(character(0))
-          unique(df[[pep_col]])
+          if ("MAX_QUANTITY" %in% colnames(df)) {
+            unique(df[[pep_col]][!is.na(df$MAX_QUANTITY)])
+          } else {
+            unique(df[[pep_col]])
+          }
         })))
 
         n_items <- length(grp)
