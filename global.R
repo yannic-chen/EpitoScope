@@ -2098,8 +2098,8 @@ plot_pairwise_peptide_quant_correlation <- function(lst, method = "pearson", min
 plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster = "both", transpose = FALSE, row_groups = NULL, col_groups = NULL, label = "QUANTITY") {
 
   # NA  = not identified      → transparent (na_col)
-  # 0   = identified, no qty  → grey (bottom of color scale)
-  # >0  = quantified          → color scale
+  # 0   = identified, no qty  → fixed grey (outside color scale)
+  # >0  = quantified          → color scale spanning positive values only
 
   # Log-transform if requested: log10(x + 1) so 0 → 0 (grey), NA stays NA
   if (log_transform) {
@@ -2110,15 +2110,25 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
     mat <- t(mat)
   }
 
-  # Define color function anchored at 0 (grey) → max (color)
-  mat_max <- max(mat, na.rm = TRUE)
-  if (!is.finite(mat_max) || mat_max == 0) mat_max <- 1
+  # Build a color function with two special cases:
+  #   0  → "grey80"  (fixed, not part of the ramp)
+  #   >0 → ramp spanning [min_positive, max_positive]
+  pos_vals  <- mat[!is.na(mat) & mat > 0]
+  pos_min   <- if (length(pos_vals) > 0 && is.finite(min(pos_vals))) min(pos_vals) else 0.01
+  pos_max   <- if (length(pos_vals) > 0 && is.finite(max(pos_vals))) max(pos_vals) else 1
+  if (pos_max <= pos_min) pos_max <- pos_min + 1
 
   if (color == "default") {
-    col_fun <- colorRamp2(c(0, mat_max), c("grey80", "red"))
+    ramp <- colorRamp2(c(pos_min, pos_max), c("lightyellow", "red"))
   } else {
     cols <- viridis(100, option = color)
-    col_fun <- colorRamp2(c(0, mat_max), c("grey80", cols[100]))
+    ramp <- colorRamp2(c(pos_min, pos_max), c(cols[1], cols[100]))
+  }
+
+  col_fun <- function(x) {
+    out        <- ramp(x)
+    out[!is.na(x) & x == 0] <- "grey80"
+    out
   }
 
   # ---- Handle grouping vs clustering ----
