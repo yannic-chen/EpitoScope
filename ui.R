@@ -168,6 +168,24 @@ ui <- bs4DashPage(
                   uiOutput("motif_tabs")
                   ),
           
+          ### ---- Unique Entries ----
+          bs4Card(title = "Identification distribution", width = 12, maximizable = TRUE, 
+                  tabsetPanel(
+                    tabPanel("Peptides",
+                             h6("Unique Peptides (no PTMs)", bs4Dash::tooltip(icon("info-circle"),"0s are considered identified but not quantified if NA also exist. Otherwise 0 is considered not identified.", placement = "right")),
+                             plotOutput("summary_peptides_plot3")
+                    ),
+                    tabPanel("Peptidoforms", 
+                             h6("Peptidoforms (including PTMs)", bs4Dash::tooltip(icon("info-circle"),"0s are considered identified but not quantified if NA also exist. Otherwise 0 is considered not identified.", placement = "right")),
+                             plotOutput("summary_peptidoforms_plot3")
+                    ),
+                    tabPanel("Proteins",
+                             h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"This depends heavily on the style of the header and how the software identifies it.", placement = "right")),
+                             plotOutput("summary_proteins_plot3")
+                    )
+                  )
+          ),
+          
           ### ---- Dynamic Range plot ----
           bs4Card(title = tagList("Dynamic Rang", bs4Dash::tooltip(icon("info-circle"),"Minimum of 10 sequences are required for Motif generation.", placement = "right")
                                   ), width = 12, maximizable = TRUE, 

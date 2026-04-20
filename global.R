@@ -1354,39 +1354,64 @@ prepare_measurement_matrix <- function(lst, quantity_cols) {
 }
 
 #-----------Plotting functions------------------
-plot_unique_counts <- function(lst, column, y_label, transform_fn = identity, color = "default") {
-  stats <- lapply(names(lst), function(sample_name) {
-    df <- lst[[sample_name]]
-    values <- df[[column]]
+plot_unique_counts <- function(lst, column, y_label, transform_fn = identity, color = "default", quantity_cols = NULL) {
+  
+  stats <- dplyr::bind_rows(lapply(names(lst), function(s) {
+    df <- lst[[s]]
     if (!column %in% colnames(df)) return(NULL)
     
-    # Apply optional transformation (e.g., extract protein prefixes)
-    values <- transform_fn(values)
-    
-    data.frame(
-      Sample = sample_name,
-      Count = length(unique(values)),
-      stringsAsFactors = FALSE
-    )
-  }) %>% do.call(rbind, .)
+    if (!is.null(quantity_cols)) {
+      meas_cols <- intersect(quantity_cols, colnames(df))
+      
+      if (length(meas_cols) == 0) {
+        # No measurement columns in this sample — fall back to total unique count
+        return(data.frame(Sample = s, Mean = length(unique(transform_fn(df[[column]]))),
+                          Min = NA_real_, Max = NA_real_, stringsAsFactors = FALSE))
+      }
+      
+      counts <- sapply(meas_cols, function(m) {
+        col <- df[[m]]
+        detected <- if (any(is.na(col))) {
+          !is.na(col)       # NA = not found; 0 and >0 both mean found
+        } else {
+          col > 0           # no NAs → 0 means not found
+        }
+        length(unique(transform_fn(df[[column]][detected])))
+      })
+      
+      data.frame(Sample = s, Mean = mean(counts), Min = min(counts), Max = max(counts),
+                 stringsAsFactors = FALSE)
+    } else {
+      data.frame(Sample = s, Mean = length(unique(transform_fn(df[[column]]))),
+                 Min = NA_real_, Max = NA_real_, stringsAsFactors = FALSE)
+    }
+  }))
   
-  if (color == "default") {
-    color <- NULL  # ggplot will use default fill colors
-  } else {
-    color <- viridis(length(lst), option = color)
-  }
+  if (is.null(stats) || nrow(stats) == 0) return(NULL)
   
-  p <- ggplot(stats, aes(x = Sample, y = Count, fill = Sample)) +
+  fill_colors <- if (color == "default") NULL else viridis(nrow(stats), option = color)
+  
+  has_range <- any(!is.na(stats$Min) & stats$Min != stats$Max)
+  
+  p <- ggplot(stats, aes(x = Sample, y = Mean, fill = Sample)) +
     geom_col() +
-    geom_text(aes(label = Count), vjust = -0.3, size = 5) +
     labs(x = "Sample", y = y_label) +
     theme_minimal() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
-  if (!is.null(color)) {
-    p <- p + scale_fill_manual(values = color)
+  
+  if (has_range) {
+    p <- p +
+      geom_errorbar(aes(ymin = Min, ymax = Max), width = 0.25, linewidth = 0.8) +
+      geom_text(aes(label = sprintf("%.0f\n[%d\u2013%d]", Mean, Min, Max)),
+                vjust = -0.3, size = 3.5)
+  } else {
+    p <- p + geom_text(aes(label = round(Mean)), vjust = -0.3, size = 5)
   }
+  
+  if (!is.null(fill_colors)) p <- p + scale_fill_manual(values = fill_colors)
   p
 }
+
 
 plot_histogram <- function(df, column, x_label, title_name = "RT plot", color = "default") {
   

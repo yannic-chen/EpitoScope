@@ -607,6 +607,43 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     }
   })
   
+  ## ----Unique entries stats----
+  output$summary_peptides_plot3 <- renderPlot({
+    lst <- processed_data_list()
+    check_data_error(lst, na_policy = "ignore")
+    quantity_cols <- data_info_r() %>%
+      dplyr::filter(final_name == "QUANTITY") %>%
+      dplyr::select(-final_name) %>%
+      unlist(recursive = TRUE, use.names = FALSE)
+    temp_lst <<- lst
+    temp_quantity_cols <<- quantity_cols
+    plot_unique_counts(lst, column = "STRIPPED", y_label = "Number of unique peptides",
+                       color = input$color_palette, quantity_cols = quantity_cols)
+  })
+  
+  output$summary_peptidoforms_plot3 <- renderPlot({
+    lst <- processed_data_list()
+    check_data_error(lst, na_policy = "ignore")
+    quantity_cols <- data_info_r() %>%
+      dplyr::filter(final_name == "QUANTITY") %>%
+      dplyr::select(-final_name) %>%
+      unlist(recursive = TRUE, use.names = FALSE)
+    plot_unique_counts(lst, column = "PEPTIDE", y_label = "Number of unique peptidoforms",
+                       color = input$color_palette, quantity_cols = quantity_cols)
+  })
+  
+  output$summary_proteins_plot3 <- renderPlot({
+    lst <- processed_data_list()
+    check_data_error(lst, required_cols = "PROTEIN", na_policy = "all")
+    quantity_cols <- data_info_r() %>%
+      dplyr::filter(final_name == "QUANTITY") %>%
+      dplyr::select(-final_name) %>%
+      unlist(recursive = TRUE, use.names = FALSE)
+    plot_unique_counts(lst, column = "PROTEIN", y_label = "Number of unique proteins",
+                       transform_fn = extract_protein_prefixes,
+                       color = input$color_palette, quantity_cols = quantity_cols)
+  })
+  
   ## ----Dynamic Range plots----
   output$dynrange_individual_ui <- renderUI({
     lst <- processed_data_list()
