@@ -169,7 +169,7 @@ It is possible to give a dataframe representing an annotation table from which d
 | --- | --- |
 | name | (Mandatory) This will be the displayed name for a dataset, also called sample name. Multiple sources can be associated to the same name. In that case the data will be row bound together. |
 | source | (Mandatory) This is path to the file to be read. Currently only .tsv, .csv, .txt and .parquet files are supported.|
-| measurement | (Optional) This is used to access individual measurements in a given dataset. One measurement here must associate to exactly 1 data column. String search is used, so the name can be a substring of the official data column. It is case-insensitive.|
+| measurement | (Optional) This is used to access individual measurements in a given dataset. One measurement here must associate to exactly to 1 data column. String search is used, so the name can be a substring of the official data column. It is case-insensitive. R-loading resolves problematic column names by converting certain symbols. In such a case it might be worth checking how the loaded names look like.|
 | biological_replicate | (Optional) can be any string or number |
 | technical_replicate | (Optional) can be any string or number |
 | condition | (Optional) can be any string . Multiple condition columns can exist. In that case, the the column name keeps the "condition" prefix and add a suffix: e.g. "condition_1" |

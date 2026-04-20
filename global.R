@@ -1125,7 +1125,6 @@ normalize_df <- function(df) {
                                              original_name = list(colnames(df[, sample, drop = FALSE]))))
   
   df$MAX_QUANTITY <- apply(df[, sample, drop = FALSE], 1, function(x) {
-    x[x == 0] <- NA #Treats 0 also as NA, since it was not quantified
     if (all(is.na(x))) NA else max(x, na.rm = TRUE)
   })
   
@@ -1304,6 +1303,9 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
     
     pep_mat[agg$PEPTIDE, g] <- agg$value
   }
+  
+  # Drop peptides not identified in any group (i.e. NA in both groups)
+  pep_mat <- pep_mat[rowSums(!is.na(pep_mat)) > 0, , drop = FALSE]
   
   pep_mat
 }
@@ -2085,9 +2087,10 @@ plot_pairwise_peptide_quant_correlation <- function(lst, method = "pearson", min
   )
 }
 
-plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster = "both", transpose = FALSE, row_groups = NULL, col_groups = NULL, label = "QUANTITY") {
+plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster = "both", transpose = FALSE, row_groups = NULL, col_groups = NULL, label = "QUANTITY", fontsize = NULL) {
   
-  mat[is.na(mat)] <- 0
+  fs_row <- if (is.null(fontsize)) 8  else fontsize
+  fs_col <- if (is.null(fontsize)) 10 else fontsize
   
   # Log-transform if requested
   if (log_transform) {
@@ -2097,6 +2100,27 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
   
   if (transpose) {
     mat <- t(mat)
+  }
+  
+  # Adaptive raster: render heatmap body as bitmap when matrix is large
+  n_cells <- nrow(mat) * ncol(mat)
+  if (n_cells < 1000) {
+    use_raster    <- FALSE
+    raster_qual   <- 1
+  } else if (n_cells < 10000) {
+    use_raster    <- TRUE
+    raster_qual   <- 2
+  } else {
+    use_raster    <- TRUE
+    raster_qual   <- 1
+  }
+  
+  # NA-safe distance: impute NA → 0 before computing distances so hclust
+  # never receives NA/Inf pairwise distances (happens with sparse matrices
+  # where two rows share no non-NA positions)
+  dist_na0 <- function(x) {
+    x[is.na(x)] <- 0
+    dist(x, method = "euclidean")
   }
   
   # Define color function
@@ -2132,6 +2156,8 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
   
   # ---- Build heatmap ----
   
+  show_col_names <- ncol(mat) <= 200
+  
   Heatmap(
     mat,
     name = if (log_transform) paste("log10(",label, ")") else label,
@@ -2142,8 +2168,8 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
     cluster_rows = cluster_rows,
     cluster_columns = cluster_cols,
     
-    clustering_distance_rows    = "euclidean",
-    clustering_distance_columns = "euclidean",
+    clustering_distance_rows    = dist_na0,
+    clustering_distance_columns = dist_na0,
     clustering_method_rows      = "complete",
     clustering_method_columns   = "complete",
     
@@ -2151,8 +2177,12 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
     row_split = row_groups,
     column_split = col_groups,
     
-    row_names_gp = gpar(fontsize = 8),
-    column_names_gp = gpar(fontsize = 10)
+    use_raster    = use_raster,
+    raster_quality = raster_qual,
+    
+    show_column_names = show_col_names,
+    row_names_gp    = gpar(fontsize = fs_row),
+    column_names_gp = gpar(fontsize = fs_col)
   )
 }
 
@@ -2548,6 +2578,16 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
     warning(paste0("[compute_group_comp_stats] 'Quantity' column missing from df_long. ",
                    "use_measurements=", use_measurements,
                    "; colnames=[", paste(colnames(df_long), collapse = ", "), "]"))
+    return(NULL)
+  }
+  
+  # Bail out if either group has no quantifiable data (all NA/zero after imputation)
+  if (!any(is.finite(df_long$Quantity[df_long$Group == g1]))) {
+    message(paste0("[compute_group_comp_stats] Group '", g1, "' has no finite quantities — skipping comparison."))
+    return(NULL)
+  }
+  if (!any(is.finite(df_long$Quantity[df_long$Group == g2]))) {
+    message(paste0("[compute_group_comp_stats] Group '", g2, "' has no finite quantities — skipping comparison."))
     return(NULL)
   }
   

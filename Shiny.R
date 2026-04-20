@@ -708,41 +708,42 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     # Replace any remaining NAs (pairs with zero shared peptides) with 0
     cor_mat[is.na(cor_mat)] <- 0
-    
     cor_mat_cache(cor_mat)
     
     group_names <- names(lst)
-    
     get_group <- function(colname) {
       matched <- group_names[sapply(group_names, function(g) startsWith(colname, g))]
       if (length(matched) == 0) return(NA)
       matched[1]
     }
+    groups <- sapply(colnames(cor_mat), get_group)
+    
+    #remove the sample prefix. However, if there will be duplicate names, keep the sample prefix
+    colnames(cor_mat) <- sub("^.* \\| ", "", colnames(cor_mat))
+    rownames(cor_mat) <- colnames(cor_mat)
+    
+    fs <- max(6, min(10, floor(800 / nrow(cor_mat))))
+    
+    stripped <- sub("^.* \\| ", "", colnames(cor_mat))
+    if (anyDuplicated(stripped) == 0) {
+      colnames(cor_mat) <- stripped
+      rownames(cor_mat) <- stripped
+    }
       
     if(input$cluster_mode_ea == "sample") {
-      groups <- sapply(colnames(cor_mat), get_group)
-      ht <- plot_heatmap(cor_mat,color = input$color_palette, row_groups = groups, col_groups = groups, label = "Pearson")
+      ht <- plot_heatmap(cor_mat,color = input$color_palette, row_groups = groups, col_groups = groups, label = "Pearson", fontsize = fs)
     } else if (input$cluster_mode_ea == "mix") {
-      col_groups <- sapply(colnames(cor_mat), get_group)
-      ht <- plot_heatmap(cor_mat,color = input$color_palette, cluster = "rows",row_groups = NULL, col_groups = col_groups, label = "Pearson")
+      ht <- plot_heatmap(cor_mat,color = input$color_palette, cluster = "rows",row_groups = NULL, col_groups = groups, label = "Pearson", fontsize = fs)
     } else {
-      ht <- plot_heatmap(cor_mat,color = input$color_palette, cluster = input$cluster_mode_ea, label = "Pearson")
+      ht <- plot_heatmap(cor_mat,color = input$color_palette, cluster = input$cluster_mode_ea, label = "Pearson", fontsize = fs)
     }
     
-    pad <- compute_padding(colnames(cor_mat), fontsize = 10, rot = 90)
-    
-    draw(ht, heatmap_legend_side = "left",
-         padding = unit.c(
-           unit(pad / 2, "mm"),
-           unit(2, "mm"),
-           unit(2, "mm"),
-           unit(pad, "mm")
-         )
+    draw(ht, heatmap_legend_side = "left"
     )
-  }, width = function() {
-    nrow(cor_mat_cache()) * 80 + 100
-  }, height = function() {
-    nrow(cor_mat_cache()) * 30 + 200
+  }, width = "auto", 
+  height = function() {
+    n <- nrow(cor_mat_cache())
+    min(500, n * 12 + 200)
   })
   
   ##----aa heatmap----
@@ -1339,7 +1340,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
   output$group_venn_plot <- renderPlot({
-    
     sets <- group_peptide_sets()
     shiny::validate(shiny::need(length(sets) >= 2, "Need 2 or more sets to compare"))
     
@@ -1347,6 +1347,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
   output$group_peptide_heatmap <- renderPlot({
+
     lst <- processed_data_list()
     groups <- group_list()
     data_info <- data_info_r()
@@ -1356,7 +1357,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       dplyr::filter(final_name == "QUANTITY") %>%
       dplyr::select(-final_name) %>% 
       unlist(recursive = TRUE, use.names = FALSE)
-    
+
     shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
     
     if(use_measurements()){
@@ -1364,14 +1365,16 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     } else {
       pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets())
     }
-    
+
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
     
     plot_heatmap(pep_mat, color = input$color_palette, transpose = TRUE, log_transform = TRUE)
+
   })
   
   ## ----Group statistical analysis----
   group_comp_data <- eventReactive(input$update_group_comp, {
+
     lst <- processed_data_list()
     groups <- group_list()
     col_map <- measurement_col_map_r()
@@ -1382,17 +1385,19 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       dplyr::select(-final_name) %>%
       unlist(recursive = TRUE, use.names = FALSE)
     
-    # Keep only non-empty groups
     groups <- groups[sapply(groups, function(g) {
-      if (!is.null(col_map) && is.list(g) && !is.null(g$measurement)) {
-        any(sapply(seq_along(g$measurement), function(i) {
-          entry <- col_map[[g$measurement[i]]]
-          !is.null(entry) && !is.null(lst[[g$name[i]]]) && nrow(lst[[g$name[i]]]) > 0
-        }))
-      } else {
-        any(sapply(g, function(item) !is.null(lst[[item]]) && nrow(lst[[item]]) > 0))
-      }
+      isTRUE(
+        if (!is.null(col_map) && is.list(g) && !is.null(g$measurement)) {
+          any(sapply(seq_along(g$measurement), function(i) {
+            entry <- col_map[[g$measurement[i]]]
+            !is.null(entry) && !is.null(lst[[g$name[i]]]) && nrow(lst[[g$name[i]]]) > 0
+          }))
+        } else {
+          any(sapply(g, function(item) !is.null(lst[[item]]) && nrow(lst[[item]]) > 0))
+        }
+      )
     })]
+
     shiny::validate(shiny::need(length(groups) >= 2, "Need 2 or more sets to compare"))
     
     # Generate all unique pairwise combinations
@@ -1412,7 +1417,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     names(group_comp_stats) <- sapply(group_pairs, function(pair) paste(pair, collapse = "_vs_"))
     
-    group_comp_stats[sapply(group_comp_stats, nrow) > 0]
+    Filter(function(x) !is.null(x) && nrow(x) > 0, group_comp_stats)
   },ignoreNULL = TRUE)
   
   # Render the volcano tabset UI
@@ -1470,6 +1475,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
                  "Significant", "Not significant")
         )
         ## ----Volcano plot----
+
         output[[paste0("volcano_", plot_name)]] <- renderPlotly({
           shiny::validate(shiny::need(!is.null(df) && nrow(df) > 0, "No data to plot"))
           sel <- selected_peptide()

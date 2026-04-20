@@ -194,7 +194,7 @@ ui <- bs4DashPage(
                               ), selected = "sample"
                               
                   ),
-                  plotOutput("measurement_heatmap", width= "auto", height = "auto")
+                  plotOutput("measurement_heatmap", width= "100%", height = "auto")
                   ),
           
           ### ---- Composition profiling ----
@@ -245,7 +245,8 @@ ui <- bs4DashPage(
                   ),
           
           ### ---- Pairwise shared peptide quantity comparison matrix ----
-          bs4Card(title = tagList("Pairwise shared peptide quantity comparison matrix", bs4Dash::tooltip(icon("info-circle"),"Pairwise comparison of peptide max quantity of shared peptides, using pearson correlation. Clustering distance is 'euclidean' and method is 'complete'. Grey values means no quantitative data to compare", placement = "right")
+          bs4Card(title = tagList("Pairwise shared peptide quantity comparison matrix", bs4Dash::tooltip(icon("info-circle"),"Pairwise comparison of peptide max quantity of shared peptides, using pearson correlation. Clustering distance is 'euclidean' and method is 'complete'. 
+                                                                                                         Peptide label is removed if # > 200. NA is coloured Gray. Rastering is used for large data.", placement = "right")
           ), width = 12, maximizable = TRUE,
           selectInput("cluster_mode", "Clustering:",
                       choices = c(
@@ -254,7 +255,7 @@ ui <- bs4DashPage(
                         "Columns only" = "columns",
                         "Rows + columns" = "both"
                       ), selected = "none"
-                      
+
           ),
           plotOutput("pairwise_peptide_quant_correlation")
           ),
@@ -361,7 +362,8 @@ ui <- bs4DashPage(
                                   ), width = 6, maximizable = TRUE,
                   plotOutput("group_venn_plot")
           ),
-          bs4Card(title = tagList("Peptide based heatmap", bs4Dash::tooltip(icon("info-circle"),"Cluster peptides based on differential pattern across groups. The MAX quantity for the peptides is used.", placement = "right")
+          bs4Card(title = tagList("Peptide based heatmap", bs4Dash::tooltip(icon("info-circle"),"Cluster peptides based on differential pattern across groups. Clustering distance is 'euclidean' and method is 'complete'. 
+                                                                            The MAX quantity for the peptides is used. Peptide label is removed if # > 200. NA is coloured Gray. Rastering is used for large data.", placement = "right")
                                   ), width = 12, maximizable = TRUE,
                   plotOutput("group_peptide_heatmap")
           ),
