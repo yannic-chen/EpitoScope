@@ -475,6 +475,13 @@ plot_motif_grid <- function(lst, lengths, ncol = 3,
   patchwork::wrap_plots(length_panels, ncol = 1)
 }
 
+get_quantity_cols <- function(data_info) {
+  data_info %>%
+    dplyr::filter(final_name == "QUANTITY") %>%
+    dplyr::select(-final_name) %>%
+    unlist(recursive = TRUE, use.names = FALSE)
+}
+
 #-----------Data handling/transformation functions------------------
 build_generic_schema <- function(schema) {
   
@@ -1416,11 +1423,9 @@ plot_unique_counts <- function(lst, column, y_label, transform_fn = identity, co
 plot_histogram <- function(df, column, x_label, title_name = "RT plot", color = "default") {
   
   # Create 1-minute bins (change to 60 if your data is in seconds)
-  breaks <- seq(
-    floor(min(df[[column]], na.rm = TRUE)),
-    ceiling(max(df[[column]], na.rm = TRUE)),
-    by = 1
-  )
+  vals   <- df[[column]][is.finite(df[[column]])]
+  breaks <- pretty(vals, n = 50)
+
   
   if (color == "default") {
     color <- NULL  # ggplot will use default fill colors
@@ -1703,6 +1708,61 @@ plot_length_distribution <- function(lst, color = "default") {
   fig
 }
 
+plot_length_range_per_measurement <- function(lst, quantity_cols, lo = 8, hi = 13, color = "default") {
+  
+  stats <- dplyr::bind_rows(lapply(names(lst), function(s) {
+    df <- lst[[s]]
+    if (!"LENGTH" %in% colnames(df)) return(NULL)
+    
+    meas_cols <- intersect(quantity_cols, colnames(df))
+    
+    if (length(meas_cols) == 0) {
+      pct <- mean(df$LENGTH >= lo & df$LENGTH <= hi, na.rm = TRUE) * 100
+      return(data.frame(Sample = s, Mean = pct, Min = NA_real_, Max = NA_real_,
+                        stringsAsFactors = FALSE))
+    }
+    
+    pcts <- sapply(meas_cols, function(m) {
+      col      <- df[[m]]
+      detected <- if (any(is.na(col))) !is.na(col) else col > 0
+      rows     <- df[detected, ]
+      if (nrow(rows) == 0) return(NA_real_)
+      mean(rows$LENGTH >= lo & rows$LENGTH <= hi, na.rm = TRUE) * 100
+    })
+    
+    pcts <- pcts[!is.na(pcts)]
+    if (length(pcts) == 0) return(NULL)
+    
+    data.frame(Sample = s, Mean = mean(pcts), Min = min(pcts), Max = max(pcts),
+               stringsAsFactors = FALSE)
+  }))
+  
+  if (is.null(stats) || nrow(stats) == 0) return(NULL)
+  
+  has_range <- any(!is.na(stats$Min) & stats$Min != stats$Max)
+  fill_colors <- if (color == "default") NULL else viridis(nrow(stats), option = color)
+  
+  p <- ggplot(stats, aes(x = Sample, y = Mean, fill = Sample)) +
+    geom_col() +
+    labs(x = "Sample", y = paste0("% peptides ", lo, "\u2013", hi, "mer")) +
+    ylim(0, 115) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+  
+  if (has_range) {
+    p <- p +
+      geom_errorbar(aes(ymin = Min, ymax = Max), width = 0.25, linewidth = 0.8) +
+      geom_text(aes(y = Max, label = sprintf("%.1f%%\n[%.1f\u2013%.1f]", Mean, Min, Max)),
+                vjust = -0.3, size = 3.5)
+  } else {
+    p <- p + geom_text(aes(label = sprintf("%.1f%%", Mean)), vjust = -0.3, size = 5)
+  }
+  
+  if (!is.null(fill_colors)) p <- p + scale_fill_manual(values = fill_colors)
+  p
+}
+
+
 plot_seqlogo <- function(peptides, title = "Motif", namespace = NULL) {
   peptides <- peptides[!is.na(peptides)]
   if (length(peptides) == 0) return(NULL)
@@ -1733,7 +1793,6 @@ plot_seqlogo <- function(peptides, title = "Motif", namespace = NULL) {
         legend.position = "none"
       ))
   }
-
 }
 
 extract_legend <- function(p) {
@@ -1742,6 +1801,170 @@ extract_legend <- function(p) {
   grid::grid.newpage()
   leg
 }
+
+plot_charge_per_measurement <- function(lst, quantity_cols, color = "default") {
+  
+  parse_charge <- function(x) {
+    sapply(as.character(x), function(v) {
+      nums <- suppressWarnings(as.integer(unlist(regmatches(v, gregexpr("[0-9]+", v)))))
+      nums <- nums[!is.na(nums)]
+      if (length(nums) == 0) NA_integer_ else min(nums)
+    })
+  }
+  
+  stats <- dplyr::bind_rows(lapply(names(lst), function(s) {
+    df        <- lst[[s]]
+    meas_cols <- intersect(quantity_cols, colnames(df))
+    if (!"CHARGE" %in% colnames(df)) return(NULL)
+    
+    df$CHARGE <- parse_charge(df$CHARGE)
+    df <- df[!is.na(df$CHARGE), ]
+    if (nrow(df) == 0) return(NULL)
+    
+    all_charges <- sort(unique(df$CHARGE))
+    if (length(meas_cols) == 0) meas_cols <- list(NULL)
+    
+    per_meas <- dplyr::bind_rows(lapply(meas_cols, function(m) {
+      if (is.null(m)) {
+        charges <- df$CHARGE
+      } else {
+        col      <- df[[m]]
+        detected <- if (any(is.na(col))) !is.na(col) else col > 0
+        charges  <- df$CHARGE[detected]
+      }
+      if (length(charges) == 0) return(NULL)
+      tbl <- table(factor(charges, levels = all_charges))
+      pct <- as.numeric(tbl) / sum(tbl) * 100
+      data.frame(Charge = all_charges, Pct = pct)
+    }))
+    
+    if (is.null(per_meas) || nrow(per_meas) == 0) return(NULL)
+    
+    per_meas %>%
+      dplyr::group_by(Charge) %>%
+      dplyr::summarise(Mean = mean(Pct), Min = min(Pct), Max = max(Pct),
+                       .groups = "drop") %>%
+      dplyr::mutate(Sample = s)
+  }))
+  
+  if (is.null(stats) || nrow(stats) == 0) return(NULL)
+  
+  has_range   <- any(stats$Min != stats$Max)
+  fill_colors <- if (color == "default") NULL else
+    setNames(viridis(length(unique(stats$Sample)), option = color),
+             unique(stats$Sample))
+  
+  p <- ggplot(stats, aes(x = Sample, y = Mean, fill = Sample)) +
+    geom_col() +
+    facet_wrap(~ paste("Charge", Charge), scales = "free_y") +
+    labs(x = "Sample", y = "% of detected peptides") +
+    theme_minimal() +
+    theme(axis.text.x  = element_text(angle = 45, hjust = 1),
+          legend.position = "none",
+          strip.text = element_text(face = "bold"))
+  
+  if (has_range) {
+    p <- p +
+      geom_errorbar(aes(ymin = Min, ymax = Max), width = 0.25, linewidth = 0.8) +
+      geom_text(aes(y = Max, label = sprintf("%.1f%%\n[%.1f\u2013%.1f]", Mean, Min, Max)),
+                vjust = -0.3, size = 3)
+  } else {
+    p <- p + geom_text(aes(label = sprintf("%.1f%%", Mean)), vjust = -0.3, size = 4)
+  }
+  
+  if (!is.null(fill_colors)) p <- p + scale_fill_manual(values = fill_colors)
+  p
+}
+
+plot_density_envelope <- function(lst, quantity_cols, column, x_label, color = "default") {
+  
+  result <- dplyr::bind_rows(lapply(names(lst), function(s) {
+    df        <- lst[[s]]
+    meas_cols <- intersect(quantity_cols, colnames(df))
+    if (length(meas_cols) == 0 || !column %in% colnames(df)) return(NULL)
+    
+    all_vals <- df[[column]][is.finite(df[[column]])]
+    if (length(all_vals) < 2) return(NULL)
+    x_grid <- seq(min(all_vals), max(all_vals), length.out = 512)
+    
+    dens_mat <- do.call(rbind, Filter(Negate(is.null), lapply(meas_cols, function(m) {
+      col      <- df[[m]]
+      detected <- if (any(is.na(col))) !is.na(col) else col > 0
+      vals     <- df[[column]][detected & is.finite(df[[column]])]
+      if (length(vals) < 2) return(NULL)
+      d <- density(vals, from = min(x_grid), to = max(x_grid), n = 512)
+      approx(d$x, d$y, xout = x_grid)$y
+    })))
+    
+    if (is.null(dens_mat) || nrow(dens_mat) == 0) return(NULL)
+    
+    data.frame(
+      Sample = s,
+      x      = x_grid,
+      Mean   = colMeans(dens_mat, na.rm = TRUE),
+      Min    = apply(dens_mat, 2, min, na.rm = TRUE),
+      Max    = apply(dens_mat, 2, max, na.rm = TRUE)
+    )
+  }))
+  
+  if (is.null(result) || nrow(result) == 0) return(NULL)
+  
+  fill_colors <- if (color == "default") NULL else
+    setNames(viridis(length(unique(result$Sample)), option = color),
+             unique(result$Sample))
+  
+  p <- ggplot(result, aes(x = x, fill = Sample, color = Sample, group = Sample)) +
+    geom_ribbon(aes(ymin = Min, ymax = Max), alpha = 0.15, color = NA) +
+    geom_line(aes(y = Mean), linewidth = 0.8) +
+    labs(x = x_label, y = "Density") +
+    theme_minimal()
+  
+  if (!is.null(fill_colors))
+    p <- p + scale_fill_manual(values = fill_colors) + scale_color_manual(values = fill_colors)
+  p
+}
+
+plot_rt_histogram_range <- function(df, sample_name, quantity_cols, color = "steelblue") {
+  
+  meas_cols <- intersect(quantity_cols, colnames(df))
+  
+  all_rt <- df$RT[is.finite(df$RT)]
+  if (length(all_rt) == 0) return(NULL)
+  
+  vals   <- df[["RT"]][is.finite(df[["RT"]])]
+  breaks <- pretty(vals, n = 50)
+  
+  if (length(meas_cols) == 0) {
+    counts <- list(data.frame(
+      Mid   = hist(all_rt, breaks = breaks, plot = FALSE)$mids,
+      Count = hist(all_rt, breaks = breaks, plot = FALSE)$counts
+    ))
+  } else {
+    counts <- Filter(Negate(is.null), lapply(meas_cols, function(m) {
+      col      <- df[[m]]
+      detected <- if (any(is.na(col))) !is.na(col) else col > 0
+      vals     <- df$RT[detected & is.finite(df$RT)]
+      if (length(vals) == 0) return(NULL)
+      h <- hist(vals, breaks = breaks, plot = FALSE)
+      data.frame(Mid = h$mids, Count = h$counts)
+    }))
+  }
+  
+  if (length(counts) == 0) return(NULL)
+  
+  stats <- dplyr::bind_rows(counts) %>%
+    dplyr::group_by(Mid) %>%
+    dplyr::summarise(Mean = mean(Count), Min = min(Count), Max = max(Count), .groups = "drop")
+  
+  ggplot(stats, aes(x = Mid)) +
+    geom_col(aes(y = Mean), fill = color, alpha = 0.6, width = diff(breaks)[1] * 0.9) +
+    geom_ribbon(aes(ymin = Min, ymax = Max), fill = color, alpha = 0.3) +
+    geom_line(aes(y = Max), color = color, linewidth = 0.4) +
+    geom_line(aes(y = Min), color = color, linewidth = 0.4) +
+    labs(x = "RT", y = "Count", title = sample_name) +
+    theme_minimal()
+}
+
 
 dynamic_range_plot <- function(df, data_col = "MAX_QUANTITY", title_name = "Dynamic range plot", name_col = "PROTEIN", 
                                gene = "", rev_rank = TRUE, gene_regex = "(?<=GN=)[0-9A-Z//-]+") {

@@ -159,8 +159,41 @@ ui <- bs4DashPage(
           
           ### ---- Length Range Percentage ----
           bs4Card(title = "Length Range Percentage", width = 12, maximizable = TRUE,
-                  plotOutput("length_range_percentage")
-                  ),
+                  tabsetPanel(
+                    tabPanel("Per Sample",
+                             plotOutput("length_range_percentage")
+                    ),
+                    tabPanel("Per Measurement",
+                             plotOutput("length_range_percentage_meas")
+                    )
+                  )
+          ),
+          
+          ### ---- Other Numeric Columns per Measurement ----
+          bs4Card(title = "Other Numeric Columns per Measurement distribution", width = 12, maximizable = TRUE, 
+                  tabsetPanel(
+                    tabPanel("WIP: Think up a way for visualization.", 
+                             #plotOutput("charge_plot_meas")
+                    ),
+                    tabPanel("Mass",
+                             h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
+                             plotOutput("mass_plot_meas")
+                    ),
+                    tabPanel("m/z",
+                             h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
+                             plotOutput("mz_plot_meas")
+                    ),
+                    tabPanel("RT",
+                             h6("The light shaded band across the histogram represents the range between measurements."),
+                             uiOutput("RT_plot_meas")
+                    ),
+                    tabPanel("score",
+                             h6("WIP: Think up a way for visualization."),
+                             #plotOutput("score_violin_meas")
+                    )
+                  )
+          ),
+          
           
           ### ---- Motif Plot ---
           bs4Card(title = tagList("Motif Plot", bs4Dash::tooltip(icon("info-circle"),"Minimum of 5 sequences are required for Motif generation.", placement = "right")
@@ -301,7 +334,7 @@ ui <- bs4DashPage(
                   )
           ),
           
-          ### ---- Unique Entries ----
+          ### ---- Other numeric column ----
           bs4Card(title = "Other Numeric Columns", width = 12, maximizable = TRUE, 
                   tabsetPanel(
                     tabPanel("Charge",

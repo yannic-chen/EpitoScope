@@ -27,6 +27,7 @@ source("ui.R") #ui.R must be in the same folder. Otherwise change this path.
 
 options(shiny.maxRequestSize = 5*1024^3) #Increase upload limit (in bytes) if needed. 1024^3 = 1 GB
 options(width=10000) #This allows for text to not be text-wrapped.
+ht_opt$message <- FALSE
 
 server <- function(input, output, session, input_variable, generate_pseudo_sequence = FALSE, custom_schema = NULL, custom_signature = NULL, replace_schema = FALSE) {
 #------------------State Check---------------------
@@ -227,10 +228,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       print(Sys.time() - start)
       
       if(annotation_provided()) {
-        quantity_cols <- merged_info %>%
-          dplyr::filter(final_name == "QUANTITY") %>%          #Should be SPECTRA, but cannot currently do because 0 is missing in PEAKS, while 0 is existing in Fragpipe and NA is missing here.
-          dplyr::select(-final_name) %>%   # all sample columns.
-          unlist(recursive = TRUE, use.names = FALSE)
+        quantity_cols <- get_quantity_cols(merged_info)
         
         dfs_subset <- lapply(dfs, function(df) {
           df[, intersect(colnames(df), quantity_cols), drop = FALSE]
@@ -394,6 +392,10 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     )
   })
   
+  default_quantity_cols_r <- reactive({
+    get_quantity_cols(data_info_r())
+  })
+  
 #---------------------Summary Tab-------------------------
   ## ---------Column Mapping----------------
   output$summary_table <- DT::renderDT({
@@ -486,7 +488,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         
         output[[paste0("RT_", sample_local)]] <- renderPlot({
           check_data_error(df_local, required_cols = "RT", na_policy = "any")
-          plot_histogram(df = df_local, column = "RT", x_label = "Retention Time (min)", 
+          plot_histogram(df = df_local, column = "RT", x_label = "Retention Time", 
                          title_name = paste("RT Histogram –", sample_local), color = input$color_palette
           )
         })
@@ -530,6 +532,54 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       df
     })
     plot_stacked_bar(lst, column = "correct_range", fill_label = "8-13mer", percentage = TRUE, color = input$color_palette)
+  })
+  
+  output$length_range_percentage_meas <- renderPlot({
+    lst <- processed_data_list()
+    check_data_error(lst, required_cols = "LENGTH", na_policy = "any")
+    shiny::validate(shiny::need(length(default_quantity_cols_r()) > 0, "No QUANTITY columns found."))
+    plot_length_range_per_measurement(lst, default_quantity_cols_r(), color = input$color_palette)
+  })
+  
+  ## ---- Other numeric columns on per measurement basis ----
+  output$charge_plot_meas <- renderPlot({
+    lst <- data_list_r()
+    check_data_error(lst, required_cols = "CHARGE", na_policy = "all")
+    #plot_charge_per_measurement(lst, default_quantity_cols_r(), color = input$color_palette)
+  })
+  
+  output$mass_plot_meas <- renderPlot({
+    lst <- data_list_r()
+    check_data_error(lst, required_cols = "MASS", na_policy = "any")
+    plot_density_envelope(lst, default_quantity_cols_r(), "MASS", "Mass (Da)", color = input$color_palette)
+  })
+  
+  output$mz_plot_meas <- renderPlot({
+    lst <- data_list_r()
+    check_data_error(lst, required_cols = "MZ", na_policy = "any")
+    plot_density_envelope(lst, default_quantity_cols_r(), "MZ", "m/z", color = input$color_palette)
+  })
+
+  #output$score_violin_meas <- renderPlot({
+  #  lst <- data_list_r()
+  #  check_data_error(lst, required_cols = "SCORE", na_policy = "any")
+  #  plot_density_envelope(lst, default_quantity_cols_r(), "SCORE", "Score", color = input$color_palette)
+  #})
+  
+  output$RT_plot_meas <- renderUI({
+    lst <- data_list_r()
+    check_data_error(lst, required_cols = "RT", na_policy = "all")
+    qcols <- default_quantity_cols_r()
+    layout_column_wrap(
+      width = "400px",
+      !!!lapply(names(lst), function(s) {
+        pid <- paste0("rt_meas_", s)
+        output[[pid]] <- renderPlot({
+          plot_rt_histogram_range(lst[[s]], s, qcols)
+        })
+        plotOutput(pid, height = "300px")
+      })
+    )
   })
   
   ## ---- Motif Plot ----
@@ -611,37 +661,23 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$summary_peptides_plot3 <- renderPlot({
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
-    quantity_cols <- data_info_r() %>%
-      dplyr::filter(final_name == "QUANTITY") %>%
-      dplyr::select(-final_name) %>%
-      unlist(recursive = TRUE, use.names = FALSE)
-    temp_lst <<- lst
-    temp_quantity_cols <<- quantity_cols
     plot_unique_counts(lst, column = "STRIPPED", y_label = "Number of unique peptides",
-                       color = input$color_palette, quantity_cols = quantity_cols)
+                       color = input$color_palette, quantity_cols = default_quantity_cols_r())
   })
   
   output$summary_peptidoforms_plot3 <- renderPlot({
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
-    quantity_cols <- data_info_r() %>%
-      dplyr::filter(final_name == "QUANTITY") %>%
-      dplyr::select(-final_name) %>%
-      unlist(recursive = TRUE, use.names = FALSE)
     plot_unique_counts(lst, column = "PEPTIDE", y_label = "Number of unique peptidoforms",
-                       color = input$color_palette, quantity_cols = quantity_cols)
+                       color = input$color_palette, quantity_cols = default_quantity_cols_r())
   })
   
   output$summary_proteins_plot3 <- renderPlot({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "PROTEIN", na_policy = "all")
-    quantity_cols <- data_info_r() %>%
-      dplyr::filter(final_name == "QUANTITY") %>%
-      dplyr::select(-final_name) %>%
-      unlist(recursive = TRUE, use.names = FALSE)
     plot_unique_counts(lst, column = "PROTEIN", y_label = "Number of unique proteins",
                        transform_fn = extract_protein_prefixes,
-                       color = input$color_palette, quantity_cols = quantity_cols)
+                       color = input$color_palette, quantity_cols = default_quantity_cols_r())
   })
   
   ## ----Dynamic Range plots----
@@ -726,14 +762,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
     
-    quantity_cols <- data_info_r() %>%
-      dplyr::filter(final_name == "QUANTITY") %>%          #Should be SPECTRA, but cannot currently do because 0 is missing in PEAKS, while 0 is existing in Fragpipe and NA is missing here.
-      dplyr::select(-final_name) %>%   # all sample columns.
-      unlist(recursive = TRUE, use.names = FALSE)
+    shiny::validate(shiny::need(length(default_quantity_cols_r()) > 0, "No QUANTITY columns found."))
     
-    shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
-    
-    pep_mat <- prepare_measurement_matrix(lst, quantity_cols)
+    pep_mat <- prepare_measurement_matrix(lst, default_quantity_cols_r())
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
     
     # Drop columns with no data at all (would make cor() fail entirely)
@@ -931,7 +962,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         
         output[[paste0("RT2_", sample_local)]] <- renderPlot({
           check_data_error(df_local, required_cols = "RT", na_policy = "any")
-          plot_histogram(df = df_local, column = "RT", x_label = "Retention Time (min)", 
+          plot_histogram(df = df_local, column = "RT", x_label = "Retention Time", 
                          title_name = paste("RT Histogram –", sample_local), color = input$color_palette
           )
         })
@@ -1387,20 +1418,14 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
 
     lst <- processed_data_list()
     groups <- group_list()
-    data_info <- data_info_r()
-    req(lst, groups, data_info)
-    
-    quantity_cols <- data_info %>%
-      dplyr::filter(final_name == "QUANTITY") %>%
-      dplyr::select(-final_name) %>% 
-      unlist(recursive = TRUE, use.names = FALSE)
+    req(lst, groups)
 
-    shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
+    shiny::validate(shiny::need(length(default_quantity_cols_r()) > 0, "No QUANTITY columns found."))
     
     if(use_measurements()){
-      pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets(), col_map = measurement_col_map_r())
+      pep_mat <- prepare_peptide_matrix(lst, groups, default_quantity_cols_r(), group_peptide_sets(), col_map = measurement_col_map_r())
     } else {
-      pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets())
+      pep_mat <- prepare_peptide_matrix(lst, groups, default_quantity_cols_r(), group_peptide_sets())
     }
 
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
@@ -1415,12 +1440,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     lst <- processed_data_list()
     groups <- group_list()
     col_map <- measurement_col_map_r()
-    
-    #Get all columns containing the quantity info.
-    quantity_cols <- data_info_r() %>%
-      dplyr::filter(final_name == "QUANTITY") %>%
-      dplyr::select(-final_name) %>%
-      unlist(recursive = TRUE, use.names = FALSE)
     
     groups <- groups[sapply(groups, function(g) {
       isTRUE(
@@ -1449,7 +1468,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       allowed_peptides_g1 <- group_peptide_sets()[[g1]]
       allowed_peptides_g2 <- group_peptide_sets()[[g2]]
       compute_group_comp_stats(lst, groups, allowed_peptides_g1, allowed_peptides_g2,
-                               g1, g2, pep_col, quantity_cols, col_map = col_map, use_measurements = use_measurements())
+                               g1, g2, pep_col, default_quantity_cols_r(), col_map = col_map, use_measurements = use_measurements())
     })
     
     names(group_comp_stats) <- sapply(group_pairs, function(pair) paste(pair, collapse = "_vs_"))

@@ -7,21 +7,21 @@ Task List
 - [X] Implement netMHCpan calling using WSL on windows
 - [X] Allow Custom Schema
 - [X] Combine the unique and lookup table, to one unified table
-- [ ] Accept an anotation table to better differentiate measurements into biological/technical replicate and condition. This allows fine tuned handling of conditions within the same input data.
+- [X] Accept an anotation table to better differentiate measurements into biological/technical replicate and condition. This allows fine tuned handling of conditions within the same input data.
 - [X] Overhaul the HTML report and update the report generation function.
 - [ ] Make Sequence motif (stretches too much for only 1 sample) and measurement specific heatmap plots format better.
 - [ ] clearly separate, and if needed add option, between peptide and peptidoform plots.
 - [ ] Solve the automatic ordering of categorical data by ggplot.
 - [ ] Prevent filtering criteria reset when selecting/deselecting samples. Likewise the groups for the grouped analysis.
-- [ ] Change all functions to pkg::fun() style (i.e. dplyr::mutate()). This avoids future function masking.
+- [X] Change functions to pkg::fun() style (i.e. dplyr::mutate()). This avoids future function masking.
 - [ ] Decouple data calculations and plotting function, so that when changing window size only the plotting function is rerun and not the whole calculation
 - [ ] Have a better way to separate PROTEIN names for different input formats.
 - [ ] How to do NA handling for PCA plot. Sometimes user-input data is biologically too different for imputation.
 - [ ] Unify PTM nomenclature between output. Translate mass difference to PTM.
 - [ ] Double check netmHCpan precomputed data, if it indeed analysed all possible peptides.
 - [ ] Make the precomputed data more efficient. Parquet for reading and merge the different length together, by using the first # letters for each max_length peptide as the #mer peptide.
-- [x] Limit HLA allele for binding prediction, so the plots and stats only incorporate relevant HLA and not everything.
-- [ ] MHC prediction supports all alleles that netMHCpan supports, but visualization only uses "HLA" prefix to find the necessary columns.
+- [X] Limit HLA allele for binding prediction, so the plots and stats only incorporate relevant HLA and not everything.
+- [X] MHC prediction supports all alleles that netMHCpan supports, but visualization only uses "HLA" prefix to find the necessary columns.
 - [ ] Add option of different binding prediction binder threshold (e.g. for HLA2)
 - [ ] Add more plots to binding prediction to better mimic MhcVizPip
 - [ ] Decide on how to download the binding Data.
@@ -49,16 +49,33 @@ Task List
   - FragPipe peptide.tsv
   - FragPipe combined_peptide.tsv
   - FragPipe combined_(modified)_peptide.tsv
-- Customizable plots and tables.
+  - DIANN parquet
+  - DIANN pr.matrix and pg.matrix
+- Allows custom formats
+- Allows loading from an annotation table
+- Different formats can be analysed in the same session, allowing comparisons between software.
+- real-time filtering
+- customized plots and tables
+- Binding prediction using netMHCpan through WSL (Windows subsystem for Linux)
+- Quantitative comparison
+- Grouped comparison
+- STRING-DB search
+- GO-term enrichment analysis
+- PTM analysis
+- MS quality control plots
+- Lookup tables of the raw data
+- HTML report generation for easy sharing.
 
 ## Installation
 The following 3 scripts are mandatory to run the shiny App:
 - Shiny.R
 - global.R
 - ui.R
-- (report.Rmd for creating a report currently doesnt work)
 
-Download the 3 scripts manually to the same folder or clone the repository using Git. For this, ensure Git is installed on your system. If not, download and install it from [Git's official website](https://git-scm.com/). Then, run the following command in your terminal:
+The following Script is required for generating a html report:
+- report.Rmd
+
+Download the scripts manually to the same folder or clone the repository using Git. For this, ensure Git is installed on your system. If not, download and install it from [Git's official website](https://git-scm.com/). Then, run the following command in your terminal:
 
 ```bash
 git clone https://github.com/your-repo/EpitoScope.git
