@@ -1465,6 +1465,15 @@ plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, 
     df
   }))
   
+  if (is.null(combined) || nrow(combined) == 0) {
+    return(
+      ggplot() +
+        annotate("text", x = 0.5, y = 0.5, label = paste("No data for", column),
+                 size = 5, color = "grey50") +
+        theme_void()
+    )
+  }
+  
   # Convert to factor and optionally reverse levels
   if (rev_levels) {
     combined[[column]] <- factor(combined[[column]], levels = rev(sort(unique(combined[[column]]))))
@@ -1534,6 +1543,15 @@ plot_density <- function(lst, column, transform = NULL, x_label = NULL, alpha = 
     df
   }))
   
+  if (is.null(combined) || nrow(combined) == 0 || !"Sample" %in% colnames(combined)) {
+    return(
+      ggplot() +
+        annotate("text", x = 0.5, y = 0.5, label = paste("No data for", column),
+                 size = 5, color = "grey50") +
+        theme_void()
+    )
+  }
+  
   if (color == "default") {
     color <- NULL  # ggplot will use default fill colors
   } else {
@@ -1564,7 +1582,14 @@ plot_violin <- function(lst, column, x_label = "Sample", y_label = NULL, title =
     df[, c(column, "Sample"), drop = FALSE]
   }))
   
-  req(nrow(df_all) > 0)
+  if (is.null(df_all) || nrow(df_all) == 0 || !"Sample" %in% colnames(df_all)) {
+    return(
+      ggplot() +
+        annotate("text", x = 0.5, y = 0.5, label = paste("No data for", column),
+                 size = 5, color = "grey50") +
+        theme_void()
+    )
+  }
   
   if (is.null(y_label)) y_label <- column
   if (is.null(title)) title <- paste(column, "Distribution Across Samples")
@@ -3363,9 +3388,15 @@ run_netmhcpan <- function(peptides, allele, netmhcpan_path) {
     "-xls",
     "-xlsfile", shQuote(out_wsl)
   )
-  system2("wsl", c("bash", "--login", "-c", shQuote(cmd)), stdout = NULL)
+  status <- system2("wsl", c("bash", "--login", "-c", shQuote(cmd)), stdout = NULL)
   
-  output_file  # return path; caller reads it
+  if (status != 0)
+    stop("netMHCpan exited with status ", status,
+         ". Check that the path is correct and the executable exists: ", netmhcpan_path)
+  if (!file.exists(output_file))
+    stop("netMHCpan ran but produced no output file. Check the netMHCpan installation.")
+  
+  output_file
 }
 
 parse_netmhc_output <- function(output_file) {

@@ -169,31 +169,73 @@ ui <- bs4DashPage(
                   )
           ),
           
-          ### ---- Other Numeric Columns per Measurement ----
-          bs4Card(title = "Other Numeric Columns per Measurement distribution", width = 12, maximizable = TRUE, 
+          ### ---- Other Numeric Columns ----
+          bs4Card(title = "Other Numeric Columns", width = 12, maximizable = TRUE, 
                   tabsetPanel(
-                    tabPanel("WIP: Think up a way for visualization.", 
-                             #plotOutput("charge_plot_meas")
+                    tabPanel("Charge",
+                             tabsetPanel(
+                               tabPanel("Per Sample",      
+                                        plotOutput("charge_plot2")),
+                               tabPanel("Per Measurement",
+                                        h6("WIP: Think up a way for visualization.")
+                                        #plotOutput("charge_plot_meas")
+                               )
+                             )
                     ),
+                    
                     tabPanel("Mass",
-                             h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
-                             plotOutput("mass_plot_meas")
+                             tabsetPanel(
+                               tabPanel("Per Sample",    
+                                        plotOutput("mass_plot2")),
+                               tabPanel("Per Measurement",
+                                        h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
+                                        plotOutput("mass_plot_meas")
+                               )
+                             )
                     ),
                     tabPanel("m/z",
-                             h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
-                             plotOutput("mz_plot_meas")
+                             tabsetPanel(
+                               tabPanel("Per Sample",      
+                                        plotOutput("mz_plot2")),
+                               tabPanel("Per Measurement",
+                                        h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
+                                        plotOutput("mz_plot_meas")
+                               )
+                             )
                     ),
                     tabPanel("RT",
-                             h6("The light shaded band across the histogram represents the range between measurements."),
-                             uiOutput("RT_plot_meas")
+                             tabsetPanel(
+                               tabPanel("Per Sample",      
+                                        uiOutput("RT_plot2")),
+                               tabPanel("Per Measurement",
+                                        h6("The light shaded band across the histogram represents the range between measurements."),
+                                        uiOutput("RT_plot_meas")
+                               )
+                             )
+                    ),
+                    tabPanel("Mass Error",
+                             bs4Dash::tooltip(icon("info-circle"), "Either ppm (PEAKS) or delta Mass (Fragpipe).", placement = "right"),
+                             tabsetPanel(
+                               tabPanel("Per Sample",      
+                                        plotOutput("ppm_plot2")),
+                               tabPanel("Per Measurement", 
+                                        h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
+                                        plotOutput("ppm_plot_meas")
+                               )
+                             )
                     ),
                     tabPanel("score",
-                             h6("WIP: Think up a way for visualization."),
-                             #plotOutput("score_violin_meas")
+                             tabsetPanel(
+                               tabPanel("Per Sample",      
+                                        plotOutput("score_violin2")),
+                               tabPanel("Per Measurement", 
+                                        h6("WIP: Think up a way for visualization."),
+                                        #plotOutput("score_violin_meas")
+                               )
+                             )
                     )
                   )
           ),
-          
           
           ### ---- Motif Plot ---
           bs4Card(title = tagList("Motif Plot", bs4Dash::tooltip(icon("info-circle"),"Minimum of 5 sequences are required for Motif generation.", placement = "right")
@@ -262,6 +304,23 @@ ui <- bs4DashPage(
       bs4TabItem(
         tabName = "results",  # must match menuItem
         fluidRow(
+          ### ---- Unique Entries ----
+          bs4Card(title = "Unique entries", width = 12, maximizable = TRUE, 
+                  tabsetPanel(
+                    tabPanel("Peptides",
+                             h6("Unique Peptides (no PTMs)"),
+                             plotOutput("summary_peptides_plot2")
+                    ),
+                    tabPanel("Peptidoforms", 
+                             h6("Peptidoforms (including PTMs)"),
+                             plotOutput("summary_peptidoforms_plot2")
+                    ),
+                    tabPanel("Proteins",
+                             h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"This depends heavily on the style of the header and how the software identifies it.", placement = "right")),
+                             plotOutput("summary_proteins_plot2")
+                    )
+                  )
+          ),
           
           ### ---- Data Completeness ----
           bs4Card(title = tagList("Data Completeness", bs4Dash::tooltip(icon("info-circle"),"NA is used for missing/not identified. If no NA exist, then 0 will be used for missing/not identified", placement = "right")
@@ -316,48 +375,6 @@ ui <- bs4DashPage(
                   plotOutput("pca")
           ),
           
-          ### ---- Unique Entries ----
-          bs4Card(title = "Unique entries", width = 12, maximizable = TRUE, 
-                  tabsetPanel(
-                    tabPanel("Peptides",
-                             h6("Unique Peptides (no PTMs)"),
-                             plotOutput("summary_peptides_plot2")
-                    ),
-                    tabPanel("Peptidoforms", 
-                             h6("Peptidoforms (including PTMs)"),
-                             plotOutput("summary_peptidoforms_plot2")
-                    ),
-                    tabPanel("Proteins",
-                             h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"This depends heavily on the style of the header and how the software identifies it.", placement = "right")),
-                             plotOutput("summary_proteins_plot2")
-                    )
-                  )
-          ),
-          
-          ### ---- Other numeric column ----
-          bs4Card(title = "Other Numeric Columns", width = 12, maximizable = TRUE, 
-                  tabsetPanel(
-                    tabPanel("Charge",
-                             plotOutput("charge_plot2")                               
-                    ),
-                    tabPanel("Mass",
-                             plotOutput("mass_plot2")
-                    ),
-                    tabPanel("m/z",
-                             plotOutput("mz_plot2")
-                    ),
-                    tabPanel("RT",
-                             uiOutput("RT_plot2")
-                    ),
-                    tabPanel("Mass Error",
-                             bs4Dash::tooltip(icon("info-circle"),"Either ppm (PEAKS) or delta Mass (Fragpipe). Ignore the x-axis label.", placement = "right"),
-                             plotOutput("ppm_plot2")
-                    ),
-                    tabPanel("score",
-                             plotOutput("score_violin2")
-                    )
-                  )
-          )
         )
       ),
       

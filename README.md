@@ -30,6 +30,9 @@ Task List
 - [ ] STRING allow background
 - [ ] Document each function
 - [ ] Convert to Package
+- [ ] Ability to remove specifc measurements from samples
+- [ ] Add a status notification on whether calculations is being done and what is being done. Especially important for the report generation.
+- [ ] Improve report download handler to be faster.
 
 ### Maybe?
 - [ ] Flexible Length Range Percentage plot for MHC2 and perhaps other species

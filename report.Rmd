@@ -253,6 +253,9 @@ data_mod_map <- params$data_mod_map
 annotation_table <- params$annotation_table
 
 motif_plot_length <- 7:13 # should be the same as in Shiny.R
+
+quantity_cols <- get_quantity_cols(data_info)
+
 ```
 
 # Settings and Documentation {.tabset}
@@ -389,7 +392,9 @@ render_summary_pre(data_list, font_size = "8px")
 plot_length_distribution(processed_list, color = color_palette)
 ```
 
-## Peptide Length Distribution
+## Peptides within specific Length Range {.tabset}
+
+### Per Sample
 
 ```{r}
     lst <- lapply(processed_list, function(df) {
@@ -397,6 +402,98 @@ plot_length_distribution(processed_list, color = color_palette)
       df
     })
 plot_stacked_bar(lst, column = "correct_range", fill_label = "8-13mer", percentage = TRUE, color = color_palette)
+```
+
+### Per Measurement
+
+```{r}
+plot_length_range_per_measurement(processed_list, quantity_cols, color = color_palette)
+```
+
+## Other Numeric Columns (per Measurement analysis) {.tabset)
+
+### Charge {.tabset}
+
+#### Per Sample
+```{r}
+plot_stacked_bar(processed_list, column = "CHARGE", fill_label = "Charge", percentage = FALSE, color = color_palette)
+```
+
+#### Per Measurement
+```{r}
+message("WIP")
+#plot_charge_per_measurement(processed_list, quantity_cols, color = color_palette)
+```
+
+### Mass {.tabset}
+
+#### Per Sample
+```{r}
+plot_density(processed_list, column = "MASS", x_label = "Mass (Da)", color = color_palette)
+```
+
+#### Per Measurement
+```{r}
+plot_density_envelope(processed_list, quantity_cols, column = "MASS", x_label = "Mass (Da)", color = color_palette)
+```
+
+### m/z {.tabset}
+
+#### Per Sample
+```{r}
+plot_density(processed_list, column = "MZ", x_label = "m/z", color = color_palette)
+```
+
+#### Per Measurement
+```{r}
+plot_density_envelope(processed_list, quantity_cols, column = "MZ", x_label = "m/z", color = color_palette)
+```
+
+### Retention Time {.tabset}
+
+#### Per Sample
+```{r}
+plot_per_sample_grid(
+  lst      = processed_list,
+  plot_fn  = plot_histogram,
+  ncol     = 2,
+  column   = "RT",
+  x_label  = "Retention Time (min)",
+  color    = color_palette
+)
+```
+
+#### Per Measurement
+```{r}
+for (s in names(processed_list)) {
+  p <- plot_rt_histogram_range(processed_list[[s]], s, quantity_cols)
+  if (!is.null(p)) print(p)
+}
+```
+
+### ppm {.tabset}
+
+#### Per Sample
+```{r}
+plot_density(processed_list, column = "PPM", x_label = "ppm", color = color_palette)
+```
+
+#### Per Measurement
+```{r}
+plot_density_envelope(processed_list, quantity_cols, column = "PPM", x_label = "ppm", color = color_palette)
+```
+
+### Score {.tabset}
+
+#### Per Sample
+```{r}
+plot_violin(processed_list, column = "SCORE", color = color_palette)
+```
+
+#### Per Measurement
+```{r}
+message("WIP")
+#plot_density_envelope(processed_list, quantity_cols, column = "SCORE", x_label = "Score", color = color_palette)
 ```
 
 ## Motif Plot
@@ -446,10 +543,6 @@ if (length(scatter_list) == 0) {
 
 ## Measurement Correlation Heatmap
 ````{r measurement_heatmap}
-quantity_cols <- data_info %>%
-  filter(final_name == "QUANTITY") %>%
-  dplyr::select(-final_name) %>%
-  unlist(recursive = TRUE, use.names = FALSE)
 
 if (length(quantity_cols) == 0) {
   cat("No QUANTITY columns found.")
@@ -500,6 +593,27 @@ if (length(quantity_cols) == 0) {
 ````
 
 # Results {.tabset}
+
+## Unique Entries (Filtered) {.tabset}
+
+### Peptides
+
+```{r}
+plot_unique_counts(processed_list, column = "STRIPPED", y_label = "Number of unique peptides", color = color_palette)
+```
+
+### Peptidoforms
+
+```{r}
+plot_unique_counts(processed_list, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = color_palette)
+```
+
+### Proteins
+
+```{r}
+plot_unique_counts(processed_list, column = "PROTEIN", y_label = "Number of unique proteins",
+                   transform_fn = extract_protein_prefixes, color = color_palette)
+```
 
 ## Data Completeness {.tabset}
 
@@ -558,73 +672,6 @@ plot_pairwise_peptide_quant_correlation(processed_list, color = color_palette, c
 
 ```{r}
 plot_PCA(processed_list, color = color_palette)
-```
-
-
-## Unique Entries (Filtered) {.tabset}
-
-### Peptides
-
-```{r}
-plot_unique_counts(processed_list, column = "STRIPPED", y_label = "Number of unique peptides", color = color_palette)
-```
-
-### Peptidoforms
-
-```{r}
-plot_unique_counts(processed_list, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = color_palette)
-```
-
-### Proteins
-
-```{r}
-plot_unique_counts(processed_list, column = "PROTEIN", y_label = "Number of unique proteins",
-                   transform_fn = extract_protein_prefixes, color = color_palette)
-```
-
-## Other Numeric Columns {.tabset}
-
-### Charge
-
-```{r}
-plot_stacked_bar(processed_list, column = "CHARGE", fill_label = "Charge", percentage = FALSE, color = color_palette)
-```
-
-### Mass
-
-```{r}
-plot_density(processed_list, column = "MASS", x_label = "Mass (Da)", color = color_palette)
-```
-
-### m/z
-
-```{r}
-plot_density(processed_list, column = "MZ", x_label = "m/z", color = color_palette)
-```
-
-### Retention Time
-
-```{r}
-plot_per_sample_grid(
-  lst      = processed_list,
-  plot_fn  = plot_histogram,
-  ncol     = 2,
-  column   = "RT",
-  x_label  = "Retention Time (min)",
-  color    = color_palette
-)
-```
-
-### ppm
-
-```{r}
-plot_density(processed_list, column = "PPM", x_label = "ppm", color = color_palette)
-```
-
-### Score
-
-```{r}
-plot_violin(processed_list, column = "SCORE", color = color_palette)
 ```
 
 # Groups {.tabset}

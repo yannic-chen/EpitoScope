@@ -334,10 +334,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     withProgress(message = "Generating report...", value = 0, {
       
       incProgress(0.1, detail = "Preparing data...")
-      Sys.sleep(0.1)  # optional, simulate preprocessing
       
       incProgress(0.2, detail = "Processing tables and plots...")
-      Sys.sleep(0.1)  # optional, simulate heavy processing
       
       # Render the R Markdown report
       incProgress(0.5, detail = "Rendering R Markdown...")
@@ -372,7 +370,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       )
       
       incProgress(0.2, detail = "Finalizing report...")
-      Sys.sleep(0.1)
       
       incProgress(0.0, detail = "Done!")
     })
@@ -545,6 +542,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$charge_plot_meas <- renderPlot({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "CHARGE", na_policy = "all")
+    temp_lst <<- lst
+    temp_cols <<- default_quantity_cols_r()
     #plot_charge_per_measurement(lst, default_quantity_cols_r(), color = input$color_palette)
   })
   
@@ -559,6 +558,14 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     check_data_error(lst, required_cols = "MZ", na_policy = "any")
     plot_density_envelope(lst, default_quantity_cols_r(), "MZ", "m/z", color = input$color_palette)
   })
+  
+  output$ppm_plot_meas <- renderPlot({
+    lst <- data_list_r()
+    check_data_error(lst, required_cols = "PPM", na_policy = "any")
+    plot_density_envelope(lst, default_quantity_cols_r(), column = "PPM", x_label = "ppm", color = input$color_palette)
+  })
+  
+
 
   #output$score_violin_meas <- renderPlot({
   #  lst <- data_list_r()
@@ -1368,9 +1375,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     req(groups, length(groups) >= 2)
     col_map <- measurement_col_map_r()
     
-    temp_col_map <<- col_map
-    temp_lst <<- lst
-    
     pep_col <- "PEPTIDE"
     
     lapply(names(groups), function(g) {
@@ -1744,8 +1748,14 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         
         if (length(peptides_to_predict) == 0) next
         
-        res   <- run_netmhcpan(peptides_to_predict, al, netmhcpan_path)
-        res   <- parse_netmhc_output(res)
+        res <- tryCatch({
+          out <- run_netmhcpan(peptides_to_predict, al, netmhcpan_path)
+          parse_netmhc_output(out)
+        }, error = function(e) {
+          showNotification(paste("netMHCpan failed:", conditionMessage(e)), type = "error", duration = 10)
+          NULL
+        })
+        if (is.null(res)) next
         
         if (!(al_conversion %in% colnames(cache)[-1])) {
           cache <- left_join(cache, res, by = "Peptide")
