@@ -3351,10 +3351,10 @@ run_netmhcpan <- function(peptides, allele, netmhcpan_path) {
   peptide_file <- tempfile(fileext = ".txt")
   output_file  <- tempfile(fileext = ".txt")
   writeLines(peptides, peptide_file)
-  
+
   peptide_wsl <- trimws(system2("wsl", c("wslpath", "-a", shQuote(peptide_file)), stdout = TRUE))
   out_wsl     <- trimws(system2("wsl", c("wslpath", "-a", shQuote(output_file)),  stdout = TRUE))
-  
+
   cmd <- paste(
     shQuote(netmhcpan_path),
     "-p", shQuote(peptide_wsl),
@@ -3363,9 +3363,15 @@ run_netmhcpan <- function(peptides, allele, netmhcpan_path) {
     "-xls",
     "-xlsfile", shQuote(out_wsl)
   )
-  system2("wsl", c("bash", "--login", "-c", shQuote(cmd)), stdout = NULL)
-  
-  output_file  # return path; caller reads it
+  status <- system2("wsl", c("bash", "--login", "-c", shQuote(cmd)), stdout = NULL)
+
+  if (status != 0)
+    stop("netMHCpan exited with status ", status,
+         ". Check that the path is correct and the executable exists: ", netmhcpan_path)
+  if (!file.exists(output_file))
+    stop("netMHCpan ran but produced no output file. Check the netMHCpan installation.")
+
+  output_file
 }
 
 parse_netmhc_output <- function(output_file) {

@@ -1744,8 +1744,14 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         
         if (length(peptides_to_predict) == 0) next
         
-        res   <- run_netmhcpan(peptides_to_predict, al, netmhcpan_path)
-        res   <- parse_netmhc_output(res)
+        res <- tryCatch({
+          out <- run_netmhcpan(peptides_to_predict, al, netmhcpan_path)
+          parse_netmhc_output(out)
+        }, error = function(e) {
+          showNotification(paste("netMHCpan failed:", conditionMessage(e)), type = "error", duration = 10)
+          NULL
+        })
+        if (is.null(res)) next
         
         if (!(al_conversion %in% colnames(cache)[-1])) {
           cache <- left_join(cache, res, by = "Peptide")
