@@ -253,6 +253,7 @@ data_mod_map <- params$data_mod_map
 annotation_table <- params$annotation_table
 
 motif_plot_length <- 7:13 # should be the same as in Shiny.R
+quantity_cols <- get_quantity_cols(data_info)
 ```
 
 # Settings and Documentation {.tabset}
@@ -446,11 +447,6 @@ if (length(scatter_list) == 0) {
 
 ## Measurement Correlation Heatmap
 ````{r measurement_heatmap}
-quantity_cols <- data_info %>%
-  filter(final_name == "QUANTITY") %>%
-  dplyr::select(-final_name) %>%
-  unlist(recursive = TRUE, use.names = FALSE)
-
 if (length(quantity_cols) == 0) {
   cat("No QUANTITY columns found.")
 } else {
@@ -633,29 +629,44 @@ plot_violin(processed_list, column = "SCORE", color = color_palette)
 
 ```{r}
 if (!is.null(group_list)) {
-  lst <- processed_list
+  lst    <- processed_list
   groups <- group_list
   pep_col <- "PEPTIDE"
-  #pep_col    <- if (!is.null(input$use_peptidoforms) && input$use_peptidoforms) "PEPTIDE" else "STRIPPED"
-  
+
   group_peptide_sets <- lapply(names(groups), function(g) {
-      
-      sample_names <- groups[[g]]
-      
-      peptide_counts <- table(unlist(lapply(sample_names, function(s) {
-        df <- lst[[s]]
-        if (!pep_col %in% colnames(df)) return(character(0))
-        unique(df[[pep_col]])
+    grp <- groups[[g]]
+
+    if (is.list(grp) && !is.null(grp$measurement)) {
+      # Measurement / condition mode
+      measurements <- grp$measurement
+      names_vec    <- grp$name
+      peptide_counts <- table(unlist(lapply(seq_along(measurements), function(i) {
+        df <- lst[[names_vec[i]]]
+        if (is.null(df) || !pep_col %in% colnames(df)) return(character(0))
+        col_name <- measurements[i]
+        if (!col_name %in% colnames(df)) return(character(0))
+        df[[pep_col]][!is.na(df[[col_name]])]
       })))
-      
-      n_samples <- length(sample_names)
-      
-      names(peptide_counts[
-        peptide_counts / n_samples >= min_presence_fraction
-      ])
-    }) |> setNames(names(groups))
-  
-  
+      n_items <- length(measurements)
+    } else {
+      # Sample mode
+      peptide_counts <- table(unlist(lapply(grp, function(s) {
+        df <- lst[[s]]
+        if (is.null(df) || !pep_col %in% colnames(df)) return(character(0))
+        if ("MAX_QUANTITY" %in% colnames(df)) {
+          unique(df[[pep_col]][!is.na(df$MAX_QUANTITY)])
+        } else {
+          unique(df[[pep_col]])
+        }
+      })))
+      n_items <- length(grp)
+    }
+
+    names(peptide_counts[
+      peptide_counts / n_items >= min_presence_fraction
+    ])
+  }) |> setNames(names(groups))
+
   group_venn_plotting(group_peptide_sets, color = color_palette)
 } else {
   cat("no Groups defined")
@@ -666,19 +677,14 @@ if (!is.null(group_list)) {
 
 ```{r}
 if (!is.null(group_list)) {
-    lst <- processed_list
+    lst    <- processed_list
     groups <- group_list
-    
-    quantity_cols <- data_info %>%
-      filter(final_name == "QUANTITY") %>%
-      dplyr::select(-final_name) %>% 
-      unlist(recursive = TRUE, use.names = FALSE)
-    
-    if(length(quantity_cols) < 1) {
+
+    if (length(quantity_cols) < 1) {
       cat("No QUANTITY columns found.")
       return(NULL)
     }
-    
+
     pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets)
     
     if(nrow(pep_mat)  < 1) {
