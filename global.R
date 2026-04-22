@@ -1521,38 +1521,34 @@ plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, 
 plot_density <- function(lst, column, transform = NULL, x_label = NULL, alpha = 0.3, color = "default") {
   combined <- bind_rows(lapply(names(lst), function(name) {
     df <- lst[[name]]
-    if (!column %in% colnames(df)) return(NULL)  # skip samples missing the column
+    if (!column %in% colnames(df)) return(NULL)
     df <- df[, column, drop = FALSE]
     if (nrow(df) == 0) return(NULL)
     df$Sample <- name
-    
-    # Apply optional transformation
-    if (!is.null(transform)) {
-      df[[column]] <- transform(df[[column]])
-    }
-    
+    if (!is.null(transform)) df[[column]] <- transform(df[[column]])
     df
   }))
-  
-  if (color == "default") {
-    color <- NULL  # ggplot will use default fill colors
-  } else {
-    color <- viridis(length(lst), option = color)
+
+  if (is.null(combined) || nrow(combined) == 0 || !"Sample" %in% colnames(combined)) {
+    return(
+      ggplot() +
+        annotate("text", x = 0.5, y = 0.5, label = paste("No data for", column),
+                 size = 5, color = "grey50") +
+        theme_void()
+    )
   }
-  
-  # Automatic x-axis label if not provided
+
   if (is.null(x_label)) x_label <- column
-  
+
+  fill_colors <- if (color == "default") NULL else viridis(length(unique(combined$Sample)), option = color)
+
   p <- ggplot(combined, aes_string(x = column, color = "Sample", fill = "Sample")) +
     geom_density(alpha = alpha) +
     labs(x = x_label, y = "Density") +
     theme_minimal()
-  
-  if (!is.null(color)) {
-    p <- p + scale_fill_manual(values = color)
-  }
-  
-  return(p)
+
+  if (!is.null(fill_colors)) p <- p + scale_fill_manual(values = fill_colors)
+  p
 }
 
 plot_violin <- function(lst, column, x_label = "Sample", y_label = NULL, title = NULL, add_boxplot = TRUE, color = "default") {
@@ -1563,8 +1559,15 @@ plot_violin <- function(lst, column, x_label = "Sample", y_label = NULL, title =
     df$Sample <- s_name
     df[, c(column, "Sample"), drop = FALSE]
   }))
-  
-  req(nrow(df_all) > 0)
+
+  if (is.null(df_all) || nrow(df_all) == 0 || !"Sample" %in% colnames(df_all)) {
+    return(
+      ggplot() +
+        annotate("text", x = 0.5, y = 0.5, label = paste("No data for", column),
+                 size = 5, color = "grey50") +
+        theme_void()
+    )
+  }
   
   if (is.null(y_label)) y_label <- column
   if (is.null(title)) title <- paste(column, "Distribution Across Samples")
