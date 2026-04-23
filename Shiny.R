@@ -368,7 +368,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
           binder_unique = peptide_wide_unique(),
           group_list = safe_reactive(group_list),
           group_comp_data = safe_reactive(group_comp_data),
-          annotation_table = if (is.data.frame(input_variable)) input_variable else NULL
+          annotation_table = if (is.data.frame(input_variable)) input_variable else NULL,
+          col_map = measurement_col_map_r()
         ),
         envir = new.env(parent = globalenv())
       )

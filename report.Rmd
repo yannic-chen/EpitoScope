@@ -28,6 +28,7 @@ params:
   group_list:          NULL
   group_comp_data:     NULL
   annotation_table:    NULL
+  col_map:             NULL
 ---
 
 <style>
@@ -251,6 +252,7 @@ group_comp_stats <- params$group_comp_data
 min_presence_fraction <- params$filters$min_presence_fraction
 data_mod_map <- params$data_mod_map
 annotation_table <- params$annotation_table
+col_map          <- params$col_map
 
 motif_plot_length <- 7:13 # should be the same as in Shiny.R
 ```
@@ -678,8 +680,8 @@ if (!is.null(group_list)) {
       cat("No QUANTITY columns found.")
       return(NULL)
     }
-    
-    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets)
+
+    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets, col_map = col_map)
     
     if(nrow(pep_mat)  < 1) {
       cat("No peptides to plot.")
