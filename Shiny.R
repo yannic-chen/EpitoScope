@@ -319,8 +319,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$quantity_slider_ui <- renderUI({ make_range_slider_ui(active_data_list(), "MAX_QUANTITY", "quantity_range", "Filter by Max Quantity:",                                step = 1) })
   output$score_slider_ui    <- renderUI({ make_range_slider_ui(active_data_list(), "SCORE",        "score_range",    "Filter by Score:") })
   output$charge_slider_ui   <- renderUI({ make_range_slider_ui(active_data_list(), "CHARGE",       "charge_range",   "Filter by Charge:",                                     step = 1) })
-  output$mass_slider_ui     <- renderUI({ make_range_slider_ui(active_data_list(), "MASS",         "mass_range",     "Filter by Mass:",                                       step = 1) })
-  output$RT_slider_ui       <- renderUI({ make_range_slider_ui(active_data_list(), "RT",           "RT_range",       "Filter by RT:",                                         step = 1) })
+  output$mass_slider_ui     <- renderUI({ make_range_slider_ui(active_data_list(), "MASS",         "mass_range",     "Filter by Mass:",                                       digits = 2) })
+  output$RT_slider_ui       <- renderUI({ make_range_slider_ui(active_data_list(), "RT",           "RT_range",       "Filter by RT:",                                         digits = 2) })
   
   
   observeEvent(input$generate_report, {
@@ -359,6 +359,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
             binder_unique = safe_reactive(peptide_wide_unique),
             group_list = safe_reactive(group_list),
             group_comp_data = safe_reactive(group_comp_data),
+            col_map = safe_reactive(measurement_col_map_r),
             annotation_table = if (is.data.frame(input_variable)) input_variable else NULL
           ),
           envir = new.env(parent = globalenv())
@@ -809,7 +810,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       ht <- plot_heatmap(cor_mat,color = input$color_palette, cluster = input$cluster_mode_ea, label = "Pearson", fontsize = fs)
     }
     
-    draw(ht, heatmap_legend_side = "left"
+    safe_draw(ht, heatmap_legend_side = "left"
     )
   }, width = "auto", 
   height = function() {
@@ -829,7 +830,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       color = input$color_palette
     )
     
-    draw(ht)
+    safe_draw(ht)
     
   }, res = 144,
   height = function() {(length(processed_data_list()) * 50) + 500 })
@@ -881,7 +882,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       percent_type = "union"
     )
     
-    draw(ht)
+    safe_draw(ht)
   })
   
   ## ----Pairwise comparison of shared peptides quantity----
@@ -890,7 +891,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     shiny::validate(shiny::need(length(lst) >= 2, "Need 2 or more samples to plot"))
     check_data_error(lst, required_cols = "MAX_QUANTITY" , na_policy = "any")
     ht <- plot_pairwise_peptide_quant_correlation(lst, color = input$color_palette, cluster = input$cluster_mode)
-    ComplexHeatmap::draw(ht)
+    safe_draw(ht)
   })
   
   ## ----PCA plot----
@@ -1335,6 +1336,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     n            <- input$n_groups
     groups       <- list()
     empty_groups <- c()
+    
+    use_measurements(FALSE)
     
     for (i in seq_len(n)) {
       custom_name <- input[[paste0("group_name_", i)]]

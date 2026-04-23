@@ -400,7 +400,7 @@ ui <- bs4DashPage(
                   #),
                   sliderInput(
                     "min_presence_fraction",
-                    tagList("Minimum fraction of samples the peptide has to be present per group", bs4Dash::tooltip(icon("info-circle"),"0 = union, 1 = intersect", placement = "right")
+                    tagList("Minimum fraction the peptide has to be present per group", bs4Dash::tooltip(icon("info-circle"),"0 = union, 1 = intersect", placement = "right")
                     ),
                     min = 0,
                     max = 1,

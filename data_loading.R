@@ -68,6 +68,8 @@ preloaded_data <- list(
   fragpipe_combined_modified_peptide = read.delim("C:/Users/Yannic/Downloads/combined_modified_peptide.tsv"),
   NOA01_01_tumor  = NOA01_01_tumor)
 
+preloaded_data <- read.csv("C:/Users/Yannic/Downloads/test_annotation.csv", sep=";")
+
 custom_schema <- list(
   Software1 = list(PEPTIDE = c("output_sequence"), 
                    QUANTITY = c("relative_intensity")), 

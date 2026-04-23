@@ -28,6 +28,7 @@ params:
   group_list:          NULL
   group_comp_data:     NULL
   annotation_table:    NULL
+  col_map:             NULL
 ---
 
 <style>
@@ -254,6 +255,7 @@ group_comp_stats <- params$group_comp_data
 min_presence_fraction <- params$filters$min_presence_fraction
 data_mod_map <- params$data_mod_map
 annotation_table <- params$annotation_table
+col_map <- params$col_map
 
 motif_plot_length <- 7:13 # should be the same as in Shiny.R
 
@@ -440,7 +442,7 @@ incProgress(1/chunk_num, detail = "Peptide length distribution per measurement..
 plot_length_range_per_measurement(processed_list, quantity_cols, color = color_palette)
 ```
 
-## Other Numeric Columns (per Measurement analysis) {.tabset)
+## Other Numeric Columns (per Measurement analysis) {.tabset}
 
 ### Charge {.tabset}
 
@@ -541,7 +543,7 @@ message("WIP")
 ## Motif Plot
 
 ```{r motif, fig.height = length(motif_plot_length) * 3}
-incProgress(10/chunk_num, detail = "Morif Plot...")
+incProgress(10/chunk_num, detail = "Motif Plot...")
 plot_motif_grid(
   lst     = processed_list,
   lengths = motif_plot_length,
@@ -733,6 +735,40 @@ plot_PCA(processed_list, color = color_palette)
 
 # Groups {.tabset}
 
+## Group Membership
+
+```{r Group_membership}
+incProgress(1/chunk_num, detail = "Group Membership Table...")
+if (!is.null(group_list) && length(group_list) > 0) {
+  has_meas <- is.list(group_list[[1]]) && !is.null(group_list[[1]]$measurement)
+
+  if (has_meas && !is.null(annotation_table)) {
+    ann <- annotation_table
+    colnames(ann) <- tolower(colnames(ann))
+    mem <- ann[, intersect(c("name", "measurement"), colnames(ann)), drop = FALSE]
+  } else {
+    mem <- data.frame(name = names(processed_list), stringsAsFactors = FALSE)
+  }
+
+  for (nm in names(group_list)) {
+    grp <- group_list[[nm]]
+    if (has_meas) {
+      mem[[nm]] <- ifelse(
+        mem$name %in% grp$name & mem$measurement %in% grp$measurement, "X", "")
+    } else {
+      mem[[nm]] <- ifelse(mem$name %in% grp, "X", "")
+    }
+  }
+
+  n_in <- rowSums(mem[, names(group_list), drop = FALSE] == "X")
+  mem$Status <- ifelse(n_in == 0, "excluded", ifelse(n_in > 1, "overlap", ""))
+
+  knitr::kable(mem, align = "l")
+} else {
+  cat("No groups defined.")
+}
+```
+
 ## Group based Venn Diagram
 
 ```{r Group_Venn}
@@ -743,24 +779,41 @@ if (!is.null(group_list)) {
   pep_col <- "PEPTIDE"
   #pep_col    <- if (!is.null(input$use_peptidoforms) && input$use_peptidoforms) "PEPTIDE" else "STRIPPED"
   
-  group_peptide_sets <- lapply(names(groups), function(g) {
-      
-      sample_names <- groups[[g]]
-      
-      peptide_counts <- table(unlist(lapply(sample_names, function(s) {
-        df <- lst[[s]]
-        if (!pep_col %in% colnames(df)) return(character(0))
-        unique(df[[pep_col]])
+ group_peptide_sets <- lapply(names(groups), function(g) {
+    grp <- groups[[g]]
+
+    if (!is.null(col_map) && is.list(grp) && !is.null(grp$measurement)) {
+      # Measurement / condition mode
+      measurements <- grp$measurement
+      names_vec    <- grp$name
+      peptide_counts <- table(unlist(lapply(seq_along(measurements), function(i) {
+        entry      <- col_map[[measurements[i]]]
+        df         <- lst[[names_vec[i]]]
+        if (is.null(df) || is.null(entry)) return(character(0))
+        actual_col <- colnames(df)[tolower(colnames(df)) == tolower(entry$col)][1]
+        if (is.na(actual_col)) return(character(0))
+        df[[pep_col]][!is.na(df[[actual_col]])]
       })))
-      
-      n_samples <- length(sample_names)
-      
-      names(peptide_counts[
-        peptide_counts / n_samples >= min_presence_fraction
-      ])
-    }) |> setNames(names(groups))
-  
-  
+      n_items <- length(measurements)
+    } else {
+      # Sample mode
+      peptide_counts <- table(unlist(lapply(grp, function(s) {
+        df <- lst[[s]]
+        if (is.null(df) || !pep_col %in% colnames(df)) return(character(0))
+        if ("MAX_QUANTITY" %in% colnames(df)) {
+          unique(df[[pep_col]][!is.na(df$MAX_QUANTITY)])
+        } else {
+          unique(df[[pep_col]])
+        }
+      })))
+      n_items <- length(grp)
+    }
+
+    names(peptide_counts[
+      peptide_counts / n_items >= min_presence_fraction
+    ])
+  }) |> setNames(names(groups))
+
   group_venn_plotting(group_peptide_sets, color = color_palette)
 } else {
   cat("no Groups defined")
@@ -785,7 +838,8 @@ if (!is.null(group_list)) {
       return(NULL)
     }
     
-    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets)
+    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets, col_map = col_map)
+
     
     if(nrow(pep_mat)  < 1) {
       cat("No peptides to plot.")

@@ -220,6 +220,17 @@ safe_validate <- function(cond, message) {
   return(NULL)
 }
 
+#This is for avoiding grid viewport stack corruption
+safe_draw <- function(ht, ...) {
+  tryCatch(
+    ComplexHeatmap::draw(ht, ...),
+    error = function(e) {
+      try(grid::upViewport(0), silent = TRUE)
+      shiny::validate(shiny::need(FALSE, conditionMessage(e)))
+    }
+  )
+}
+
 remove_ptms <- function(x) {
   gsub("\\(.*?\\)|\\[.*?\\]|\\{.*?\\}", "", x)
 }
@@ -1230,7 +1241,7 @@ apply_filters <- function(lst, filters) {
 # @param label      Display label (can be tagList with icon)
 # @param step       Slider step (default NULL = continuous)
 # @return           sliderInput widget or a styled error div
-make_range_slider_ui <- function(lst, col, input_id, label, step = NULL) {
+make_range_slider_ui <- function(lst, col, input_id, label, step = NULL, digits = NULL) {
   if (is.null(lst) || !any(sapply(lst, function(df) col %in% colnames(df)))) {
     return(tags$div(
       style = "color: #b30000; font-style: italic;",
@@ -1244,6 +1255,12 @@ make_range_slider_ui <- function(lst, col, input_id, label, step = NULL) {
   # Guard against degenerate range (e.g. single unique value)
   if (!is.finite(min_val) || !is.finite(max_val) || min_val == max_val) {
     max_val <- min_val + 1
+  }
+  
+  if (!is.null(digits)) {
+    min_val <- floor(min_val * 10^digits) / 10^digits
+    max_val <- ceiling(max_val * 10^digits) / 10^digits
+    if (is.null(step)) step <- 10^(-digits)
   }
   
   sliderInput(input_id, label,
@@ -1266,7 +1283,9 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
     group_items      <- groups[[g]]
     allowed_peptides <- group_peptide_sets[[g]]
     
-    if (!is.null(col_map)) {
+    if (!is.null(col_map) && is.list(group_items) && !is.null(group_items$measurement)) {
+      
+      
       # Measurement mode: grp_items = list(name=c(...), measurement=c(...))
       measurements <- group_items$measurement
       names_vec    <- group_items$name
@@ -2803,7 +2822,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
                             names_to = "Sample", values_to = "Quantity") %>%
         dplyr::mutate(Quantity = replace(Quantity, Quantity == 0, NA),
                       Group = grp_name)
-    } else {
+    } else if (is.list(grp_items) && !is.null(grp_items$measurement)) {
       # grp_items = list(name = c(...), measurement = c(...)), parallel vectors
       measurements <- grp_items$measurement
       names_vec    <- grp_items$name
@@ -2835,6 +2854,8 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
         df$Group  <- grp_name
         df
       }))
+    } else {
+      return(dplyr::bind_rows(lapply(grp_items, function(s) { ... })))  # fallback to sample mode
     }
     
   }
