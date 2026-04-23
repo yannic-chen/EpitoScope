@@ -1033,7 +1033,7 @@ normalize_df <- function(df) {
       dplyr::slice_head(n = 1) %>%
       ungroup()
     
-    df <- left_join(df_top %>% dplyr::select(-Run), df_wide, by = "Modified.Sequence")
+    df <- left_join(df_top %>% dplyr::select(-Run, -any_of("Precursor.Quantity")), df_wide, by = "Modified.Sequence")
     
   }
   

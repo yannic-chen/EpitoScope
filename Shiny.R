@@ -324,69 +324,67 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   
   observeEvent(input$generate_report, {
-    # Choose an output file name
-    out_file <- paste0("EpitoScope_Report_", Sys.Date(), ".html")
     
-    # Use a temporary directory (required for Shiny Server / shinyapps.io)
-    out_path <- file.path(tempdir(), out_file)
-    
-    # Show progress
-    withProgress(message = "Generating report...", value = 0, {
+    tryCatch({
+      # Choose an output file name
+      out_file <- paste0("EpitoScope_Report_", Sys.Date(), ".html")
       
-      incProgress(0.1, detail = "Preparing data...")
+      # Use a temporary directory (required for Shiny Server / shinyapps.io)
+      out_path <- file.path(tempdir(), out_file)
       
-      incProgress(0.2, detail = "Processing tables and plots...")
-      
-      # Render the R Markdown report
-      incProgress(0.5, detail = "Rendering R Markdown...")
-      rmarkdown::render(
-        input = "report.Rmd", #report.Rmd must be in the same folder. Otherwise change path here.
-        output_file = out_path,
-        params = list(
-          data_info = data_info_r(),
-          data_list = data_list_r(),
-          mod_map_list = data_mod_map(),
-          data_mod_map = data_mod_map(),
-          processed_data_list = processed_data_list(),
-          filters             = list(
-            samples        = input$selected_samples,
-            length_range   = input$length_range,
-            quantity_range = input$quantity_range,
-            score_range    = input$score_range,
-            charge_range   = input$charge_range,
-            mass_range     = input$mass_range,
-            RT_range       = input$RT_range,
-            min_presence_fraction = input$min_presence_fraction
+      # Show progress
+      withProgress(message = "Generating report...", value = 0, {
+        rmarkdown::render(
+          input = "report.Rmd", #report.Rmd must be in the same folder. Otherwise change path here.
+          output_file = out_path,
+          params = list(
+            data_info = data_info_r(),
+            data_list = data_list_r(),
+            mod_map_list = data_mod_map(),
+            data_mod_map = data_mod_map(),
+            processed_data_list = processed_data_list(),
+            filters             = list(
+              samples        = input$selected_samples,
+              length_range   = input$length_range,
+              quantity_range = input$quantity_range,
+              score_range    = input$score_range,
+              charge_range   = input$charge_range,
+              mass_range     = input$mass_range,
+              RT_range       = input$RT_range,
+              min_presence_fraction = input$min_presence_fraction
+            ),
+            color_palette = input$color_palette,
+            cluster_mode_ea     = input$cluster_mode_ea,
+            binder_summary_all = safe_reactive(binder_summary_all),
+            binder_unique = safe_reactive(peptide_wide_unique),
+            group_list = safe_reactive(group_list),
+            group_comp_data = safe_reactive(group_comp_data),
+            annotation_table = if (is.data.frame(input_variable)) input_variable else NULL
           ),
-          color_palette = input$color_palette,
-          cluster_mode_ea     = input$cluster_mode_ea,
-          binder_summary_all = binder_summary_all(),
-          binder_unique = peptide_wide_unique(),
-          group_list = safe_reactive(group_list),
-          group_comp_data = safe_reactive(group_comp_data),
-          annotation_table = if (is.data.frame(input_variable)) input_variable else NULL
-        ),
-        envir = new.env(parent = globalenv())
+          envir = new.env(parent = globalenv())
+        )
+        
+        incProgress(0.2, detail = "Finalizing report...")
+        
+        incProgress(0.0, detail = "Done!")
+      })
+      
+      # Let the user download it
+      showModal(modalDialog(
+        title = "Report ready!",
+        "Click below to download your HTML report.",
+        downloadButton("download_report", "Download"),
+        easyClose = TRUE
+      ))
+      
+      # Store path so downloadHandler can access it
+      output$download_report <- downloadHandler(
+        filename = function() { out_file },
+        content = function(file) {file.copy(out_path, file)}
       )
-      
-      incProgress(0.2, detail = "Finalizing report...")
-      
-      incProgress(0.0, detail = "Done!")
+    }, error = function(e) {
+      showNotification(paste("Report error:", conditionMessage(e)), type = "error", duration = 15)
     })
-    
-    # Let the user download it
-    showModal(modalDialog(
-      title = "Report ready!",
-      "Click below to download your HTML report.",
-      downloadButton("download_report", "Download"),
-      easyClose = TRUE
-    ))
-    
-    # Store path so downloadHandler can access it
-    output$download_report <- downloadHandler(
-      filename = function() { out_file },
-      content = function(file) {file.copy(out_path, file)}
-    )
   })
   
   default_quantity_cols_r <- reactive({
@@ -399,7 +397,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     req(data_info_r())
     DT::datatable(
       Colum_mapping_table(data_info_r()),
-      options = list(pageLength = 10, scrollX = TRUE, autoWidth = TRUE),
+      options = list(pageLength = 10, autoWidth = TRUE),
       escape = FALSE,
       rownames = FALSE
     )
@@ -417,7 +415,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     DT::datatable(
       ann,
       rownames = FALSE,
-      options  = list(pageLength = 10, scrollX = TRUE, autoWidth = TRUE),
+      options  = list(pageLength = 10, autoWidth = TRUE),
       escape = FALSE,
     )
   })
@@ -542,8 +540,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$charge_plot_meas <- renderPlot({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "CHARGE", na_policy = "all")
-    temp_lst <<- lst
-    temp_cols <<- default_quantity_cols_r()
     #plot_charge_per_measurement(lst, default_quantity_cols_r(), color = input$color_palette)
   })
   
@@ -1799,7 +1795,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       
       req(lst)
       
-      shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
+      v <- safe_validate(ncol(cache) > 1, "No prediction data")
+      if (!is.null(v)) return(v)
       
       
       lst <- lapply(lst, function(df) {

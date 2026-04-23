@@ -85,13 +85,15 @@ ui <- bs4DashPage(
                                   span(bs4Dash::tooltip(icon("info-circle"), title = "This table maps the columns of your dataset to the expected schema.
                                                     Note: m/z values are taken from the report and not calculated from the mass and charge column. These two values do differ.", placement = "right")
                                   )), width = 12, maximizable = TRUE, 
-                  DT::DTOutput("summary_table")
+                  #DT::DTOutput("summary_table")
+                  div(style = 'overflow-x: auto;', DT::DTOutput("summary_table"))
                   ),
           
           ### ---- Annotation Table (if given) ----
           bs4Card(inputId = "annotation_card", title = tagList("Annotation Table", bs4Dash::tooltip(icon("info-circle"),"This is the original input annotation table.", placement = "right")
           ), width = 12, maximizable = TRUE,
-          DT::DTOutput("annotation_table")
+          #DT::DTOutput("annotation_table")
+          div(style = 'overflow-x: auto;', DT::DTOutput("annotation_table"))
           ),
           
           

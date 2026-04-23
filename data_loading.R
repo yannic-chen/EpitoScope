@@ -50,6 +50,16 @@ preloaded_data <- lapply(preloaded_data, function(df) {
   df[rowSums(df[, maxlfq_cols, drop = FALSE] != 0) > 0, ]
 })
 
+D170_manual_combined <- read_parquet("C:/Users/Yannic/Desktop/report.parquet")
+D170_tumor_only <- read_parquet("C:/Users/Yannic/Desktop/report2.parquet")
+D170_fragpipe_combined <- read_parquet("C:/Users/Yannic/Desktop/report3.parquet")
+
+preloaded_data <- list(
+  D170_manual_combined = D170_manual_combined,
+  D170_tumor_only = D170_tumor_only,
+  D170_fragpipe_combined = D170_fragpipe_combined
+)
+
 preloaded_data <- list(
   DIANN_parquet = DIANN_parquet,
   NOA01_05_serum  = NOA01_05_serum,

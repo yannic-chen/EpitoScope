@@ -40,6 +40,7 @@ Task List
 - [ ] Calculate theoretical mass if m/z is not available, but mass and charge are
 - [ ] UI for data loading
 - [ ] Have specific analysis for groups displayed in upset plot
+- [ ] Help user to install netMHCpan on their WSL
 
 ## Features
 - Interactive visualization of immunopeptidomics datasets.

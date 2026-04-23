@@ -230,6 +230,9 @@ pre {
 </style>
 
 ```{r setup, include=FALSE}
+library(shiny)
+chunk_num <- 70
+
 knitr::opts_chunk$set(
   echo    = FALSE,
   warning = FALSE,
@@ -262,20 +265,33 @@ quantity_cols <- get_quantity_cols(data_info)
 
 ## Column Map
 
-```{r}
-DT::datatable(
-  Colum_mapping_table(data_info),
-  escape   = FALSE,   # <-- this is the key, allows the HTML spans to render
-  options  = list(pageLength = 20, scrollX = TRUE, autoWidth = TRUE),
-  rownames = FALSE
+```{r Column_Map}
+incProgress(1/chunk_num, detail = "Column Map...")
+htmltools::div(
+  style = "overflow-x: auto;",
+  DT::datatable(
+    Colum_mapping_table(data_info),
+    escape   = FALSE,
+    options  = list(pageLength = 20, autoWidth = TRUE),
+    rownames = FALSE
+  )
 )
 ```
 
 ## Annotation Table
 
-```{r}
+```{r Annotation_table}
+incProgress(1/chunk_num, detail = "Annotaiton Table...")
 if (!is.null(annotation_table)) {
-  DT::datatable(annotation_table)
+  htmltools::div(
+  style = "overflow-x: auto;",
+  DT::datatable(
+    annotation_table,
+    escape   = FALSE,
+    options  = list(pageLength = 20, autoWidth = TRUE),
+    rownames = FALSE
+  )
+)
 } else {
   cat("No annotation table was provided.")
 }
@@ -284,6 +300,7 @@ if (!is.null(annotation_table)) {
 ## Analysis Parameters
 
 ```{r filter_summary, results='asis'}
+incProgress(1/chunk_num, detail = "Analysis Parameter...")
 f <- params$filters
 
 make_row <- function(label, val) {
@@ -316,19 +333,22 @@ knitr::kable(filter_df, row.names = FALSE)
 
 ### Peptides
 
-```{r}
+```{r RAW_unique_peptides}
+incProgress(1/chunk_num, detail = "Unique Entries: Peptides ...")
 plot_unique_counts(data_list, column = "STRIPPED", y_label = "Number of unique peptides", color = color_palette)
 ```
 
 ### Peptidoforms
 
-```{r}
+```{r RAW_unique_peptidoforms}
+incProgress(1/chunk_num, detail = "Unique Entries: Peptidoform...")
 plot_unique_counts(data_list, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = color_palette)
 ```
 
 ### Proteins
 
-```{r}
+```{r RAW_unique_Proteins}
+incProgress(1/chunk_num, detail = "Unique Entries: Proteins...")
 plot_unique_counts(data_list, column = "PROTEIN", y_label = "Number of unique proteins",
                    transform_fn = extract_protein_prefixes, color = color_palette)
 ```
@@ -337,25 +357,29 @@ plot_unique_counts(data_list, column = "PROTEIN", y_label = "Number of unique pr
 
 ### Charge
 
-```{r}
+```{r RAW_Charge}
+incProgress(1/chunk_num, detail = "Charge...")
 plot_stacked_bar(data_list, column = "CHARGE", fill_label = "Charge", percentage = FALSE, color = color_palette)
 ```
 
 ### Mass
 
-```{r}
+```{r RAW_Mass}
+incProgress(1/chunk_num, detail = "Mass...")
 plot_density(data_list, column = "MASS", x_label = "Mass (Da)", color = color_palette)
 ```
 
 ### m/z
 
-```{r}
+```{r Raw_MZ}
+incProgress(1/chunk_num, detail = "m/z...")
 plot_density(data_list, column = "MZ", x_label = "m/z", color = color_palette)
 ```
 
 ### Retention Time
 
-```{r}
+```{r RAW_RT}
+incProgress(1/chunk_num, detail = "Retention Time...")
 plot_per_sample_grid(
   lst      = data_list,
   plot_fn  = plot_histogram,
@@ -368,19 +392,22 @@ plot_per_sample_grid(
 
 ### ppm
 
-```{r}
+```{r RAW_ppm}
+incProgress(1/chunk_num, detail = "Mass Error...")
 plot_density(data_list, column = "PPM", x_label = "ppm", color = color_palette)
 ```
 
 ### Score
 
-```{r}
+```{r RAW_Score}
+incProgress(1/chunk_num, detail = "Score...")
 plot_violin(data_list, column = "SCORE", color = color_palette)
 ```
 
 ## Summary Table
 
-```{r}
+```{r Summary_Table}
+incProgress(1/chunk_num, detail = "Summary Table...")
 render_summary_pre(data_list, font_size = "8px")
 ```
 
@@ -388,7 +415,8 @@ render_summary_pre(data_list, font_size = "8px")
 
 ## Peptide Length Distribution
 
-```{r}
+```{r Peptide_Length}
+incProgress(1/chunk_num, detail = "Peptide_Length...")
 plot_length_distribution(processed_list, color = color_palette)
 ```
 
@@ -396,7 +424,8 @@ plot_length_distribution(processed_list, color = color_palette)
 
 ### Per Sample
 
-```{r}
+```{r Length_dist_sample}
+incProgress(1/chunk_num, detail = "Peptide length distribution per sample...")
     lst <- lapply(processed_list, function(df) {
       df$correct_range <- df$LENGTH >= 8 & df$LENGTH <= 13
       df
@@ -406,7 +435,8 @@ plot_stacked_bar(lst, column = "correct_range", fill_label = "8-13mer", percenta
 
 ### Per Measurement
 
-```{r}
+```{r Length_dist_measurement}
+incProgress(1/chunk_num, detail = "Peptide length distribution per measurement...")
 plot_length_range_per_measurement(processed_list, quantity_cols, color = color_palette)
 ```
 
@@ -415,12 +445,14 @@ plot_length_range_per_measurement(processed_list, quantity_cols, color = color_p
 ### Charge {.tabset}
 
 #### Per Sample
-```{r}
+```{r QC_Charge_sample}
+incProgress(1/chunk_num, detail = "Charge per sample...")
 plot_stacked_bar(processed_list, column = "CHARGE", fill_label = "Charge", percentage = FALSE, color = color_palette)
 ```
 
 #### Per Measurement
-```{r}
+```{r QC_Charge_measurement}
+incProgress(1/chunk_num, detail = "Charge per measurement...")
 message("WIP")
 #plot_charge_per_measurement(processed_list, quantity_cols, color = color_palette)
 ```
@@ -428,31 +460,36 @@ message("WIP")
 ### Mass {.tabset}
 
 #### Per Sample
-```{r}
+```{r QC_Mass_sample}
+incProgress(1/chunk_num, detail = "Mass per sample...")
 plot_density(processed_list, column = "MASS", x_label = "Mass (Da)", color = color_palette)
 ```
 
 #### Per Measurement
-```{r}
+```{r QC_Mass_measurement}
+incProgress(1/chunk_num, detail = "Mass per measurement...")
 plot_density_envelope(processed_list, quantity_cols, column = "MASS", x_label = "Mass (Da)", color = color_palette)
 ```
 
 ### m/z {.tabset}
 
 #### Per Sample
-```{r}
+```{r QC_MZ_sample}
+incProgress(1/chunk_num, detail = "m/z per sample...")
 plot_density(processed_list, column = "MZ", x_label = "m/z", color = color_palette)
 ```
 
 #### Per Measurement
-```{r}
+```{r QC_MZ_measurement}
+incProgress(1/chunk_num, detail = "m/z per measurement...")
 plot_density_envelope(processed_list, quantity_cols, column = "MZ", x_label = "m/z", color = color_palette)
 ```
 
 ### Retention Time {.tabset}
 
 #### Per Sample
-```{r}
+```{r, QC_RT_sample}
+incProgress(1/chunk_num, detail = "RT per sample...")
 plot_per_sample_grid(
   lst      = processed_list,
   plot_fn  = plot_histogram,
@@ -464,7 +501,8 @@ plot_per_sample_grid(
 ```
 
 #### Per Measurement
-```{r}
+```{r QC_RT_measurement}
+incProgress(1/chunk_num, detail = "RT per measurement...")
 for (s in names(processed_list)) {
   p <- plot_rt_histogram_range(processed_list[[s]], s, quantity_cols)
   if (!is.null(p)) print(p)
@@ -474,24 +512,28 @@ for (s in names(processed_list)) {
 ### ppm {.tabset}
 
 #### Per Sample
-```{r}
+```{r QC_PPM_sample}
+incProgress(1/chunk_num, detail = "Mass error per sample...")
 plot_density(processed_list, column = "PPM", x_label = "ppm", color = color_palette)
 ```
 
 #### Per Measurement
-```{r}
+```{r QC_PPM_measurement}
+incProgress(1/chunk_num, detail = "Mass error per measurement...")
 plot_density_envelope(processed_list, quantity_cols, column = "PPM", x_label = "ppm", color = color_palette)
 ```
 
 ### Score {.tabset}
 
 #### Per Sample
-```{r}
+```{r QC_score_sample}
+incProgress(1/chunk_num, detail = "Score per sample...")
 plot_violin(processed_list, column = "SCORE", color = color_palette)
 ```
 
 #### Per Measurement
-```{r}
+```{r QC_Score_measurement}
+incProgress(1/chunk_num, detail = "Score per measurement...")
 message("WIP")
 #plot_density_envelope(processed_list, quantity_cols, column = "SCORE", x_label = "Score", color = color_palette)
 ```
@@ -499,6 +541,7 @@ message("WIP")
 ## Motif Plot
 
 ```{r motif, fig.height = length(motif_plot_length) * 3}
+incProgress(10/chunk_num, detail = "Morif Plot...")
 plot_motif_grid(
   lst     = processed_list,
   lengths = motif_plot_length,
@@ -510,7 +553,8 @@ plot_motif_grid(
 
 ### Individual
 
-```{r}
+```{r Dyn_range_individual}
+incProgress(1/chunk_num, detail = "Dynamic Range Individual...")
 plot_per_sample_grid(
   lst      = processed_list,
   plot_fn  = dynamic_range_plot,
@@ -525,12 +569,14 @@ plot_per_sample_grid(
 ### Combined
 
 ```{r dynrange_combined}
+incProgress(1/chunk_num, detail = "Dynamic Range Combined...")
 dynamic_range_plot_combined(df_list = processed_list, data_col = "MAX_QUANTITY")
 ```
 
 ## 1/k0 vs m/z
 
 ```{r k0_vs_mz_grid, fig.height=5}
+incProgress(1/chunk_num, detail = "1/k0 vs m/z...")
 scatter_list <- generate_scatterplots(processed_list)
 scatter_list <- Filter(Negate(is.null), scatter_list)
 
@@ -543,7 +589,7 @@ if (length(scatter_list) == 0) {
 
 ## Measurement Correlation Heatmap
 ````{r measurement_heatmap}
-
+incProgress(1/chunk_num, detail = "Measurement correlation heatmap...")
 if (length(quantity_cols) == 0) {
   cat("No QUANTITY columns found.")
 } else {
@@ -598,19 +644,22 @@ if (length(quantity_cols) == 0) {
 
 ### Peptides
 
-```{r}
+```{r RES_unique_peptides}
+incProgress(1/chunk_num, detail = "Unique Peptides...")
 plot_unique_counts(processed_list, column = "STRIPPED", y_label = "Number of unique peptides", color = color_palette)
 ```
 
 ### Peptidoforms
 
-```{r}
+```{r RES_unique_peptidoforms}
+incProgress(1/chunk_num, detail = "Unique Peptidoforms...")
 plot_unique_counts(processed_list, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = color_palette)
 ```
 
 ### Proteins
 
-```{r}
+```{r RES_unique_proteins}
+incProgress(1/chunk_num, detail = "Unique Proteins...")
 plot_unique_counts(processed_list, column = "PROTEIN", y_label = "Number of unique proteins",
                    transform_fn = extract_protein_prefixes, color = color_palette)
 ```
@@ -619,7 +668,8 @@ plot_unique_counts(processed_list, column = "PROTEIN", y_label = "Number of uniq
 
 ### Absolute
 
-```{r}
+```{r data_completeness_absolute}
+incProgress(1/chunk_num, detail = "Data Completeness Absolute...")
 spectra_cols <- data_info %>%
   filter(final_name == "SPECTRA") %>%
   dplyr::select(-final_name) %>%
@@ -630,13 +680,15 @@ plot_completeness(processed_list, spectra_cols, color = color_palette)
 
 ### Percentage
 
-```{r}
+```{r data_completeness_percent}
+incProgress(1/chunk_num, detail = "Data Completeness Percentage...")
 plot_completeness(processed_list, spectra_cols, percent = TRUE, color = color_palette)
 ```
 
 ## Upset Plot
 
-```{r}
+```{r Upset_plot}
+incProgress(1/chunk_num, detail = "Upset plot...")
 plot_upset(processed_list)
 ```
 
@@ -644,13 +696,15 @@ plot_upset(processed_list)
 
 ### Count
 
-```{r}
+```{r Pairwise_overlap_count}
+incProgress(1/chunk_num, detail = "Pairwise Overlap Matrix Count...")
 plot_shared_peptide(processed_list, mode = "count", percent_type = "union", color = color_palette)
 ```
 
 ### Percent
 
-```{r}
+```{r Pairwise_overlap_percent}
+incProgress(1/chunk_num, detail = "Pairwise Overlap Matrix Percentage...")
 plot_shared_peptide(processed_list, mode = "percent", percent_type = "union", color = color_palette)
 ```
 
@@ -658,19 +712,22 @@ plot_shared_peptide(processed_list, mode = "percent", percent_type = "union", co
 
 ### No cluster
 
-```{r}
+```{r Pairwise_comp}
+incProgress(1/chunk_num, detail = "Pairwise Comparison no Cluster...")
 plot_pairwise_peptide_quant_correlation(processed_list, color = color_palette, cluster = "none")
 ```
 
 ### Cluster
 
-```{r}
+```{r Pairwise_comp_cluster}
+incProgress(1/chunk_num, detail = "Pairwise Comparison Cluster...")
 plot_pairwise_peptide_quant_correlation(processed_list, color = color_palette, cluster = "both")
 ```
 
 ## PCA plot
 
-```{r}
+```{r PCA_plot}
+incProgress(1/chunk_num, detail = "PCA...")
 plot_PCA(processed_list, color = color_palette)
 ```
 
@@ -678,7 +735,8 @@ plot_PCA(processed_list, color = color_palette)
 
 ## Group based Venn Diagram
 
-```{r}
+```{r Group_Venn}
+incProgress(1/chunk_num, detail = "Group Venn Diagram...")
 if (!is.null(group_list)) {
   lst <- processed_list
   groups <- group_list
@@ -711,7 +769,8 @@ if (!is.null(group_list)) {
 
 ## Peptide based Heatmap
 
-```{r}
+```{r Group_heatmap}
+incProgress(1/chunk_num, detail = "Group Heatmap...")
 if (!is.null(group_list)) {
     lst <- processed_list
     groups <- group_list
@@ -742,6 +801,7 @@ if (!is.null(group_list)) {
 ## Group Comparison {.tabset}
 
 ```{r group_comp, results='asis', fig.height=5}
+incProgress(5/chunk_num, detail = "Group Comparison...")
 if (is.null(group_comp_stats) || length(group_comp_stats) == 0) {
   cat("_No group comparison data available._\n")
 } else {
@@ -827,7 +887,8 @@ if (is.null(group_comp_stats) || length(group_comp_stats) == 0) {
 
 ## PTM distribution
 
-```{r}
+```{r PTM_distr}
+incProgress(1/chunk_num, detail = "PTM distribution...")
 has_ptm <- sapply(processed_list, function(df) "PTM" %in% colnames(df))
 
 if (!any(has_ptm)) {
@@ -854,7 +915,8 @@ if (!any(has_ptm)) {
 
 ## PTM sequence motif
 
-```{r}
+```{r PTM_motif_table}
+incProgress(1/chunk_num, detail = "PTM motif table...")
 if (is.null(mod_map_list) || length(mod_map_list) == 0 || all(is.na(mod_map_list))) {
       cat("no PTM pseudo sequence")
 } else {
@@ -872,6 +934,7 @@ if (is.null(mod_map_list) || length(mod_map_list) == 0 || all(is.na(mod_map_list
 ```
 
 ```{r ptm_motif, results='asis'}
+incProgress(1/chunk_num, detail = "PTM motif grid...")
 ptm_mod_map <- data_mod_map
 
 if (is.null(ptm_mod_map) || length(ptm_mod_map) == 0 || all(is.na(ptm_mod_map))) {
@@ -899,11 +962,14 @@ WIP: For speed sake, binder data is directly obtained rather than recalculated. 
 
 ## Binding Summary
 
-```{r}
+```{r Binding_summary}
+incProgress(1/chunk_num, detail = "Binding summary table...")
 if (!is.null(binder_summary_all)) {
-  DT::datatable(binder_summary_all)
-} else {
-  cat("no binding data")
+  if (!is.null(binder_summary_all$.skip)) {
+    cat("*", binder_summary_all$message, "*")
+  } else {
+    DT::datatable(binder_summary_all)
+  }
 }
 ```
 
@@ -911,7 +977,8 @@ if (!is.null(binder_summary_all)) {
 
 ### Absolute
 
-```{r}
+```{r Binding_barchart_abs}
+incProgress(1/chunk_num, detail = "Binding Barchart Absolute...")
 if (!is.null(binder_unique)) {
   plot_binders(binder_unique, color = color_palette, percent = FALSE)
 } else {
@@ -921,7 +988,8 @@ if (!is.null(binder_unique)) {
 
 ### Percent
 
-```{r}
+```{r Binding_barchart_perc}
+incProgress(1/chunk_num, detail = "Binding Barchart Percent...")
 if (!is.null(binder_unique)) {
   plot_binders(binder_unique, color = color_palette, percent = TRUE)
 } else {
@@ -931,7 +999,8 @@ if (!is.null(binder_unique)) {
 
 ## Binding Table
 
-```{r}
+```{r Binding_table}
+incProgress(1/chunk_num, detail = "Binding Table...")
 if (!is.null(binder_unique)) {
   
       df_collapsed <- binder_unique %>%
@@ -950,7 +1019,8 @@ if (!is.null(binder_unique)) {
 
 # Lookup
 For unique peptides per sample, set n_datasets = 1
-```{r}
+```{r Lookup}
+incProgress(1/chunk_num, detail = "Lookup TabSle...")
 keep_cols <- c("Sample", "PEPTIDE", "STRIPPED", "MAX_QUANTITY","LENGTH" ,"MASS" ,"CHARGE", "MZ" ,"K0", "RT", "PROTEIN")
     
 combined <- imap_dfr(data_list, ~ dplyr::select(.x, intersect(keep_cols, colnames(.x))) %>% mutate(Sample = .y))
