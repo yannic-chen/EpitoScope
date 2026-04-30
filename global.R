@@ -3435,9 +3435,9 @@ parse_netmhc_output <- function(output_file) {
   colnames(res) <- colnames_new
   res <- res[-1, ]
   
-  keep_cols    <- c("Peptide", grep("_Rank$", colnames(res), value = TRUE))
+  keep_cols    <- c("Peptide", grep("_Rank$", colnames(res), value = TRUE, ignore.case = TRUE)) #This handles case insensitive _rank.
   res          <- res[, keep_cols, drop = FALSE]
-  colnames(res) <- gsub("_Rank$", "", colnames(res))
+  colnames(res) <- gsub("(_[A-Za-z]+)?_rank$", "", colnames(res), ignore.case = TRUE) #this now also handles _EL_rank as well as just _Rank.
   colnames(res)[-1] <- sub("^([^.]+\\.[^.]+)\\.", "\\1", colnames(res)[-1])
   res[-1] <- lapply(res[-1], as.numeric)
   res
