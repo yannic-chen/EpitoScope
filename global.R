@@ -316,14 +316,9 @@ build_mod_map <- function(tokens) {
 }
 
 extract_protein_prefixes <- function(accessions) {
-  # Split by semicolon
   all_acc <- unlist(strsplit(accessions, ";"))
-  # Extract the part before first "|" in each entry
-  proteins <- sapply(all_acc, function(x) {
-    strsplit(x, "\\|")[[1]][2]  # 2nd element is usually the accession ID
-  })
-  proteins <- proteins[!is.na(proteins)]  # remove NAs if any
-  unique(proteins)
+  proteins <- sub(" .*", "", trimws(all_acc))  # truncate at first space
+  unique(proteins[nchar(proteins) > 0])
 }
 
 aa_comp_from_peptides <- function(peptides) {
@@ -433,8 +428,22 @@ plot_per_sample_grid <- function(lst, plot_fn, ncol = 2, ...) {
     )
   })
   plots <- Filter(Negate(is.null), plots)
-  if (length(plots) == 0) return(NULL)
-  patchwork::wrap_plots(plots, ncol = ncol)
+  if (length(plots) == 0) return(invisible(NULL))
+  
+  pw <- patchwork::wrap_plots(plots, ncol = ncol)
+  tryCatch(
+    print(pw),
+    error = function(e) {
+      print(
+        ggplot() +
+          annotate("text", x = .5, y = .5,
+                   label = "Plot window too small — resize the Plots pane and regenerate.",
+                   size = 4, color = "grey40") +
+          theme_void()
+      )
+    }
+  )
+  invisible(NULL)
 }
 
 #for report.Rmd
@@ -2216,7 +2225,7 @@ plot_completeness <- function(lst, spectra_cols, percent = FALSE, title = "Data 
   return(p)
 }
 
-plot_upset <- function(data_list, min_size = 2, title = "Upset Plot",stripped = TRUE, min_size_is_percent = TRUE) {
+plot_upset <- function(data_list, min_size = 2, min_size_is_percent = TRUE, title = "Upset Plot", stripped = TRUE, min_degree = 1, n_intersections = 40) {
   
   # Extract peptides per dataset
   l <- purrr::imap(data_list, function(df, name) {
@@ -2250,12 +2259,14 @@ plot_upset <- function(data_list, min_size = 2, title = "Upset Plot",stripped = 
   # Upset plot
   p <- suppressWarnings(ComplexUpset::upset(
     df_upset,
-    intersect = names(df_upset),
-    name = "Sample",
-    min_size = min_size,
-    width_ratio=0.1
-  ) +
-    ggtitle(title))
+    intersect             = names(df_upset),
+    name                  = "Sample",
+    min_size              = min_size,
+    min_degree            = min_degree,
+    n_intersections       = n_intersections,
+    width_ratio           = 0.1,
+    sort_intersections_by = "cardinality"
+  ) + ggtitle(title))
   
   return(p)
 }
@@ -3450,14 +3461,21 @@ run_go_enrichment <- function(df) {
   
   uni_ids <- df_sig$PROTEIN %>%
     strsplit(";") %>%
-    lapply(function(x) sapply(strsplit(x, "\\|"), `[`, 1)) %>%
     unlist() %>%
+    trimws() %>%
+    sapply(function(prot) {
+      parts <- strsplit(prot, "\\|")[[1]]
+      if (length(parts) >= 3) parts[2] else parts[1]  # "sp|P04439|HLA_A" → "P04439"
+    }) %>%
     unique()
   
   check <- safe_validate(!is.null(uni_ids) && nrow(as.data.frame(uni_ids)) > 0, "No significant IDs")
   if (!is.null(check)) return(check)
   
-  gene_map <- suppressWarnings(clusterProfiler::bitr(uni_ids, fromType = "UNIPROT", toType = "ENTREZID", OrgDb = org.Hs.eg.db))
+  gene_map <- tryCatch(
+    suppressWarnings(clusterProfiler::bitr(uni_ids, fromType = "UNIPROT", toType = "ENTREZID", OrgDb = org.Hs.eg.db)),
+    error = function(e) data.frame(UNIPROT = character(), ENTREZID = character())
+  )
   
   check <- safe_validate(nrow(gene_map) > 0, "No valid UniProt→Entrez mapping")
   if (!is.null(check)) return(check)
@@ -3486,9 +3504,13 @@ run_string <- function(df) {
     dplyr::select(PEPTIDE, Significance, PROTEIN)
   
   uni_ids <- df$PROTEIN %>%
-    strsplit(";") %>%                # split multiple proteins
-    lapply(function(x) sapply(strsplit(x, "\\|"), `[`, 1)) %>%  # take first part of each
+    strsplit(";") %>%
     unlist() %>%
+    trimws() %>%
+    sapply(function(prot) {
+      parts <- strsplit(prot, "\\|")[[1]]
+      if (length(parts) >= 3) parts[2] else parts[1]
+    }) %>%
     unique()
   
   #Check for empty uni_ids

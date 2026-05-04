@@ -109,7 +109,7 @@ ui <- bs4DashPage(
                              plotOutput("summary_peptidoforms_plot")
                              ),
                     tabPanel("Proteins",
-                             h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"This depends heavily on the style of the header and how the software identifies it.", placement = "right")),
+                             h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"Protein names is obtained from the Accession column and is truncated to the first space.", placement = "right")),
                              plotOutput("summary_proteins_plot")
                              )
                     )
@@ -257,7 +257,7 @@ ui <- bs4DashPage(
                              plotOutput("summary_peptidoforms_plot3")
                     ),
                     tabPanel("Proteins",
-                             h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"This depends heavily on the style of the header and how the software identifies it.", placement = "right")),
+                             h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"Protein names is obtained from the Accession column and is truncated to the first space.", placement = "right")),
                              plotOutput("summary_proteins_plot3")
                     )
                   )
@@ -318,7 +318,7 @@ ui <- bs4DashPage(
                              plotOutput("summary_peptidoforms_plot2")
                     ),
                     tabPanel("Proteins",
-                             h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"This depends heavily on the style of the header and how the software identifies it.", placement = "right")),
+                             h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"Protein names is obtained from the Accession column and is truncated to the first space.", placement = "right")),
                              plotOutput("summary_proteins_plot2")
                     )
                   )
@@ -346,6 +346,11 @@ ui <- bs4DashPage(
           ### ---- Upset Plot of Peptides ----
           bs4Card(title = tagList("Upset Plot of Peptides", bs4Dash::tooltip(icon("info-circle"),"Currently intersection min_size is 2% of combined number of unique peptides.", placement = "right")
                                   ), width = 12, maximizable = TRUE,
+                  fluidRow(
+                    column(4, numericInput("upset_min_size",    "Min. intersection size (percent):", value = 2,  min = 0, step = 0.1)),
+                    column(4, numericInput("upset_min_degree",  "Min. degree:",            value = 1,  min = 1, step = 1)),
+                    column(4, numericInput("upset_n_intersect", "Max. intersections:",     value = 40, min = 3, step = 1))
+                  ),
                   plotOutput("upset_plot")
                   ),
           
@@ -384,7 +389,7 @@ ui <- bs4DashPage(
       bs4TabItem(
         tabName = "group_comp",  # must match menuItem
         fluidRow(
-          
+          h6("Note: No normalization is being done. Max Quantity values are used as is to calculate the group mean which is then compared."),
           ### ---- Create Groups ----
           bs4Card(title = tagList("Create Groups", bs4Dash::tooltip(icon("info-circle"),"Here we can create groups out of one or more samples to do group based comparison. 
                                                        The groups are only valid for this page. Pairwise comparisons will be done for all possible group pairings.

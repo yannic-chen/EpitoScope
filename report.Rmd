@@ -29,6 +29,9 @@ params:
   group_comp_data:     NULL
   annotation_table:    NULL
   col_map:             NULL
+  upset_min_size:    2
+  upset_min_degree:  1
+  upset_n_intersect: 40
 ---
 
 <style>
@@ -256,6 +259,9 @@ min_presence_fraction <- params$filters$min_presence_fraction
 data_mod_map <- params$data_mod_map
 annotation_table <- params$annotation_table
 col_map <- params$col_map
+upset_min_size    <- params$upset_min_size
+upset_min_degree  <- params$upset_min_degree
+upset_n_intersect <- params$upset_n_intersect
 
 motif_plot_length <- 7:13 # should be the same as in Shiny.R
 
@@ -557,6 +563,7 @@ plot_motif_grid(
 
 ```{r Dyn_range_individual}
 incProgress(1/chunk_num, detail = "Dynamic Range Individual...")
+try(grid::upViewport(0), silent = TRUE)  # reset any dirty grid state from prior chunks
 plot_per_sample_grid(
   lst      = processed_list,
   plot_fn  = dynamic_range_plot,
@@ -691,7 +698,14 @@ plot_completeness(processed_list, spectra_cols, percent = TRUE, color = color_pa
 
 ```{r Upset_plot}
 incProgress(1/chunk_num, detail = "Upset plot...")
-plot_upset(processed_list)
+cat(sprintf(
+  "**Settings:** min intersection size = %g, min degree = %g, max intersections = %g\n\n",
+  upset_min_size, upset_min_degree, upset_n_intersect
+))
+plot_upset(processed_list,
+           min_size        = upset_min_size,
+           min_degree      = upset_min_degree,
+           n_intersections = upset_n_intersect)
 ```
 
 ## Pairwise Overlap Matrix {.tabset}

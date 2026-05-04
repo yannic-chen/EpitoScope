@@ -355,6 +355,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
             ),
             color_palette = input$color_palette,
             cluster_mode_ea     = input$cluster_mode_ea,
+            upset_min_size    = input$upset_min_size,
+            upset_min_degree  = input$upset_min_degree,
+            upset_n_intersect = input$upset_n_intersect,
             binder_summary_all = safe_reactive(binder_summary_all),
             binder_unique = safe_reactive(peptide_wide_unique),
             group_list = safe_reactive(group_list),
@@ -865,7 +868,10 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore") #By default plot_upset takes STRIPPED column. Need to adjust if we take PEPTIDE column instead.
     shiny::validate(shiny::need(length(lst) >= 2, "Need 2 or more samples to plot"))
-    plot_upset(lst)
+    plot_upset(lst,
+               min_size        = input$upset_min_size,
+               min_degree      = input$upset_min_degree,
+               n_intersections = input$upset_n_intersect)
   })
   
   ## ----Pairwise comparison of shared peptides----
@@ -1503,8 +1509,12 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
             column(12, DT::DTOutput(paste0("peptide_table_", name)))
           ),
           fluidRow(
-            column(6, h6("GO-term enrichment"), plotOutput(paste0("go_term_", name))),
-            column(6, h6("STRING-DB network"), plotOutput(paste0("STRING_", name)))
+            column(6, h6("GO-term enrichment"), 
+                   helpText("Only UniProt accession IDs (e.g. P04439) are supported. Other formats will be skipped."),
+                   plotOutput(paste0("go_term_", name))),
+            column(6, h6("STRING-DB network"), 
+                   helpText("Only UniProt accession IDs (e.g. P04439) are supported. Other formats will be skipped."),
+                   plotOutput(paste0("STRING_", name)))
           )
         )
       })
@@ -1526,6 +1536,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       local({
         plot_name <- name
         df <- volcano_list[[plot_name]]
+        
+        temp_df <<- df
         
         #Significance calculation
         df$Significance <- ifelse(

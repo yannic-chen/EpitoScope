@@ -15,7 +15,7 @@ Task List
 - [ ] Prevent filtering criteria reset when selecting/deselecting samples. Likewise the groups for the grouped analysis.
 - [X] Change functions to pkg::fun() style (i.e. dplyr::mutate()). This avoids future function masking.
 - [ ] Decouple data calculations and plotting function, so that when changing window size only the plotting function is rerun and not the whole calculation
-- [ ] Have a better way to separate PROTEIN names for different input formats.
+- [X] Have a better way to separate PROTEIN names for different input formats.
 - [ ] How to do NA handling for PCA plot. Sometimes user-input data is biologically too different for imputation.
 - [ ] Unify PTM nomenclature between output. Translate mass difference to PTM.
 - [ ] Double check netmHCpan precomputed data, if it indeed analysed all possible peptides.
@@ -41,6 +41,9 @@ Task List
 - [ ] UI for data loading
 - [ ] Have specific analysis for groups displayed in upset plot
 - [ ] Help user to install netMHCpan on their WSL
+- [ ] Helper function that can determine outlier replicates and remove it from the data if wanted.
+- [ ] Using TCGA database to identify cell type of origin
+- [ ] Kinase activity
 
 ## Features
 - Interactive visualization of immunopeptidomics datasets.
