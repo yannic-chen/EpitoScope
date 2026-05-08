@@ -32,6 +32,8 @@ params:
   upset_min_size:    2
   upset_min_degree:  1
   upset_n_intersect: 40
+  default_quantity_cols_r: NULL
+  
 ---
 
 <style>
@@ -262,6 +264,7 @@ col_map <- params$col_map
 upset_min_size    <- params$upset_min_size
 upset_min_degree  <- params$upset_min_degree
 upset_n_intersect <- params$upset_n_intersect
+default_quantity_cols_r <- params$default_quantity_cols_r
 
 motif_plot_length <- 7:13 # should be the same as in Shiny.R
 
@@ -556,6 +559,32 @@ plot_motif_grid(
   ncol    = length(processed_list)
 )
 ```
+
+## Identification distribution {.tabset}
+
+### Peptides
+
+```{r distr_unique_peptides}
+incProgress(1/chunk_num, detail = "Unique Entries: Peptides ...")
+plot_unique_counts(data_list, column = "STRIPPED", y_label = "Number of unique peptides",
+                       color = color_palette, quantity_cols = default_quantity_cols_r())
+```
+
+### Peptidoforms
+
+```{r distr_unique_peptidoforms}
+incProgress(1/chunk_num, detail = "Unique Entries: Peptidoform...")
+plot_unique_counts(data_list, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = color_palette, quantity_cols = default_quantity_cols_r())
+```
+
+### Proteins
+
+```{r distr_unique_Proteins}
+incProgress(1/chunk_num, detail = "Unique Entries: Proteins...")
+plot_unique_counts(data_list, column = "PROTEIN", y_label = "Number of unique proteins",
+                   transform_fn = extract_protein_prefixes, color = color_palette, quantity_cols = default_quantity_cols_r())
+```
+
 
 ## Dynamic Range {.tabset}
 

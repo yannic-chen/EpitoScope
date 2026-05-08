@@ -363,7 +363,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
             group_list = safe_reactive(group_list),
             group_comp_data = safe_reactive(group_comp_data),
             col_map = safe_reactive(measurement_col_map_r),
-            annotation_table = if (is.data.frame(input_variable)) input_variable else NULL
+            annotation_table = if (is.data.frame(input_variable)) input_variable else NULL,
+            default_quantity_cols_r = safe_reactive(default_quantity_cols_r)
           ),
           envir = new.env(parent = globalenv())
         )

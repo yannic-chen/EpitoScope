@@ -33,6 +33,8 @@ Task List
 - [ ] Ability to remove specifc measurements from samples
 - [ ] Add a status notification on whether calculations is being done and what is being done. Especially important for the report generation.
 - [ ] Improve report download handler to be faster.
+- [ ] Add normalization methods options for group based analysis
+- [ ] More variable handling of reported decoys. DIA-NN now also reports decoy with the "rev_" prefix
 
 ### Maybe?
 - [ ] Flexible Length Range Percentage plot for MHC2 and perhaps other species

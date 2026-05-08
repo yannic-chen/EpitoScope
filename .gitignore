@@ -6,3 +6,4 @@
 *.Rproj
 *.xlsx
 .Rproj.user
+data_loading.R
