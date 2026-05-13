@@ -567,14 +567,14 @@ plot_motif_grid(
 ```{r distr_unique_peptides}
 incProgress(1/chunk_num, detail = "Unique Entries: Peptides ...")
 plot_unique_counts(data_list, column = "STRIPPED", y_label = "Number of unique peptides",
-                       color = color_palette, quantity_cols = default_quantity_cols_r())
+                       color = color_palette, quantity_cols = default_quantity_cols_r)
 ```
 
 ### Peptidoforms
 
 ```{r distr_unique_peptidoforms}
 incProgress(1/chunk_num, detail = "Unique Entries: Peptidoform...")
-plot_unique_counts(data_list, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = color_palette, quantity_cols = default_quantity_cols_r())
+plot_unique_counts(data_list, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = color_palette, quantity_cols = default_quantity_cols_r)
 ```
 
 ### Proteins
@@ -582,7 +582,7 @@ plot_unique_counts(data_list, column = "PEPTIDE", y_label = "Number of unique pe
 ```{r distr_unique_Proteins}
 incProgress(1/chunk_num, detail = "Unique Entries: Proteins...")
 plot_unique_counts(data_list, column = "PROTEIN", y_label = "Number of unique proteins",
-                   transform_fn = extract_protein_prefixes, color = color_palette, quantity_cols = default_quantity_cols_r())
+                   transform_fn = extract_protein_prefixes, color = color_palette, quantity_cols = default_quantity_cols_r)
 ```
 
 
