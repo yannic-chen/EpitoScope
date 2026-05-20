@@ -488,7 +488,7 @@ plot_motif_grid <- function(lst, lengths, ncol = 3,
     
     patchwork::wrap_plots(
       c(sample_plots),
-      ncol = length(lst) + 1
+      ncol = length(lst)
     )
   })
   
@@ -632,7 +632,6 @@ check_annotation_table <- function(df) {
     df %>%
       dplyr::select(all_of(c("name", condition_cols, replicate_cols))) %>%
       dplyr::group_by(name) %>%
-      dplyr::distinct(name) %>%
       dplyr::summarise(n = n(), .groups = "drop") %>%
       { 
         if (any(.$n > 1)) {
@@ -1033,6 +1032,7 @@ normalize_df <- function(df) {
     }
     
   }
+  
   if(software == "DIANN_parquet") {
     columns_to_keep <- c("Run", "Modified.Sequence", "Stripped.Sequence", "Precursor.Charge", "Precursor.Mz", "Protein.Names", "RT", "IM", "Precursor.Quantity", "Q.Value")
     
@@ -1043,7 +1043,7 @@ normalize_df <- function(df) {
         names_from  = Run,
         values_from = Precursor.Quantity,
         names_prefix = "Precursor.Quantity.",
-        values_fn = ~ if (all(is.null(.x))) NA_real_ else max(.x, na.rm = TRUE),
+        values_fn = ~ if (all(is.na(.x))) NA_real_ else max(.x, na.rm = TRUE),
         values_fill = NA_real_
         )
     
@@ -1063,7 +1063,7 @@ normalize_df <- function(df) {
   original <- res$log
   
   #These two columns are the minimum required. If there is no PTM, PEPTIDE will simply be the same as STRIPPED.
-  if (any(sapply(df, function(data) c("PEPTIDE", "STRIPPED") %in% colnames(data)))) { 
+  if (!all(c("PEPTIDE", "STRIPPED") %in% colnames(df))) { 
     stop(sprintf("Either PEPTIDE or STRIPPED column missing in one or more dataframes."))
     }
   
@@ -1179,7 +1179,7 @@ normalize_df <- function(df) {
   }
 
   #In case we can use Quantity columns (sample) as indicator of Spectral match
-  if (length(spec) == 0) {
+  if (!any(spec)) {
     original <- bind_rows(original, data.frame(final_name="SPECTRA", original_name=list(colnames(df[,sample, drop = FALSE])))) #We use the same columns as Intensity for Spectra found per sample in Fragpipe
   } else {
     df[, spec][df[, spec] == 0] <- NA #For spectra column, the 0 actually means not identified. We need these to be converted to 0 to work with FragPipe format for data completeness plot.
@@ -1474,10 +1474,6 @@ plot_histogram <- function(df, column, x_label, title_name = "RT plot", color = 
     ) +
     theme_minimal()
   
-  if (!is.null(color)) {
-    p <- p + scale_fill_manual(values = color)
-  }
-  
   return(p)
 }
 
@@ -1542,7 +1538,7 @@ plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, 
     # Default: count
     p <- ggplot(combined, aes_string(x = "Sample", fill = column)) +
       geom_bar(position = "stack") +
-      geom_text_repel(stat = "count", aes(label = ..count..), position=position_stack(vjust = 0.5), direction="y") +
+      geom_text_repel(stat = "count", aes(label = after_stat(count)), position=position_stack(vjust = 0.5), direction="y") +
       labs(x = "Sample", y = "Count", fill = fill_label) +
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -1653,7 +1649,7 @@ plot_length_distribution <- function(lst, color = "default") {
     color <- NULL  # ggplot will use default fill colors
   } else {
     cols <- viridis(length(lst), option = color)
-    color <- setNames(cols, length(lst))
+    color <- setNames(cols, names(lst))
   }
   
   # Combine datasets into one long dataframe
@@ -2540,12 +2536,13 @@ plot_PCA <- function(lst, color = "default") {
     ylab(paste0("PC2 (", round(summary(pca)$importance[2,2]*100,1), "%)")) +
     theme_minimal()
   
-  if (color == "default") {
-    return(p)
-  } else {
-    p <- p + scale_color_manual(values = color)
-    return(p)
+  #Currently thiscode is redundant, since there is no color variable in aes(). All dots are black. It might be useful to have colours in some scenarios, especially with the annotation table.
+  if (color != "default") {
+    cols <- setNames(viridis(nrow(df), option = color), df$Sample)
+    p <- p + scale_color_manual(values = cols)
   }
+  
+  return(p)
 }
 
 plot_binders <- function(df, color = "default", percent = TRUE, alleles = NULL) {
@@ -2832,6 +2829,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
   
   # ── Build long-format data ──────────────────────────────────────────────────
   build_long <- function(grp_items, grp_name, allowed) {
+    #this is the standard sample mode: if no annotation table measurement data is given.
     if (!use_measurements) {
       dplyr::bind_rows(lapply(grp_items, function(s) {
         df <- lst[[s]]
@@ -2843,6 +2841,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
         dplyr::mutate(Quantity = replace(Quantity, Quantity == 0, NA),
                       Group = grp_name)
     } else if (is.list(grp_items) && !is.null(grp_items$measurement)) {
+      #this is if the annotation table is given and also has measurement column.
       # grp_items = list(name = c(...), measurement = c(...)), parallel vectors
       measurements <- grp_items$measurement
       names_vec    <- grp_items$name
@@ -2875,7 +2874,17 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
         df
       }))
     } else {
-      return(dplyr::bind_rows(lapply(grp_items, function(s) { ... })))  # fallback to sample mode
+      #fallback method, in unforseen circumstances.
+      print("[compute_group_comp_stats - build_long] Fallback branch. investigate why.")
+      dplyr::bind_rows(lapply(grp_items, function(s) {
+        df <- lst[[s]]
+        cols <- intersect(c(pep_col, quantity_cols, "PROTEIN"), colnames(df))
+        df[df[[pep_col]] %in% allowed, cols, drop = FALSE]
+      })) %>%
+        tidyr::pivot_longer(cols = dplyr::any_of(quantity_cols),
+                            names_to = "Sample", values_to = "Quantity") %>%
+        dplyr::mutate(Quantity = replace(Quantity, Quantity == 0, NA),
+                      Group = grp_name)
     }
     
   }
@@ -2884,8 +2893,6 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
     build_long(grp_g1, g1, allowed_peptides_g1),
     build_long(grp_g2, g2, allowed_peptides_g2)
   )
-  
-  tmp_df_long <<- df_long
   
   if (nrow(df_long) == 0) return(NULL)
   if (!"Quantity" %in% colnames(df_long)) {
@@ -2941,7 +2948,9 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
   }
   
   if (use_limma) {
-    pval_df     <- safe_limma_pvals(df_long, g1, g2, pep_col)
+    df_g1 <- df_long[df_long$Group == g1, ]
+    df_g2 <- df_long[df_long$Group == g2, ]
+    pval_df <- safe_limma_pvals(df_g1, df_g2, "Quantity", "Quantity", pep_col)
     test_method <- "limma (n=1 fallback)"
   } else {
     pval_df <- df_long %>%

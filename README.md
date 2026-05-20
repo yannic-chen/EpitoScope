@@ -37,6 +37,7 @@ Task List
 - [ ] Add normalization methods options for group based analysis
 - [ ] More variable handling of reported decoys. DIA-NN now also reports decoy with the "rev_" prefix
 - [ ] Allow more species in the app. For example, HLA nomenclature is different for mouse.
+- [ ] Annotation table condition applying colour to PCA plot
 
 ### Maybe?
 - [ ] Flexible Length Range Percentage plot for MHC2 and perhaps other species

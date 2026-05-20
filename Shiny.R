@@ -123,11 +123,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         if (replace_schema) {
           signature <<- list()
           message(paste0("Replace default signature"))
-        } 
-        
-        for (nm in names(custom_signature)) {
-          signature[[nm]] <<- custom_signature[[nm]]
-          message(paste0("Registered custom signature: '", nm, "'"))
         }
       }
       
@@ -412,7 +407,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$annotation_table <- DT::renderDT({
     if(!annotation_provided()){
       updatebs4Card(id = "annotation_card", session = session, action = "remove")
-      shiny::validate("No annotation table provided.")
+      shiny::validate(shiny::need(FALSE, "No annotation table provided."))
     }
     
     ann <- input_variable
@@ -1203,19 +1198,18 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       list(name = result_df$name[result_df$result], expr = expr)
     }
     
-    if (length(selected) == 0) {
+    if (length(selected$name) == 0) {
       showNotification("Expression matches no samples.", type = "warning")
       return()
     }
     
     groups[[nm]] <- selected
-    tmp_groups <<- groups
     condition_groups_r(groups)
     
     active_expr_r(list())
     editing_group_r(NULL)
     updateTextInput(session, "cond_group_name", value = "")
-    showNotification(paste0("Group '", nm, "' saved (", length(selected), " samples)."), type = "message")
+    showNotification(paste0("Group '", nm, "' saved (", length(selected$name), " samples)."), type = "message")
   })
   
   # Register per-group edit/delete observers dynamically
@@ -1263,7 +1257,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
                  tags$div(class = "d-flex justify-content-between align-items-center",
                           tags$strong(nm),
                           tags$span(class = "badge badge-secondary mr-auto ml-2",
-                                    paste(length(g$samples), "samples")),
+                                    paste(length(g$names), "samples")),
                           tags$div(
                             actionButton(paste0("cond_edit_",   nm), icon("pencil-alt"),
                                          class = "btn-sm btn-outline-primary mr-1",   title = "Edit"),
@@ -1440,8 +1434,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
 
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
     
-    plot_heatmap(pep_mat, color = input$color_palette, transpose = TRUE, log_transform = TRUE)
-
+    ht <- plot_heatmap(pep_mat, color = input$color_palette, transpose = TRUE, log_transform = TRUE)
+    safe_draw(ht)
   })
   
   ## ----Group statistical analysis----
@@ -1523,7 +1517,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       # Generate the tabsetPanel from the list
       do.call(tabsetPanel, c(id = "volcano_comparison_tabs", comparison_tabs))
     })
-    
+    uiOutput("volcano_comparison_tabs")
   })
   
   # Render each volcano plot (optimized)
@@ -1537,8 +1531,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       local({
         plot_name <- name
         df <- volcano_list[[plot_name]]
-        
-        temp_df <<- df
         
         #Significance calculation
         df$Significance <- ifelse(
@@ -1668,7 +1660,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       )
     })
     
-    do.call(tabsetPanel, c(list(id = "motif_length_tabs"), length_tabs))
+    do.call(tabsetPanel, c(list(id = "ptm_motif_length_tabs"), length_tabs))
   })
   
   observe({
@@ -1694,7 +1686,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
             
             # subset by length
             df_L <- df[df$LENGTH == length_val, ]
-            df_L <- df[df$PTM != "", ]
+            df_L <- df_L[df_L$PTM != "", ]
             
             peptides <- unique(df_L[["PTM_Pseudo"]])
             peptides <- peptides[nchar(peptides) == length_val]
@@ -1912,7 +1904,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   # All peptides
   output$dl_all <- downloadHandler(
     filename = function() { paste0("peptides_all_", Sys.Date(), ".csv") },
-    content = function(file) {
+    content  = function(file) {
+      df <- peptide_wide_unique()
+      write.csv(df, file, row.names = FALSE, quote = FALSE)
     }
   )
   
