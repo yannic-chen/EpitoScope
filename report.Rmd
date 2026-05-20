@@ -608,14 +608,14 @@ plot_per_sample_grid(
 
 ```{r dynrange_combined}
 incProgress(1/chunk_num, detail = "Dynamic Range Combined...")
-dynamic_range_plot_combined(df_list = processed_list, data_col = "MAX_QUANTITY")
+dynamic_range_plot_combined(df_list = processed_list, data_col = "MAX_QUANTITY", color = color_palette)
 ```
 
 ## 1/k0 vs m/z
 
 ```{r k0_vs_mz_grid, fig.height=5}
 incProgress(1/chunk_num, detail = "1/k0 vs m/z...")
-scatter_list <- generate_scatterplots(processed_list)
+scatter_list <- generate_scatterplots(processed_list, color = color_palette)
 scatter_list <- Filter(Negate(is.null), scatter_list)
 
 if (length(scatter_list) == 0) {

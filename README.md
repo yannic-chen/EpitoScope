@@ -22,6 +22,7 @@ Task List
 - [ ] Make the precomputed data more efficient. Parquet for reading and merge the different length together, by using the first # letters for each max_length peptide as the #mer peptide.
 - [X] Limit HLA allele for binding prediction, so the plots and stats only incorporate relevant HLA and not everything.
 - [X] MHC prediction supports all alleles that netMHCpan supports, but visualization only uses "HLA" prefix to find the necessary columns.
+- [ ] Support netMHCpan calling for linux and mac.
 - [ ] Add option of different binding prediction binder threshold (e.g. for HLA2)
 - [ ] Add more plots to binding prediction to better mimic MhcVizPip
 - [ ] Decide on how to download the binding Data.
@@ -35,6 +36,7 @@ Task List
 - [ ] Improve report download handler to be faster.
 - [ ] Add normalization methods options for group based analysis
 - [ ] More variable handling of reported decoys. DIA-NN now also reports decoy with the "rev_" prefix
+- [ ] Allow more species in the app. For example, HLA nomenclature is different for mouse.
 
 ### Maybe?
 - [ ] Flexible Length Range Percentage plot for MHC2 and perhaps other species

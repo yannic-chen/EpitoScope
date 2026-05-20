@@ -2164,6 +2164,15 @@ generate_scatterplot <- function(df, s_name, color = "default") {
   p
 }
 
+generate_scatterplots <- function(data_list, color = "default") {
+  lapply(names(data_list), function(nm) {
+    tryCatch(
+      generate_scatterplot(data_list[[nm]], nm, color = color),
+      error = function(e) NULL
+    )
+  }) |> setNames(names(data_list))
+}
+
 plot_completeness <- function(lst, spectra_cols, percent = FALSE, title = "Data Completeness",color = "default") {
   
   make_completeness <- function(df, spectra_cols) {
