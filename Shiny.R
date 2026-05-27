@@ -293,19 +293,40 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
 #-------------------Data Transformation tab-----------------------
+  # Add delayed reaction
+  filter_inputs <- reactive({
+    list(
+      samples               = input$selected_samples,
+      length_range          = input$length_range,
+      quantity_range        = input$quantity_range,
+      score_range           = input$score_range,
+      charge_range          = input$charge_range,
+      mass_range            = input$mass_range,
+      RT_range              = input$RT_range
+    )
+  })
+  
+  filter_inputs_d <- debounce(filter_inputs, millis = function() {
+    isolate({
+      delay_s <- input$debounce_delay_s
+      if (is.null(delay_s) || is.na(delay_s) || delay_s < 0) return(2000)
+      as.integer(delay_s * 1000)
+    })
+  })
   
   # Preprocessing data to align it with GUI
   processed_data_list <- reactive({
+    
     lst <- active_data_list()  # Only selected samples
     req(lst)
     
     filters <- list(
-      length_range   = input$length_range,
-      quantity_range = input$quantity_range,
-      score_range    = input$score_range,
-      charge_range   = input$charge_range,
-      mass_range     = input$mass_range,
-      RT_range       = input$RT_range
+      length_range   = filter_inputs_d()$length_range,
+      quantity_range = filter_inputs_d()$quantity_range,
+      score_range    = filter_inputs_d()$score_range,
+      charge_range   = filter_inputs_d()$charge_range,
+      mass_range     = filter_inputs_d()$mass_range,
+      RT_range       = filter_inputs_d()$RT_range
     )
     apply_filters(lst, filters)
   })

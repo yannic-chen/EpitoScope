@@ -34,8 +34,32 @@ ui <- bs4DashPage(
     title = dashboardBrand(
       title = "EpitoScope",
       color = "primary",
-      #href = "https://adminlte.io/themes/v3", #host link
-      #image = "https://adminlte.io/themes/v3/dist/img/AdminLTELogo.png"#add image
+      href = "https://github.com/yannic-chen/EpitoScope",
+      image = "www/Epitoscope.png"
+    ),
+    rightUi = tags$li(
+      class = "nav-item dropdown d-flex align-items-center px-3",
+      tags$div(
+        style = "display: flex; align-items: center; gap: 6px;",
+        tags$span(
+          "",
+          bs4Dash::tooltip(
+            icon("info-circle"),
+            title     = "How long (seconds) to wait after the last filter change before recomputing plots. Higher = less interruptions.",
+            placement = "bottom"
+          ),
+          style = "color: rgba(0,0,0,1); font-size: 11px; white-space: nowrap;"
+        ),
+        numericInput(
+          inputId = "debounce_delay_s",
+          label   = NULL,
+          value   = 2,
+          min     = 0,
+          max     = 30,
+          step    = 0.5,
+          width   = "70px"
+        )
+      )
     ),
     navbarMenu(
       id = "navmenu",
