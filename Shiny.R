@@ -302,7 +302,10 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       score_range           = input$score_range,
       charge_range          = input$charge_range,
       mass_range            = input$mass_range,
-      RT_range              = input$RT_range
+      RT_range              = input$RT_range,
+      upset_min_size    = input$upset_min_size,
+      upset_min_degree  = input$upset_min_degree,
+      upset_n_intersect = input$upset_n_intersect
     )
   })
   
@@ -886,9 +889,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     check_data_error(lst, na_policy = "ignore") #By default plot_upset takes STRIPPED column. Need to adjust if we take PEPTIDE column instead.
     shiny::validate(shiny::need(length(lst) >= 2, "Need 2 or more samples to plot"))
     plot_upset(lst,
-               min_size        = input$upset_min_size,
-               min_degree      = input$upset_min_degree,
-               n_intersections = input$upset_n_intersect)
+               min_size        = filter_inputs_d()$upset_min_size,
+               min_degree      = filter_inputs_d()$upset_min_degree,
+               n_intersections = filter_inputs_d()$upset_n_intersect)
   })
   
   ## ----Pairwise comparison of shared peptides----
