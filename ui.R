@@ -35,7 +35,7 @@ ui <- bs4DashPage(
       title = "EpitoScope",
       color = "primary",
       href = "https://github.com/yannic-chen/EpitoScope",
-      image = "www/Epitoscope.png"
+      image = "Epitoscope.png"
     ),
     rightUi = tags$li(
       class = "nav-item dropdown d-flex align-items-center px-3",

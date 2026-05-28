@@ -1,6 +1,8 @@
 # EpitoScope
 Shiny App for visualization of immunopeptidomics data
 
+<img src="assets/Epitoscope.png" width="300">
+
 ## WIP
 Task List
 - [X] Create Error Handler
@@ -32,12 +34,13 @@ Task List
 - [ ] Document each function
 - [ ] Convert to Package
 - [ ] Ability to remove specifc measurements from samples
-- [ ] Add a status notification on whether calculations is being done and what is being done. Especially important for the report generation.
+- [x] Add a status notification for the report generation.
 - [ ] Improve report download handler to be faster.
 - [ ] Add normalization methods options for group based analysis
 - [ ] More variable handling of reported decoys. DIA-NN now also reports decoy with the "rev_" prefix
 - [ ] Allow more species in the app. For example, HLA nomenclature is different for mouse.
 - [ ] Annotation table condition applying colour to PCA plot
+- [x] Handle the reactive nature better to allow more filtering adjustments before plot update.
 
 ### Maybe?
 - [ ] Flexible Length Range Percentage plot for MHC2 and perhaps other species
@@ -149,7 +152,7 @@ Then we install netMHCpan on the WSL.
   pwd
   ```
 9. Set the `netmcpan_path` in the Shiny.R script to the path you just copied:
-![alt text](image-2.png)
+![alt text](assets/image-2.png)
 
 ## Usage
 1. Open Shiny.R with Rstudio
@@ -165,26 +168,26 @@ preloaded_data
 ```
 5. In Shiny.R the "Run" button will be replaced by the "Run App" button. Click it and the app will start in a separate window.
 
-![alt text](image.png)
+![alt text](assets/image.png)
 
 ### Adding custom schema
 At the top of global.R, some preset schema are defined for common MS software output formats:
 
-![alt text](image-3.png)
+![alt text](assets/image-3.png)
 
 Futhermore, Just below the `column_schema` variable is the `signature` variable, which is used to automatically detect the input data format based on a unique column specific to that software output:
 
-![alt text](image-4.png)
+![alt text](assets/image-4.png)
 
 **The App generates a "generic" schema which is the collection of all schemes and is used if no signature can be assigned to the input data.**
 
 These two can be updated manually, but a custom format can also be assigned on-the-go as part of a variable. For the custom `column_schema` the minimum requirement is either "PEPTIDE" or "STRIPPED" column. Missing column will be filled with empty data if not deriveable. A custom `signature` is optional, but is helpful to identify the data format to assign the schema. Multiple custom schema can be included:
 
-![alt text](image-5.png)
+![alt text](assets/image-5.png)
 
 If for some reason, the signature or schema might clash with the default data, one can opt to replace the default schema with the custom schema by setting `replace_schema = TRUE`. Both the custom schema/signature and the replace schema are found at the end of the Shiny.R script:
 
-![alt text](image-7.png)
+![alt text](assets/image-7.png)
 
 (An interesting trick is that if one want to apply the generic schema on all input data, then one can create an empty `custom_signature` and use `replace_schema = TRUE`, so that there are no signatures that can be used to identify the input data.)
 

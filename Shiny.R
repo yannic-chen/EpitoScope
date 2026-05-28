@@ -1399,7 +1399,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     req(groups, length(groups) >= 2)
     col_map <- measurement_col_map_r()
     
-    pep_col <- "PEPTIDE"
+    pep_col <- "STRIPPED"
     
     lapply(names(groups), function(g) {
       grp <- groups[[g]]
