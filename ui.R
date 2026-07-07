@@ -375,7 +375,10 @@ ui <- bs4DashPage(
                     column(4, numericInput("upset_min_degree",  "Min. degree:",            value = 1,  min = 1, step = 1)),
                     column(4, numericInput("upset_n_intersect", "Max. intersections:",     value = 40, min = 3, step = 1))
                   ),
-                  plotOutput("upset_plot")
+                  plotOutput("upset_plot"),
+                  tags$hr(),
+                  helpText("Click a row below to explore the peptides in that intersection."),
+                  DT::DTOutput("upset_intersection_table")
                   ),
           
           ### ---- Pairwise shared peptide matrix ----

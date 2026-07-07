@@ -41,6 +41,7 @@ Task List
 - [ ] Allow more species in the app. For example, HLA nomenclature is different for mouse.
 - [ ] Annotation table condition applying colour to PCA plot
 - [x] Handle the reactive nature better to allow more filtering adjustments before plot update.
+- [ ] Return netMHCpan results location, so user can save it up.
 
 ### Maybe?
 - [ ] Flexible Length Range Percentage plot for MHC2 and perhaps other species

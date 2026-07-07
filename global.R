@@ -1062,11 +1062,6 @@ normalize_df <- function(df) {
   df <- res$df
   original <- res$log
   
-  #These two columns are the minimum required. If there is no PTM, PEPTIDE will simply be the same as STRIPPED.
-  if (!all(c("PEPTIDE", "STRIPPED") %in% colnames(df))) { 
-    stop(sprintf("Either PEPTIDE or STRIPPED column missing in one or more dataframes."))
-    }
-  
   #-------------Derive missing columns if possible----------------
   #CHARGE
   if (!"CHARGE" %in% colnames(df)) {
@@ -1126,6 +1121,10 @@ normalize_df <- function(df) {
     }
   }
   
+  #These two columns are the minimum required. If there is no PTM, PEPTIDE will simply be the same as STRIPPED.
+  if (!all(c("PEPTIDE", "STRIPPED") %in% colnames(df))) { 
+    stop(sprintf("Either PEPTIDE or STRIPPED column missing in one or more dataframes."))
+  }
   
   #-------------Quantity -----------------
   # 1. Check schema-defined candidates first (prefix match to capture multi-sample columns)
@@ -2274,6 +2273,42 @@ plot_upset <- function(data_list, min_size = 2, min_size_is_percent = TRUE, titl
   ) + ggtitle(title))
   
   return(p)
+}
+
+compute_upset_intersections <- function(data_list, stripped = TRUE,
+                                        min_size = 2, min_degree = 1,
+                                        n_intersections = 40) {
+  col  <- if (stripped) "STRIPPED" else "PEPTIDE"
+  sets <- lapply(data_list, function(df) {
+    if (is.null(df) || !col %in% names(df)) return(NULL)
+    unique(df[[col]])
+  })
+  sets <- Filter(function(s) !is.null(s) && length(s) > 0, sets)
+  if (length(sets) < 2) return(list())
+  
+  all_items  <- unique(unlist(sets))
+  if (length(all_items) == 0) return(list())
+  sample_nms <- names(sets)
+  
+  membership <- matrix(FALSE, nrow = length(all_items), ncol = length(sample_nms),
+                       dimnames = list(all_items, sample_nms))
+  for (s in sample_nms) membership[all_items %in% sets[[s]], s] <- TRUE
+  
+  profiles       <- apply(membership, 1, function(row) paste(sample_nms[row], collapse = " & "))
+  profile_groups <- split(all_items, profiles)
+  
+  # Assign names BEFORE Filter so they survive filtering
+  candidates        <- lapply(names(profile_groups), function(profile) {
+    peps   <- profile_groups[[profile]]
+    degree <- length(strsplit(profile, " & ")[[1]])
+    if (length(peps) >= min_size && degree >= min_degree) peps else NULL
+  })
+  names(candidates) <- names(profile_groups)
+  results           <- Filter(Negate(is.null), candidates)
+  
+  results <- results[order(sapply(results, length), decreasing = TRUE)]
+  if (length(results) > n_intersections) results <- results[seq_len(n_intersections)]
+  results
 }
 
 plot_shared_peptide <- function(lst, color = "default", mode = c("count", "percent"), percent_type = c("min", "union")) {

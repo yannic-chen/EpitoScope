@@ -894,6 +894,105 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
                n_intersections = filter_inputs_d()$upset_n_intersect)
   })
   
+  ### ---- Intersection data ----
+  upset_intersections <- reactive({
+    lst <- processed_data_list()
+    check_data_error(lst, na_policy = "ignore")
+    shiny::validate(shiny::need(length(lst) >= 2, "Need 2 or more samples"))
+    compute_upset_intersections(
+      lst,
+      stripped        = TRUE,
+      min_size        = input$upset_min_size,
+      min_degree      = input$upset_min_degree,
+      n_intersections = input$upset_n_intersect
+    )
+  })
+  
+  ### ---- Intersection table ----
+  output$upset_intersection_table <- DT::renderDT({
+    ints <- upset_intersections()
+    df   <- data.frame(
+      Intersection = names(ints),
+      Count        = sapply(ints, length),
+      stringsAsFactors = FALSE
+    )
+    DT::datatable(
+      df,
+      selection = "single",
+      rownames  = FALSE,
+      options   = list(pageLength = 10, dom = "frtip")
+    )
+  })
+  
+  ### ---- Modal on row click ----
+  observeEvent(input$upset_intersection_table_rows_selected, {
+    row  <- input$upset_intersection_table_rows_selected
+    ints <- upset_intersections()
+    nm   <- names(ints)[row]
+    peps <- ints[[nm]]
+    
+    # Compute how many length panels we'll need for dynamic height
+    lengths_present <- sort(unique(nchar(peps)))
+    lengths_present <- lengths_present[lengths_present >= 7 & lengths_present <= 15]
+    n_rows_motif    <- max(1, ceiling(length(lengths_present) / 3))
+    plot_height     <- paste0(n_rows_motif * 220, "px")
+    
+    showModal(modalDialog(
+      title      = paste0("Intersection: ", nm, "  (n = ", length(peps), ")"),
+      size       = "xl",
+      easyClose  = TRUE,
+      
+      h5("Sequence Motifs"),
+      plotOutput("upset_modal_motif", height = plot_height),
+      tags$hr(),
+      downloadButton("upset_modal_download", "Download peptide list (.csv)"),
+      footer = modalButton("Close")
+    ))
+    
+    # Motif plot — one panel per length
+    output$upset_modal_motif <- renderPlot({
+      if (length(lengths_present) == 0) {
+        return(
+          ggplot() +
+            annotate("text", x = .5, y = .5,
+                     label = "No peptides with length 7–15 in this intersection.",
+                     size = 5, color = "grey40") +
+            theme_void()
+        )
+      }
+      
+      plots <- lapply(lengths_present, function(L) {
+        p <- tryCatch(
+          plot_seqlogo(peps[nchar(peps) == L], title = paste("Length", L)),
+          error = function(e) NULL
+        )
+        if (is.null(p)) {
+          ggplot() +
+            annotate("text", x = .5, y = .5,
+                     label = paste("Length", L, ": too few peptides (< 5)"),
+                     size = 4, color = "grey50") +
+            theme_void()
+        } else {
+          p
+        }
+      })
+      
+      patchwork::wrap_plots(plots, ncol = min(3, length(plots)))
+    })
+    
+    # Download handler
+    output$upset_modal_download <- downloadHandler(
+      filename = function() {
+        safe_nm <- gsub(" & ", "_", nm)
+        safe_nm <- gsub("[^A-Za-z0-9_]", "", safe_nm)
+        paste0("intersection_", safe_nm, ".csv")
+      },
+      content = function(file) {
+        writeLines(peps, file)
+      }
+    )
+  })
+  
   ## ----Pairwise comparison of shared peptides----
   output$Pairwise_shared_peptide_matrix <- renderPlot({
     lst <- processed_data_list()
@@ -2045,7 +2144,8 @@ shinyApp(
   ui = ui,
   server = function(input, output, session) {
     server(input, output, session, 
-           input_variable = preloaded_data, 
+           #input_variable = annotation_COGNATE_MM_noCEDAR_5,
+           input_variable = test_annotation,
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 
