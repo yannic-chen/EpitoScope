@@ -826,7 +826,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     }
       
     if(input$cluster_mode_ea == "sample") {
-      ht <- plot_heatmap(cor_mat,color = input$color_palette, row_groups = groups, col_groups = groups, label = "Pearson", fontsize = fs)
+      ht <- plot_heatmap(cor_mat,color = input$color_palette, cluster = "none", row_groups = groups, col_groups = groups, label = "Pearson", fontsize = fs)
     } else if (input$cluster_mode_ea == "mix") {
       ht <- plot_heatmap(cor_mat,color = input$color_palette, cluster = "rows",row_groups = NULL, col_groups = groups, label = "Pearson", fontsize = fs)
     } else {

@@ -35,6 +35,7 @@ library(data.table)
 library(stringr)
 library(reshape2)
 library(curl)
+library(anticlust) #this is used for same size clustering to speed up heatmap generation for large datasets by clustering datapoints together.
 library(limma) #only for grouped comparison when only 1 measurement exists in the group. Limma is used to infer p-value.
 #These are for plotting
 library(viridis)
@@ -58,6 +59,11 @@ library(igraph)
 library(ggraph)
 library(tidyverse)
 
+if (requireNamespace("fastcluster", quietly = TRUE)) {
+  hclust_fn <- fastcluster::hclust
+} else {
+  hclust_fn <- stats::hclust
+}
 
 #-----------Column extraction------------
 # Here we initiate all the possible column names important for us from all different input formats
@@ -1303,10 +1309,10 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
         entry <- col_map[[meas]]
         if (is.null(entry)) return(NULL)
         df <- lst[[nm]]
-        if (is.null(df) || !"PEPTIDE" %in% colnames(df)) return(NULL)
+        if (is.null(df) || !"STRIPPED" %in% colnames(df)) return(NULL)
         actual_col <- colnames(df)[tolower(colnames(df)) == tolower(entry$col)][1]
         if (is.na(actual_col)) return(NULL)
-        df_sub <- df[df$PEPTIDE %in% allowed_peptides, c("PEPTIDE", actual_col), drop = FALSE]
+        df_sub <- df[df$STRIPPED %in% allowed_peptides, c("STRIPPED", actual_col), drop = FALSE]
         names(df_sub)[names(df_sub) == actual_col] <- "Quantity"
         df_sub$Quantity[df_sub$Quantity == 0] <- NA #set 0 to NA
         df_sub
@@ -1315,27 +1321,32 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
       if (is.null(df_group) || nrow(df_group) == 0) next
       
       agg <- df_group %>%
-        dplyr::group_by(PEPTIDE) %>%
+        dplyr::group_by(STRIPPED) %>%
         dplyr::summarise(value = max(Quantity, na.rm = TRUE), .groups = "drop")
     } else {
       # Sample mode: each item is a sample name
       df_group <- dplyr::bind_rows(lapply(group_items, function(s) {
         df <- lst[[s]]
-        cols <- dplyr::intersect(c("PEPTIDE", quantity_cols), colnames(df))
+        cols <- dplyr::intersect(c("STRIPPED", quantity_cols), colnames(df))
         if (length(cols) < 2) return(NULL)
         df[, cols, drop = FALSE]
       }))
       
       if (is.null(df_group) || nrow(df_group) == 0) next
       
-      df_group <- df_group[df_group$PEPTIDE %in% allowed_peptides, ]
+      df_group <- df_group[df_group$STRIPPED %in% allowed_peptides, ]
       
-      agg <- df_group %>%
-        dplyr::group_by(PEPTIDE) %>%
-        dplyr::summarise(value = max(dplyr::c_across(dplyr::any_of(quantity_cols)), na.rm = TRUE), .groups = "drop")
+      # Vectorized row-wise max — avoids c_across row-by-row overhead
+      qty_present  <- intersect(quantity_cols, colnames(df_group))
+      qty_mat      <- as.matrix(df_group[, qty_present, drop = FALSE])
+      df_group$value <- do.call(pmax, c(as.data.frame(qty_mat), list(na.rm = TRUE)))
+      
+      agg <- df_group[, c("STRIPPED", "value")] |>
+        dplyr::group_by(STRIPPED) |>
+        dplyr::summarise(value = max(value, na.rm = TRUE), .groups = "drop")
     }
     
-    pep_mat[agg$PEPTIDE, g] <- agg$value
+    pep_mat[agg$STRIPPED, g] <- agg$value
   }
   
   # Drop peptides not identified in any group (i.e. NA in both groups)
@@ -1344,7 +1355,70 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
   pep_mat
 }
 
-
+## This is for heatmap generation of the grouped comparison where each column is a peptide. 
+## In cases of very large number of peptides, this is not possible to show, thus we "bin" them to improve visualization.
+bin_heatmap_columns <- function(mat, max_cols = 500) {
+  if (ncol(mat) <= max_cols) return(mat)
+  n <- ncol(mat)
+  k <- min(max_cols, n)
+  mat_imp <- mat
+  mat_imp[is.na(mat_imp)] <- 0
+  
+  presence_key   <- apply(mat_imp > 0, 2, function(x) paste(as.integer(x), collapse = ""))
+  patterns       <- unique(presence_key)
+  pattern_counts <- setNames(sapply(patterns, function(p) sum(presence_key == p)), patterns)
+  
+  # Proportional allocation, immediately capped at actual peptide count
+  pattern_bins <- pmax(1L, floor(k * pattern_counts / n))
+  pattern_bins <- pmin(pattern_bins, pattern_counts)
+  names(pattern_bins) <- patterns
+  
+  # Redistribute remaining bins only to patterns that still have room
+  remaining <- k - sum(pattern_bins)
+  while (remaining > 0) {
+    can_expand <- patterns[pattern_counts[patterns] > pattern_bins[patterns]]
+    if (length(can_expand) == 0) break
+    n_add  <- min(remaining, length(can_expand))
+    add_to <- can_expand[order(pattern_counts[can_expand] - pattern_bins[can_expand],
+                               decreasing = TRUE)][seq_len(n_add)]
+    pattern_bins[add_to] <- pattern_bins[add_to] + 1L
+    remaining <- remaining - n_add
+  }
+  
+  all_bins <- unlist(lapply(patterns, function(pat) {
+    idx   <- which(presence_key == pat)
+    n_pat <- length(idx)
+    k_pat <- min(as.integer(pattern_bins[[pat]]), n_pat)
+    if (is.na(k_pat) || k_pat < 1L) k_pat <- 1L
+    
+    mat_pat <- mat[, idx, drop = FALSE]
+    
+    if (n_pat == 1 || k_pat == 1) {
+      result <- rowMeans(mat_pat, na.rm = TRUE)
+      result[is.nan(result)] <- NA
+      return(list(matrix(result, ncol = 1,
+                         dimnames = list(rownames(mat), paste0("bin_", pat, "_1")))))
+    }
+    
+    pc1 <- tryCatch(
+      prcomp(t(mat_imp[, idx, drop = FALSE]), center = TRUE, scale. = FALSE)$x[, 1],
+      error = function(e) seq_len(n_pat)
+    )
+    mat_pat <- mat_pat[, order(pc1), drop = FALSE]
+    
+    bin_ids <- ceiling(seq_len(n_pat) * k_pat / n_pat)
+    lapply(seq_len(k_pat), function(i) {
+      cols <- which(bin_ids == i)
+      if (length(cols) == 1) return(mat_pat[, cols, drop = FALSE])
+      result <- rowMeans(mat_pat[, cols, drop = FALSE], na.rm = TRUE)
+      result[is.nan(result)] <- NA
+      matrix(result, ncol = 1,
+             dimnames = list(rownames(mat), paste0("bin_", pat, "_", i)))
+    })
+  }), recursive = FALSE)
+  
+  do.call(cbind, all_bins)
+}
 
 prepare_measurement_matrix <- function(lst, quantity_cols) {
   
@@ -2357,11 +2431,22 @@ plot_shared_peptide <- function(lst, color = "default", mode = c("count", "perce
     )
   }
   
+  #fast clustering
+  row_dend <- if (nrow(shared_mat) > 1) {
+    function(m) fastcluster::hclust(dist(m), method = "complete")
+  } else FALSE
+  
+  col_dend <- if (ncol(shared_mat) > 1) {
+    function(m) fastcluster::hclust(dist(t(m)), method = "complete")
+  } else FALSE
+  
   Heatmap(
     shared_mat,
-    name = if (mode == "count") "# shared peptides" else "% shared peptides",
-    col = col_fun,
-    na_col = "grey90"
+    name    = if (mode == "count") "# shared peptides" else "% shared peptides",
+    col     = col_fun,
+    na_col  = "grey90",
+    cluster_rows    = row_dend,
+    cluster_columns = col_dend
   )
 }
 
@@ -2414,23 +2499,27 @@ plot_pairwise_peptide_quant_correlation <- function(lst, method = "pearson", min
     col_fun <- colorRamp2(mat_range, c(cols[1], cols[100]))
   }
   
+  do_rows <- cluster %in% c("rows", "both")
+  do_cols <- cluster %in% c("columns", "both")
+  
+  if (do_rows || do_cols) {
+    dend <- fastcluster::hclust(dist(cor_mat, method = "euclidean"), method = "complete")
+  }
+  row_dend <- if (do_rows) dend else FALSE
+  col_dend <- if (do_cols) dend else FALSE
+  
   Heatmap(
     cor_mat,
-    name = paste(method, "correlation"),
-    col = col_fun,
-    na_col = "grey90",
-    
-    cluster_rows    = cluster %in% c("rows", "both"),
-    cluster_columns = cluster %in% c("columns", "both"),
-    
-    clustering_distance_rows    = "euclidean",
-    clustering_distance_columns = "euclidean",
-    clustering_method_rows      = "complete",
-    clustering_method_columns   = "complete"
+    name    = paste(method, "correlation"),
+    col     = col_fun,
+    na_col  = "grey90",
+    cluster_rows    = row_dend,
+    cluster_columns = col_dend
+    # clustering_distance/method params removed — ignored when hclust passed
   )
 }
 
-plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster = "both", transpose = FALSE, row_groups = NULL, col_groups = NULL, label = "QUANTITY", fontsize = NULL) {
+plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster = "both", transpose = FALSE, row_groups = NULL, col_groups = NULL, label = "QUANTITY", fontsize = NULL, max_cols = 1000) {
   
   fs_row <- if (is.null(fontsize)) 8  else fontsize
   fs_col <- if (is.null(fontsize)) 10 else fontsize
@@ -2441,21 +2530,23 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
     mat[is.infinite(mat)] <- 0
   }
   
-  if (transpose) {
-    mat <- t(mat)
+  if (transpose) mat <- t(mat)
+  
+  if (ncol(mat) > max_cols) {
+      mat <- bin_heatmap_columns(mat, max_cols = max_cols)
   }
   
-  # Adaptive raster: render heatmap body as bitmap when matrix is large
-  n_cells <- nrow(mat) * ncol(mat)
+  # Raster decision on the FINAL matrix size
+  n_cells = nrow(mat) * ncol(mat)
   if (n_cells < 1000) {
-    use_raster    <- FALSE
-    raster_qual   <- 1
+    use_raster  <- FALSE
+    raster_qual <- 1
   } else if (n_cells < 10000) {
-    use_raster    <- TRUE
-    raster_qual   <- 2
+    use_raster  <- TRUE
+    raster_qual <- 2
   } else {
-    use_raster    <- TRUE
-    raster_qual   <- 1
+    use_raster  <- TRUE
+    raster_qual <- 1
   }
   
   # NA-safe distance: impute NA → 0 before computing distances so hclust
@@ -2480,22 +2571,13 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
   
   
   # ---- Handle grouping vs clustering ----
-  
-  # Rows
-  if (!is.null(row_groups)) {
-    row_groups <- as.factor(row_groups)
-    cluster_rows <- FALSE
-  } else {
-    cluster_rows <- cluster %in% c("rows", "both")
+  clust_fn <- function(m) {
+    m[is.na(m)] <- 0
+    fastcluster::hclust(dist(m), method = "complete")
   }
   
-  # Columns
-  if (!is.null(col_groups)) {
-    col_groups <- as.factor(col_groups)
-    cluster_cols <- FALSE
-  } else {
-    cluster_cols <- cluster %in% c("columns", "both")
-  }
+  row_clust_fn <- if (cluster %in% c("rows", "both"))    clust_fn else FALSE
+  col_clust_fn <- if (cluster %in% c("columns", "both")) clust_fn else FALSE
   
   # ---- Build heatmap ----
   
@@ -2508,21 +2590,13 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
     na_col = "grey90",
     
     # clustering
-    cluster_rows = cluster_rows,
-    cluster_columns = cluster_cols,
+    cluster_rows    = row_clust_fn,
+    cluster_columns = col_clust_fn,
     
-    clustering_distance_rows    = dist_na0,
-    clustering_distance_columns = dist_na0,
-    clustering_method_rows      = "complete",
-    clustering_method_columns   = "complete",
-    
-    # grouping (splitting)
-    row_split = row_groups,
+    row_split    = row_groups,
     column_split = col_groups,
-    
-    use_raster    = use_raster,
+    use_raster   = use_raster,
     raster_quality = raster_qual,
-    
     show_column_names = show_col_names,
     row_names_gp    = gpar(fontsize = fs_row),
     column_names_gp = gpar(fontsize = fs_col)
@@ -2828,12 +2902,18 @@ plot_aa_composition <- function(lst, color = "default",show_numbers = TRUE) {
     show_annotation_name = TRUE
   )
   
+  row_dend <- if (nrow(mat_diff) > 1) {
+    fastcluster::hclust(dist(mat_diff), method = "complete")
+  } else {
+    FALSE
+  }
+  
   Heatmap(
     mat_diff,
     name = "Abs. diff. to background",
     col = col_fun,
     top_annotation = top_anno,
-    cluster_rows = TRUE,
+    cluster_rows = row_dend,
     cluster_columns = FALSE,
     rect_gp = grid::gpar(col = "white"),
     cell_fun = cell_fun,
@@ -3612,3 +3692,5 @@ run_string <- function(df) {
     geom_node_text(aes(label = name), repel = TRUE) +
     theme_void()
 }
+
+
