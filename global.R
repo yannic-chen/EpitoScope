@@ -45,9 +45,11 @@ library(ggVennDiagram)
 library(plotly)
 library(ComplexUpset)
 library(ComplexHeatmap)
+library(InteractiveComplexHeatmap)
 library(circlize)
 library(grid)
 library(patchwork) #This is only used for the 1/k0 vs m/z plot. Could remove this by changing the code.
+library(callr)
 #These are exclusive for GO-term.
 library(clusterProfiler) #this one masks a lot of dplyr and other package functions
 library(org.Hs.eg.db)
@@ -2095,27 +2097,90 @@ plot_pairwise_peptide_quant_correlation <- function(lst, method = "pearson", min
   )
 }
 
-plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster = "both", transpose = FALSE, row_groups = NULL, col_groups = NULL, label = "QUANTITY") {
+bin_heatmap_columns <- function(mat, max_cols = 1000) {
+  if (ncol(mat) <= max_cols) return(mat)
+  n <- ncol(mat); k <- min(max_cols, n)
+  mat_imp <- mat; mat_imp[is.na(mat_imp)] <- 0
+  bin_map <- list()
+  presence_key <- apply(mat_imp > 0, 2, function(x) paste(as.integer(x), collapse = ""))
+  patterns <- unique(presence_key)
+  pattern_counts <- setNames(sapply(patterns, function(p) sum(presence_key == p)), patterns)
+  pattern_bins   <- pmax(1L, floor(k * pattern_counts / n))
+  pattern_bins   <- pmin(pattern_bins, pattern_counts)
+  names(pattern_bins) <- patterns
+  remaining <- k - sum(pattern_bins)
+  while (remaining > 0) {
+    can_expand <- patterns[pattern_counts[patterns] > pattern_bins[patterns]]
+    if (length(can_expand) == 0) break
+    n_add  <- min(remaining, length(can_expand))
+    add_to <- can_expand[order(pattern_counts[can_expand] - pattern_bins[can_expand],
+                               decreasing = TRUE)][seq_len(n_add)]
+    pattern_bins[add_to] <- pattern_bins[add_to] + 1L
+    remaining <- remaining - n_add
+  }
+  all_bins <- unlist(lapply(patterns, function(pat) {
+    idx    <- which(presence_key == pat)
+    n_pat  <- length(idx)
+    k_pat  <- min(as.integer(pattern_bins[[pat]]), n_pat)
+    if (is.na(k_pat) || k_pat < 1L) k_pat <- 1L
+    pep_names <- colnames(mat)[idx]
+    mat_pat   <- mat[, idx, drop = FALSE]
+    if (n_pat == 1 || k_pat == 1) {
+      result   <- rowMeans(mat_pat, na.rm = TRUE)
+      result[is.nan(result)] <- NA
+      bin_name <- paste0("bin_", pat, "_1")
+      bin_map[[bin_name]] <<- pep_names
+      return(list(matrix(result, ncol = 1, dimnames = list(rownames(mat), bin_name))))
+    }
+    pc1 <- tryCatch(
+      prcomp(t(mat_imp[, idx, drop = FALSE]), center = TRUE, scale. = FALSE)$x[, 1],
+      error = function(e) seq_len(n_pat)
+    )
+    ord       <- order(pc1)
+    mat_pat   <- mat_pat[, ord, drop = FALSE]
+    pep_names <- pep_names[ord]
+    bin_ids   <- ceiling(seq_len(n_pat) * k_pat / n_pat)
+    lapply(seq_len(k_pat), function(i) {
+      cols     <- which(bin_ids == i)
+      bin_name <- paste0("bin_", pat, "_", i)
+      bin_map[[bin_name]] <<- pep_names[cols]
+      if (length(cols) == 1) return(mat_pat[, cols, drop = FALSE])
+      result <- rowMeans(mat_pat[, cols, drop = FALSE], na.rm = TRUE)
+      result[is.nan(result)] <- NA
+      matrix(result, ncol = 1, dimnames = list(rownames(mat), bin_name))
+    })
+  }), recursive = FALSE)
+  result <- do.call(cbind, all_bins)
+  attr(result, "bin_map") <- bin_map
+  result
+}
+
+plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster = "both",
+                         transpose = FALSE, row_groups = NULL, col_groups = NULL,
+                         label = "QUANTITY") {
 
   # NA  = not identified      → transparent (na_col)
   # 0   = identified, no qty  → fixed grey (outside color scale)
   # >0  = quantified          → color scale spanning positive values only
 
-  # Log-transform if requested: log10(x + 1) so 0 → 0 (grey), NA stays NA
-  if (log_transform) {
-    mat <- log10(mat + 1)
+  if (log_transform) mat <- log10(mat + 1)
+  if (transpose)     mat <- t(mat)
+
+  # ---- Binning when columns exceed limit ----
+  bin_note <- NULL
+  bin_map  <- NULL
+  max_cols <- 1000L
+  if (ncol(mat) > max_cols) {
+    n_orig  <- ncol(mat)
+    mat     <- bin_heatmap_columns(mat, max_cols = max_cols)
+    bin_map <- attr(mat, "bin_map")
+    bin_note <- paste0("Binned: ", n_orig, "→", ncol(mat), " representative peptide bins.")
   }
 
-  if (transpose) {
-    mat <- t(mat)
-  }
-
-  # Build a color function with two special cases:
-  #   0  → "grey80"  (fixed, not part of the ramp)
-  #   >0 → ramp spanning [min_positive, max_positive]
-  pos_vals  <- mat[!is.na(mat) & mat > 0]
-  pos_min   <- if (length(pos_vals) > 0 && is.finite(min(pos_vals))) min(pos_vals) else 0.01
-  pos_max   <- if (length(pos_vals) > 0 && is.finite(max(pos_vals))) max(pos_vals) else 1
+  # ---- Color scale ----
+  pos_vals <- mat[!is.na(mat) & mat > 0]
+  pos_min  <- if (length(pos_vals) > 0 && is.finite(min(pos_vals))) min(pos_vals) else 0.01
+  pos_max  <- if (length(pos_vals) > 0 && is.finite(max(pos_vals))) max(pos_vals) else 1
   if (pos_max <= pos_min) pos_max <- pos_min + 1
 
   if (color == "default") {
@@ -2126,56 +2191,60 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
   }
 
   col_fun <- function(x) {
-    out        <- ramp(x)
+    out <- ramp(x)
     out[!is.na(x) & x == 0] <- "grey80"
     out
   }
 
-  # ---- Handle grouping vs clustering ----
+  # ---- Clustering (NA-safe) ----
+  clust_na0 <- function(x) { x2 <- x; x2[!is.finite(x2)] <- 0; dist(x2) }
 
-  # Rows
   if (!is.null(row_groups)) {
-    row_groups <- as.factor(row_groups)
+    row_groups   <- as.factor(row_groups)
     cluster_rows <- FALSE
   } else {
     cluster_rows <- cluster %in% c("rows", "both")
   }
 
-  # Columns
   if (!is.null(col_groups)) {
-    col_groups <- as.factor(col_groups)
+    col_groups   <- as.factor(col_groups)
     cluster_cols <- FALSE
   } else {
     cluster_cols <- cluster %in% c("columns", "both")
   }
 
+  if (!is.null(bin_map)) cluster_cols <- FALSE  # bins are already PCA-sorted
+
   show_col_names <- ncol(mat) <= 50
 
-  # ---- Build heatmap ----
-
-  Heatmap(
+  ht <- Heatmap(
     mat,
-    name = if (log_transform) paste("log10(",label, "+1)") else label,
-    col = col_fun,
-    na_col = "transparent",   # not-identified cells are invisible
+    name = if (log_transform) paste0("log10(", label, "+1)") else label,
+    col  = col_fun,
+    na_col = "transparent",
 
-    # clustering
-    cluster_rows = cluster_rows,
+    cluster_rows    = cluster_rows,
     cluster_columns = cluster_cols,
 
-    clustering_distance_rows    = "euclidean",
-    clustering_distance_columns = "euclidean",
+    clustering_distance_rows    = clust_na0,
+    clustering_distance_columns = clust_na0,
     clustering_method_rows      = "complete",
     clustering_method_columns   = "complete",
 
-    # grouping (splitting)
-    row_split = row_groups,
+    row_split    = row_groups,
     column_split = col_groups,
 
     show_column_names = show_col_names,
-    row_names_gp = gpar(fontsize = 8),
-    column_names_gp = gpar(fontsize = 10)
+    row_names_gp      = gpar(fontsize = 8),
+    column_names_gp   = gpar(fontsize = 10),
+
+    column_title      = bin_note,
+    column_title_side = "bottom",
+    column_title_gp   = gpar(fontsize = 7, col = "grey50", fontface = "italic")
   )
+
+  attr(ht, "bin_map") <- bin_map
+  ht
 }
 
 plot_PCA <- function(lst, color = "default") {

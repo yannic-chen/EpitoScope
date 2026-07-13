@@ -1343,25 +1343,145 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     group_venn_plotting(sets, color = input$color_palette)
   })
   
+  pep_mat_stored_r <- reactiveVal(NULL)
+  ht_url_file_r    <- reactiveVal(NULL)
+
   output$group_peptide_heatmap <- renderPlot({
-    lst <- processed_data_list()
-    groups <- group_list()
+    lst       <- processed_data_list()
+    groups    <- group_list()
     data_info <- data_info_r()
-    req(lst, groups, data_info)
-    
+    req(lst, groups, data_info, length(groups) > 0)
+
     quantity_cols <- data_info %>%
       dplyr::filter(final_name == "QUANTITY") %>%
-      dplyr::select(-final_name) %>% 
+      dplyr::select(-final_name) %>%
       unlist(recursive = TRUE, use.names = FALSE)
-    
+
     shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
-    
+
     col_map_hm <- measurement_col_map_r()
-    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets(), col_map = col_map_hm)
-    
+    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets(),
+                                      col_map = col_map_hm)
+
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
-    
+
+    pep_mat_stored_r(pep_mat)
+
     plot_heatmap(pep_mat, color = input$color_palette, transpose = TRUE, log_transform = TRUE)
+  })
+
+  observeEvent(input$show_group_heatmap, {
+    pep_mat <- pep_mat_stored_r()
+    if (is.null(pep_mat)) {
+      showNotification("Render the heatmap first by setting groups.", type = "warning", duration = 6)
+      return()
+    }
+
+    showNotification("Building interactive heatmap — this may take ~30 seconds...",
+                     type = "message", duration = 35)
+
+    tryCatch({
+      color <- isolate(input$color_palette)
+
+      mat <- log10(pep_mat + 1)
+      mat <- t(mat)
+
+      bin_map  <- NULL
+      max_cols <- 1000L
+      if (ncol(mat) > max_cols) {
+        mat     <- bin_heatmap_columns(mat, max_cols = max_cols)
+        bin_map <- attr(mat, "bin_map")
+      }
+
+      pos_vals <- mat[!is.na(mat) & mat > 0]
+      pos_min  <- if (length(pos_vals) > 0 && is.finite(min(pos_vals))) min(pos_vals) else 0.01
+      pos_max  <- if (length(pos_vals) > 0 && is.finite(max(pos_vals))) max(pos_vals) else 1
+      if (pos_max <= pos_min) pos_max <- pos_min + 1
+
+      tmp_mat    <- tempfile(fileext = ".rds")
+      tmp_params <- tempfile(fileext = ".rds")
+      tmp_url    <- tempfile(fileext = ".txt")
+
+      saveRDS(mat, tmp_mat)
+      saveRDS(list(bin_map = bin_map, pos_min = pos_min, pos_max = pos_max, color = color),
+              tmp_params)
+
+      ht_url_file_r(tmp_url)
+
+      callr::r_bg(
+        func = function(mat_path, params_path, url_path) {
+          library(ComplexHeatmap)
+          library(InteractiveComplexHeatmap)
+          library(circlize)
+          library(viridis)
+          library(shiny)
+
+          mat <- readRDS(mat_path)
+          p   <- readRDS(params_path)
+
+          if (p$color == "default") {
+            ramp <- circlize::colorRamp2(c(p$pos_min, p$pos_max), c("lightyellow", "red"))
+          } else {
+            cols <- viridis::viridis(100, option = p$color)
+            ramp <- circlize::colorRamp2(c(p$pos_min, p$pos_max), c(cols[1], cols[100]))
+          }
+          col_fun <- function(x) {
+            out <- ramp(x)
+            out[!is.na(x) & x == 0] <- "grey80"
+            out
+          }
+
+          clust_na0 <- function(x) { x2 <- x; x2[!is.finite(x2)] <- 0; dist(x2) }
+
+          ht <- Heatmap(
+            mat,
+            name            = "log10(QUANTITY+1)",
+            col             = col_fun,
+            na_col          = "transparent",
+            cluster_rows    = TRUE,
+            cluster_columns = is.null(p$bin_map),
+            clustering_distance_rows    = clust_na0,
+            clustering_distance_columns = clust_na0,
+            clustering_method_rows      = "complete",
+            clustering_method_columns   = "complete",
+            show_column_names = ncol(mat) <= 50,
+            row_names_gp      = gpar(fontsize = 8),
+            column_names_gp   = gpar(fontsize = 10)
+          )
+
+          tmp_pdf  <- tempfile(fileext = ".pdf")
+          grDevices::pdf(tmp_pdf)
+          ht_drawn <- draw(ht)
+          grDevices::dev.off()
+          unlink(tmp_pdf)
+
+          # Write URL to file instead of opening browser from subprocess
+          htShiny(ht_drawn, launch.browser = function(url) writeLines(url, url_path))
+        },
+        args = list(mat_path = tmp_mat, params_path = tmp_params, url_path = tmp_url)
+      )
+
+    }, error = function(e) {
+      showNotification(paste("Error:", conditionMessage(e)), type = "error", duration = 20)
+    })
+  })
+
+  # Poll for the URL written by the subprocess, then open it
+  observe({
+    url_file <- ht_url_file_r()
+    req(url_file)
+    if (file.exists(url_file)) {
+      url <- readLines(url_file, warn = FALSE)[1]
+      ht_url_file_r(NULL)
+      unlink(url_file)
+      showNotification(
+        tagList("Interactive heatmap ready: ",
+                tags$a(href = url, target = "_blank", url)),
+        type = "message", duration = 60
+      )
+    } else {
+      invalidateLater(2000)
+    }
   })
   
   ## ----Group statistical analysis----

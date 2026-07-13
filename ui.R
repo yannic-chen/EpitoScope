@@ -361,7 +361,9 @@ ui <- bs4DashPage(
           ),
           bs4Card(title = tagList("Peptide based heatmap", bs4Dash::tooltip(icon("info-circle"),"Cluster peptides based on differential pattern across groups. The MAX quantity for the peptides is used.", placement = "right")
                                   ), width = 12, maximizable = TRUE,
-                  plotOutput("group_peptide_heatmap")
+                  plotOutput("group_peptide_heatmap"),
+                  actionButton("show_group_heatmap", "Open Interactive Heatmap",
+                               icon = icon("expand"), class = "btn-sm btn-outline-primary mt-2")
           ),
           
           ### ---- Statistical Plots ----
