@@ -147,20 +147,20 @@ ui <- bs4DashPage(
                              plotOutput("charge_plot")                               
                              ),
                     tabPanel("Mass",
-                             plotOutput("mass_plot")
+                             plotlyOutput("mass_plot")
                              ),
                     tabPanel("m/z",
-                             plotOutput("mz_plot")
+                             plotlyOutput("mz_plot")
                              ),
                     tabPanel("RT",
                              uiOutput("RT_plot")
                              ),
                     tabPanel("Mass Error",
                              bs4Dash::tooltip(icon("info-circle"),"Either ppm (PEAKS) or delta Mass (Fragpipe). Ignore the x-axis label.", placement = "right"),
-                             plotOutput("ppm_plot")
+                             plotlyOutput("ppm_plot")
                              ),
                     tabPanel("score",
-                             plotOutput("score_violin")
+                             plotlyOutput("score_violin")
                              )
                     )
                   ),
@@ -212,20 +212,20 @@ ui <- bs4DashPage(
                     tabPanel("Mass",
                              tabsetPanel(
                                tabPanel("Per Sample",    
-                                        plotOutput("mass_plot2")),
+                                        plotlyOutput("mass_plot2")),
                                tabPanel("Per Measurement",
                                         h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
-                                        plotOutput("mass_plot_meas")
+                                        plotlyOutput("mass_plot_meas")
                                )
                              )
                     ),
                     tabPanel("m/z",
                              tabsetPanel(
                                tabPanel("Per Sample",      
-                                        plotOutput("mz_plot2")),
+                                        plotlyOutput("mz_plot2")),
                                tabPanel("Per Measurement",
                                         h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
-                                        plotOutput("mz_plot_meas")
+                                        plotlyOutput("mz_plot_meas")
                                )
                              )
                     ),
@@ -243,17 +243,17 @@ ui <- bs4DashPage(
                              bs4Dash::tooltip(icon("info-circle"), "Either ppm (PEAKS) or delta Mass (Fragpipe).", placement = "right"),
                              tabsetPanel(
                                tabPanel("Per Sample",      
-                                        plotOutput("ppm_plot2")),
+                                        plotlyOutput("ppm_plot2")),
                                tabPanel("Per Measurement", 
                                         h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
-                                        plotOutput("ppm_plot_meas")
+                                        plotlyOutput("ppm_plot_meas")
                                )
                              )
                     ),
                     tabPanel("score",
                              tabsetPanel(
                                tabPanel("Per Sample",      
-                                        plotOutput("score_violin2")),
+                                        plotlyOutput("score_violin2")),
                                tabPanel("Per Measurement", 
                                         h6("WIP: Think up a way for visualization."),
                                         #plotOutput("score_violin_meas")

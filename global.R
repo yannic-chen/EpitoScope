@@ -1635,94 +1635,96 @@ plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, 
 }
 
 plot_density <- function(lst, column, transform = NULL, x_label = NULL, alpha = 0.3, color = "default") {
-  combined <- bind_rows(lapply(names(lst), function(name) {
-    df <- lst[[name]]
-    if (!column %in% colnames(df)) return(NULL)  # skip samples missing the column
-    df <- df[, column, drop = FALSE]
-    if (nrow(df) == 0) return(NULL)
-    df$Sample <- name
-    
-    # Apply optional transformation
-    if (!is.null(transform)) {
-      df[[column]] <- transform(df[[column]])
-    }
-    
-    df
-  }))
-  
-  if (is.null(combined) || nrow(combined) == 0 || !"Sample" %in% colnames(combined)) {
-    return(
-      ggplot() +
-        annotate("text", x = 0.5, y = 0.5, label = paste("No data for", column),
-                 size = 5, color = "grey50") +
-        theme_void()
-    )
-  }
-  
-  if (color == "default") {
-    color <- NULL  # ggplot will use default fill colors
-  } else {
-    color <- viridis(length(lst), option = color)
-  }
-  
-  # Automatic x-axis label if not provided
   if (is.null(x_label)) x_label <- column
-  
-  p <- ggplot(combined, aes_string(x = column, color = "Sample", fill = "Sample")) +
-    geom_density(alpha = alpha) +
-    labs(x = x_label, y = "Density") +
-    theme_minimal()
-  
-  if (!is.null(color)) {
-    p <- p + scale_fill_manual(values = color)
+  n          <- length(lst)
+  plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
+                  '#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52')
+  cols <- if (color == "default") {
+    setNames(plotly_pal[((seq_len(n) - 1L) %% length(plotly_pal)) + 1L], names(lst))
+  } else {
+    setNames(viridis(n, option = color), names(lst))
   }
   
-  return(p)
+  densities <- lapply(names(lst), function(sname) {
+    vals <- lst[[sname]][[column]]
+    if (!is.null(transform)) vals <- transform(vals)
+    vals <- vals[!is.na(vals) & is.finite(vals)]
+    if (length(vals) < 2L) return(NULL)
+    list(vals = vals, dens = density(vals))
+  })
+  names(densities) <- names(lst)
+  
+  all_y_max <- max(sapply(densities, function(d) if (is.null(d)) 0 else max(d$dens$y)), na.rm = TRUE)
+  row_h     <- all_y_max * 0.04
+  rug_ys    <- setNames(-row_h * seq_len(n), names(lst))
+  
+  p <- plotly::plot_ly()
+  for (sname in names(lst)) {
+    d <- densities[[sname]]
+    if (is.null(d)) next
+    p <- p %>%
+      plotly::add_lines(
+        x = d$dens$x, y = d$dens$y, name = sname,
+        line = list(color = cols[[sname]], width = 2),
+        legendgroup = sname, showlegend = TRUE,
+        hovertemplate = paste0("<b>", sname, "</b>: %{y:.4g}<extra></extra>")
+      ) %>%
+      plotly::add_trace(
+        x = d$vals, y = rep(rug_ys[[sname]], length(d$vals)),
+        type = "scatter", mode = "markers", name = sname,
+        marker = list(symbol = "line-ns-open", size = 8,
+                      color = cols[[sname]], opacity = 0.5),
+        legendgroup = sname, showlegend = FALSE,
+        hoverinfo = "none"
+      )
+  }
+  
+  p %>% plotly::layout(
+    xaxis = list(title = x_label),
+    yaxis = list(
+      title    = "Density",
+      range    = c(-(n + 0.5) * row_h, all_y_max * 1.05),
+      zeroline = TRUE
+    ),
+    hovermode = "x unified",
+    legend = list(title = list(text = "Sample"))
+  )
 }
 
 plot_violin <- function(lst, column, x_label = "Sample", y_label = NULL, title = NULL, add_boxplot = TRUE, color = "default") {
-  # Combine all samples
-  df_all <- bind_rows(lapply(names(lst), function(s_name) {
-    df <- lst[[s_name]]
-    if (!(column %in% colnames(df)) || nrow(df) == 0) return(NULL)
-    df$Sample <- s_name
-    df[, c(column, "Sample"), drop = FALSE]
-  }))
+  if (is.null(y_label)) y_label <- column
+  n          <- length(lst)
+  plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
+                  '#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52')
+  cols <- if (color == "default") {
+    setNames(plotly_pal[((seq_len(n) - 1L) %% length(plotly_pal)) + 1L], names(lst))
+  } else {
+    setNames(viridis(n, option = color), names(lst))
+  }
   
-  if (is.null(df_all) || nrow(df_all) == 0 || !"Sample" %in% colnames(df_all)) {
-    return(
-      ggplot() +
-        annotate("text", x = 0.5, y = 0.5, label = paste("No data for", column),
-                 size = 5, color = "grey50") +
-        theme_void()
+  p <- plotly::plot_ly()
+  for (i in seq_along(lst)) {
+    sname <- names(lst)[i]
+    vals  <- lst[[sname]][[column]]
+    vals  <- vals[!is.na(vals) & is.finite(vals)]
+    if (length(vals) == 0L) next
+    p <- p %>% plotly::add_trace(
+      x = rep(sname, length(vals)),
+      y = vals, type = "violin", name = sname,
+      fillcolor = adjustcolor(cols[[i]], alpha.f = 0.5),
+      line = list(color = cols[[i]]),
+      box = list(visible = add_boxplot, fillcolor = "white",
+                 line = list(color = cols[[i]])),
+      meanline = list(visible = TRUE, color = cols[[i]]),
+      points = FALSE
     )
   }
   
-  if (is.null(y_label)) y_label <- column
-  if (is.null(title)) title <- paste(column, "Distribution Across Samples")
-  
-  if (color == "default") {
-    color <- NULL  # ggplot will use default fill colors
-  } else {
-    color <- viridis(length(lst), option = color)
-  }
-  
-  p <- ggplot(df_all, aes(x = Sample, y = .data[[column]], fill = Sample)) +
-    geom_violin(trim = TRUE, alpha = 0.6)
-  
-  if (add_boxplot) {
-    p <- p + geom_boxplot(width = 0.05, fill = "white", outlier.shape = NA)
-  }
-  
-  p <- p + theme_minimal() +
-    labs(title = title, x = x_label, y = y_label) +
-    theme(legend.position = "none")
-  
-  if (!is.null(color)) {
-    p <- p + scale_fill_manual(values = color)
-  }
-  
-  return(p)
+  p %>% plotly::layout(
+    xaxis = list(title = x_label, tickangle = -45),
+    yaxis = list(title = y_label),
+    showlegend = FALSE
+  )
 }
 
 plot_length_distribution <- function(lst, color = "default") {
@@ -2009,51 +2011,74 @@ plot_charge_per_measurement <- function(lst, quantity_cols, color = "default") {
 }
 
 plot_density_envelope <- function(lst, quantity_cols, column, x_label, color = "default") {
-  
   result <- dplyr::bind_rows(lapply(names(lst), function(s) {
     df        <- lst[[s]]
     meas_cols <- intersect(quantity_cols, colnames(df))
     if (length(meas_cols) == 0 || !column %in% colnames(df)) return(NULL)
-    
     all_vals <- df[[column]][is.finite(df[[column]])]
     if (length(all_vals) < 2) return(NULL)
     x_grid <- seq(min(all_vals), max(all_vals), length.out = 512)
-    
     dens_mat <- do.call(rbind, Filter(Negate(is.null), lapply(meas_cols, function(m) {
-      col      <- df[[m]]
-      detected <- if (any(is.na(col))) !is.na(col) else col > 0
+      col_vals <- df[[m]]
+      detected <- if (any(is.na(col_vals))) !is.na(col_vals) else col_vals > 0
       vals     <- df[[column]][detected & is.finite(df[[column]])]
       if (length(vals) < 2) return(NULL)
       d <- density(vals, from = min(x_grid), to = max(x_grid), n = 512)
       approx(d$x, d$y, xout = x_grid)$y
     })))
-    
     if (is.null(dens_mat) || nrow(dens_mat) == 0) return(NULL)
-    
     data.frame(
-      Sample = s,
-      x      = x_grid,
+      Sample = s, x = x_grid,
       Mean   = colMeans(dens_mat, na.rm = TRUE),
-      Min    = apply(dens_mat, 2, min, na.rm = TRUE),
-      Max    = apply(dens_mat, 2, max, na.rm = TRUE)
+      ymin   = apply(dens_mat, 2, min, na.rm = TRUE),
+      ymax   = apply(dens_mat, 2, max, na.rm = TRUE)
     )
   }))
-  
   if (is.null(result) || nrow(result) == 0) return(NULL)
   
-  fill_colors <- if (color == "default") NULL else
-    setNames(viridis(length(unique(result$Sample)), option = color),
-             unique(result$Sample))
+  samples    <- unique(result$Sample)
+  n          <- length(samples)
+  plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
+                  '#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52')
+  cols <- if (color == "default") {
+    setNames(plotly_pal[((seq_len(n) - 1L) %% length(plotly_pal)) + 1L], samples)
+  } else {
+    setNames(viridis(n, option = color), samples)
+  }
   
-  p <- ggplot(result, aes(x = x, fill = Sample, color = Sample, group = Sample)) +
-    geom_ribbon(aes(ymin = Min, ymax = Max), alpha = 0.15, color = NA) +
-    geom_line(aes(y = Mean), linewidth = 0.8) +
-    labs(x = x_label, y = "Density") +
-    theme_minimal()
+  fmt <- function(x) formatC(x, digits = 3, format = "g")
   
-  if (!is.null(fill_colors))
-    p <- p + scale_fill_manual(values = fill_colors) + scale_color_manual(values = fill_colors)
-  p
+  p <- plotly::plot_ly()
+  for (s in samples) {
+    d     <- result[result$Sample == s, ]
+    col   <- cols[[s]]
+    rgb_v <- col2rgb(col)[, 1]
+    fill  <- sprintf("rgba(%d,%d,%d,0.15)", rgb_v[1], rgb_v[2], rgb_v[3])
+    d$range_text <- paste0(fmt(d$ymin), " \u2013 ", fmt(d$ymax))
+    
+    p <- p %>%
+      plotly::add_ribbons(
+        data = d, x = ~x, ymin = ~ymin, ymax = ~ymax,
+        customdata = ~range_text,
+        name = s, legendgroup = s, showlegend = TRUE,
+        fillcolor = fill,
+        line = list(color = "rgba(0,0,0,0)"),
+        hovertemplate = paste0("<b>", s, "</b> range: %{customdata}<extra></extra>")
+      ) %>%
+      plotly::add_lines(
+        data = d, x = ~x, y = ~Mean,
+        name = s, legendgroup = s, showlegend = FALSE,
+        line = list(color = col, width = 1.5),
+        hovertemplate = paste0("<b>", s, "</b> mean: %{y:.4g}<extra></extra>")
+      )
+  }
+  
+  p %>% plotly::layout(
+    xaxis = list(title = x_label),
+    yaxis = list(title = "Density", rangemode = "tozero"),
+    hovermode = "x unified",
+    legend = list(title = list(text = "Sample"))
+  )
 }
 
 plot_rt_histogram_range <- function(df, sample_name, quantity_cols, color = "steelblue") {

@@ -473,13 +473,13 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
   # Example usage for your Shiny outputs
-  output$mass_plot <- renderPlot({
+  output$mass_plot <- plotly::renderPlotly({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "MASS", na_policy = "any")
     plot_density(lst, column = "MASS", x_label = "Mass (Da)", color = input$color_palette)
   })
   
-  output$mz_plot <- renderPlot({
+  output$mz_plot <- plotly::renderPlotly({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "MZ", na_policy = "any")
     plot_density(lst, column = "MZ", x_label = "m/z", color = input$color_palette)
@@ -515,14 +515,14 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     }
   })
   
-  output$ppm_plot <- renderPlot({
+  output$ppm_plot <- plotly::renderPlotly({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "PPM", na_policy = "any")
     plot_density(lst, column = "PPM", x_label = "ppm", color = input$color_palette)
   })
   
   ##----Score distribution----
-  output$score_violin <- renderPlot({
+  output$score_violin <- plotly::renderPlotly({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "SCORE", na_policy = "any")
     plot_violin(lst, column = "SCORE", color = input$color_palette)
@@ -567,19 +567,19 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     #plot_charge_per_measurement(lst, default_quantity_cols_r(), color = input$color_palette)
   })
   
-  output$mass_plot_meas <- renderPlot({
+  output$mass_plot_meas <- plotly::renderPlotly({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "MASS", na_policy = "any")
     plot_density_envelope(lst, default_quantity_cols_r(), "MASS", "Mass (Da)", color = input$color_palette)
   })
   
-  output$mz_plot_meas <- renderPlot({
+  output$mz_plot_meas <- plotly::renderPlotly({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "MZ", na_policy = "any")
     plot_density_envelope(lst, default_quantity_cols_r(), "MZ", "m/z", color = input$color_palette)
   })
   
-  output$ppm_plot_meas <- renderPlot({
+  output$ppm_plot_meas <- plotly::renderPlotly({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "PPM", na_policy = "any")
     plot_density_envelope(lst, default_quantity_cols_r(), column = "PPM", x_label = "ppm", color = input$color_palette)
@@ -1056,13 +1056,13 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
   # Example usage for your Shiny outputs
-  output$mass_plot2 <- renderPlot({
+  output$mass_plot2 <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "MASS" , na_policy = "all")
     plot_density(lst, column = "MASS", x_label = "Mass (Da)", color = input$color_palette)
   })
   
-  output$mz_plot2 <- renderPlot({
+  output$mz_plot2 <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "MZ" , na_policy = "all")
     plot_density(lst, column = "MZ", x_label = "m/z", color = input$color_palette)
@@ -1099,14 +1099,14 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     }
   })
   
-  output$ppm_plot2 <- renderPlot({
+  output$ppm_plot2 <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "PPM" , na_policy = "all")
     plot_density(lst, column = "PPM", x_label = "ppm", color = input$color_palette)
   })
   
   ##----Score distribution----
-  output$score_violin2 <- renderPlot({
+  output$score_violin2 <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "SCORE" , na_policy = "all")
     plot_violin(lst, column = "SCORE", color = input$color_palette)
