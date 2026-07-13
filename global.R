@@ -1357,12 +1357,14 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
 
 ## This is for heatmap generation of the grouped comparison where each column is a peptide. 
 ## In cases of very large number of peptides, this is not possible to show, thus we "bin" them to improve visualization.
-bin_heatmap_columns <- function(mat, max_cols = 500) {
+## The bins sizes are evenly distributed.
+bin_heatmap_columns <- function(mat, max_cols = 1000) {
   if (ncol(mat) <= max_cols) return(mat)
   n <- ncol(mat)
   k <- min(max_cols, n)
   mat_imp <- mat
   mat_imp[is.na(mat_imp)] <- 0
+  bin_map <- list() #this is for the interactive heatmap
   
   presence_key   <- apply(mat_imp > 0, 2, function(x) paste(as.integer(x), collapse = ""))
   patterns       <- unique(presence_key)
@@ -1391,11 +1393,14 @@ bin_heatmap_columns <- function(mat, max_cols = 500) {
     k_pat <- min(as.integer(pattern_bins[[pat]]), n_pat)
     if (is.na(k_pat) || k_pat < 1L) k_pat <- 1L
     
+    pep_names <- colnames(mat)[idx]
     mat_pat <- mat[, idx, drop = FALSE]
     
     if (n_pat == 1 || k_pat == 1) {
       result <- rowMeans(mat_pat, na.rm = TRUE)
       result[is.nan(result)] <- NA
+      bin_name <- paste0("bin_", pat, "_1")
+      bin_map[[bin_name]] <<- pep_names
       return(list(matrix(result, ncol = 1,
                          dimnames = list(rownames(mat), paste0("bin_", pat, "_1")))))
     }
@@ -1404,7 +1409,10 @@ bin_heatmap_columns <- function(mat, max_cols = 500) {
       prcomp(t(mat_imp[, idx, drop = FALSE]), center = TRUE, scale. = FALSE)$x[, 1],
       error = function(e) seq_len(n_pat)
     )
+    
+    ord       <- order(pc1)
     mat_pat <- mat_pat[, order(pc1), drop = FALSE]
+    pep_names <- pep_names[ord]
     
     bin_ids <- ceiling(seq_len(n_pat) * k_pat / n_pat)
     lapply(seq_len(k_pat), function(i) {
@@ -1417,7 +1425,9 @@ bin_heatmap_columns <- function(mat, max_cols = 500) {
     })
   }), recursive = FALSE)
   
-  do.call(cbind, all_bins)
+  result <- do.call(cbind, all_bins)
+  attr(result, "bin_map") <- bin_map
+  result
 }
 
 prepare_measurement_matrix <- function(lst, quantity_cols) {
@@ -2519,6 +2529,129 @@ plot_pairwise_peptide_quant_correlation <- function(lst, method = "pearson", min
   )
 }
 
+bin_heatmap_columns <- function(mat, max_cols = 1000) {
+  if (ncol(mat) <= max_cols) return(mat)
+  n <- ncol(mat); k <- min(max_cols, n)
+  mat_imp <- mat; mat_imp[is.na(mat_imp)] <- 0
+  bin_map <- list()
+  presence_key <- apply(mat_imp > 0, 2, function(x) paste(as.integer(x), collapse = ""))
+  patterns <- unique(presence_key)
+  pattern_counts <- setNames(sapply(patterns, function(p) sum(presence_key == p)), patterns)
+  pattern_bins   <- pmax(1L, floor(k * pattern_counts / n))
+  pattern_bins   <- pmin(pattern_bins, pattern_counts)
+  names(pattern_bins) <- patterns
+  remaining <- k - sum(pattern_bins)
+  while (remaining > 0) {
+    can_expand <- patterns[pattern_counts[patterns] > pattern_bins[patterns]]
+    if (length(can_expand) == 0) break
+    n_add  <- min(remaining, length(can_expand))
+    add_to <- can_expand[order(pattern_counts[can_expand] - pattern_bins[can_expand],
+                               decreasing = TRUE)][seq_len(n_add)]
+    pattern_bins[add_to] <- pattern_bins[add_to] + 1L
+    remaining <- remaining - n_add
+  }
+  all_bins <- unlist(lapply(patterns, function(pat) {
+    idx    <- which(presence_key == pat)
+    n_pat  <- length(idx)
+    k_pat  <- min(as.integer(pattern_bins[[pat]]), n_pat)
+    if (is.na(k_pat) || k_pat < 1L) k_pat <- 1L
+    pep_names <- colnames(mat)[idx]
+    mat_pat   <- mat[, idx, drop = FALSE]
+    if (n_pat == 1 || k_pat == 1) {
+      result   <- rowMeans(mat_pat, na.rm = TRUE)
+      result[is.nan(result)] <- NA
+      bin_name <- paste0("bin_", pat, "_1")
+      bin_map[[bin_name]] <<- pep_names
+      return(list(matrix(result, ncol = 1, dimnames = list(rownames(mat), bin_name))))
+    }
+    pc1 <- tryCatch(
+      prcomp(t(mat_imp[, idx, drop = FALSE]), center = TRUE, scale. = FALSE)$x[, 1],
+      error = function(e) seq_len(n_pat)
+    )
+    ord       <- order(pc1)
+    mat_pat   <- mat_pat[, ord, drop = FALSE]
+    pep_names <- pep_names[ord]
+    bin_ids   <- ceiling(seq_len(n_pat) * k_pat / n_pat)
+    lapply(seq_len(k_pat), function(i) {
+      cols     <- which(bin_ids == i)
+      bin_name <- paste0("bin_", pat, "_", i)
+      bin_map[[bin_name]] <<- pep_names[cols]
+      if (length(cols) == 1) return(mat_pat[, cols, drop = FALSE])
+      result <- rowMeans(mat_pat[, cols, drop = FALSE], na.rm = TRUE)
+      result[is.nan(result)] <- NA
+      matrix(result, ncol = 1, dimnames = list(rownames(mat), bin_name))
+    })
+  }), recursive = FALSE)
+  result <- do.call(cbind, all_bins)
+  attr(result, "bin_map") <- bin_map
+  result
+}
+
+plot_heatmap_interactive <- function(pep_mat, color = "default") {
+  mat <- log10(pep_mat + 1)
+  mat <- t(mat)
+  
+  bin_map  <- NULL
+  max_cols <- 1000L
+  if (ncol(mat) > max_cols) {
+    mat     <- bin_heatmap_columns(mat, max_cols = max_cols)
+    bin_map <- attr(mat, "bin_map")
+  }
+  
+  # Row clustering
+  clust_na0 <- function(x) { x2 <- x; x2[!is.finite(x2)] <- 0; dist(x2) }
+  row_ord <- tryCatch({
+    d  <- clust_na0(mat)
+    hc <- hclust(d, method = "complete")
+    hc$order
+  }, error = function(e) seq_len(nrow(mat)))
+  mat <- mat[row_ord, , drop = FALSE]
+  
+  # Build hover text matrix
+  hover_mat <- matrix("", nrow = nrow(mat), ncol = ncol(mat),
+                      dimnames = dimnames(mat))
+  for (j in seq_len(ncol(mat))) {
+    col_name <- colnames(mat)[j]
+    if (!is.null(bin_map) && col_name %in% names(bin_map)) {
+      peps  <- bin_map[[col_name]]
+      n     <- length(peps)
+      shown <- paste(head(peps, 30), collapse = "<br>")
+      extra <- if (n > 30) paste0("<br>... +", n - 30, " more") else ""
+      label <- paste0("<b>", n, " peptides in bin</b><br>", shown, extra)
+    } else {
+      label <- paste0("<b>", col_name, "</b>")
+    }
+    hover_mat[, j] <- label
+  }
+  
+  # Color scale
+  if (color == "default") {
+    colorscale <- list(list(0, "lightyellow"), list(1, "red"))
+  } else {
+    cols <- viridis(10, option = color)
+    colorscale <- lapply(seq_along(cols) - 1,
+                         function(i) list(i / (length(cols) - 1), cols[i + 1]))
+  }
+  
+  plotly::plot_ly(
+    x         = colnames(mat),
+    y         = rownames(mat),
+    z         = mat,
+    text      = hover_mat,
+    type      = "heatmap",
+    colorscale = colorscale,
+    hovertemplate = "%{text}<extra></extra>",
+    showscale = TRUE
+  ) %>%
+    plotly::layout(
+      xaxis = list(title = "", showticklabels = ncol(mat) <= 50,
+                   tickfont = list(size = 9)),
+      yaxis = list(title = "", tickfont = list(size = 8),
+                   autorange = "reversed"),
+      margin = list(l = 120, b = if (ncol(mat) <= 50) 120 else 40)
+    )
+}
+
 plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster = "both", transpose = FALSE, row_groups = NULL, col_groups = NULL, label = "QUANTITY", fontsize = NULL, max_cols = 1000) {
   
   fs_row <- if (is.null(fontsize)) 8  else fontsize
@@ -2532,8 +2665,14 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
   
   if (transpose) mat <- t(mat)
   
+  bin_map  <- NULL
+  bin_note <- NULL
   if (ncol(mat) > max_cols) {
-      mat <- bin_heatmap_columns(mat, max_cols = max_cols)
+    n_orig   <- ncol(mat)
+    mat <- bin_heatmap_columns(mat, max_cols = max_cols)
+    bin_map <- attr(mat, "bin_map")
+    bin_note <- paste0("Binned: ", n_orig, " \u2192 ", ncol(mat),
+                       " representative peptide bins.")
   }
   
   # Raster decision on the FINAL matrix size
@@ -2581,9 +2720,9 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
   
   # ---- Build heatmap ----
   
-  show_col_names <- ncol(mat) <= 200
+  show_col_names <- ncol(mat) <= 100
   
-  Heatmap(
+  ht <- Heatmap(
     mat,
     name = if (log_transform) paste("log10(",label, ")") else label,
     col = col_fun,
@@ -2599,8 +2738,15 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
     raster_quality = raster_qual,
     show_column_names = show_col_names,
     row_names_gp    = gpar(fontsize = fs_row),
-    column_names_gp = gpar(fontsize = fs_col)
+    column_names_gp = gpar(fontsize = fs_col),
+    
+    column_title      = bin_note,
+    column_title_side = "bottom",
+    column_title_gp   = gpar(fontsize = 9, col = "grey50", fontface = "italic")
   )
+  
+  attr(ht, "bin_map") <- bin_map
+  ht
 }
 
 plot_PCA <- function(lst, color = "default") {

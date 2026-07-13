@@ -1541,25 +1541,258 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     group_venn_plotting(sets, color = input$color_palette)
   })
   
-  output$group_peptide_heatmap <- renderPlot({
-
-    lst <- processed_data_list()
-    groups <- group_list()
-    req(lst, groups)
-
-    shiny::validate(shiny::need(length(default_quantity_cols_r()) > 0, "No QUANTITY columns found."))
+  heatmap_data_r  <- reactive({
+    lst       <- processed_data_list()
+    groups    <- group_list()
+    data_info <- data_info_r()
+    req(lst, groups, data_info, length(groups) > 0)
     
-    if(use_measurements()){
-      pep_mat <- prepare_peptide_matrix(lst, groups, default_quantity_cols_r(), group_peptide_sets(), col_map = measurement_col_map_r())
-    } else {
-      pep_mat <- prepare_peptide_matrix(lst, groups, default_quantity_cols_r(), group_peptide_sets())
-    }
-
+    quantity_cols <- data_info %>%
+      dplyr::filter(final_name == "QUANTITY") %>%
+      dplyr::select(-final_name) %>%
+      unlist(recursive = TRUE, use.names = FALSE)
+    
+    shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
+    
+    col_map_hm <- measurement_col_map_r()
+    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets(),
+                                      col_map = col_map_hm)
+    
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
     
-    ht <- plot_heatmap(pep_mat, color = input$color_palette, transpose = TRUE, log_transform = TRUE)
-    safe_draw(ht)
+    mat_full <- log10(pep_mat + 1)
+    mat_full <- t(mat_full)
+    
+    bin_map     <- NULL
+    mat_display <- mat_full
+    if (ncol(mat_full) > 1000L) {
+      mat_binned  <- bin_heatmap_columns(mat_full, max_cols = 1000L)
+      bin_map     <- attr(mat_binned, "bin_map")
+      mat_display <- mat_binned
+    }
+    
+    clust_na0 <- function(x) { x2 <- x; x2[!is.finite(x2)] <- 0; dist(x2) }
+    row_ord <- tryCatch({
+      hclust(clust_na0(mat_display), method = "complete")$order
+    }, error = function(e) seq_len(nrow(mat_display)))
+    
+    list(mat_full = mat_full, mat_display = mat_display,
+         bin_map = bin_map, row_ord = row_ord)
   })
+  
+  heatmap_mode_r  <- reactiveVal("binned")
+  expanded_peps_r <- reactiveVal(NULL)
+  zoom_info_r              <- reactiveVal(NULL)
+  last_programmatic_t_r   <- reactiveVal(0)
+  expand_counter_r <- reactiveVal(0L)
+  
+  observeEvent(plotly::event_data("plotly_relayout", source = "group_hm"), {
+    ed <- plotly::event_data("plotly_relayout", source = "group_hm")
+    if (!is.null(ed[["xaxis.range[0]"]])) {
+      zoom_info_r(c(as.numeric(ed[["xaxis.range[0]"]]),
+                    as.numeric(ed[["xaxis.range[1]"]])))
+    } else if (isTRUE(ed[["xaxis.autorange"]])) {
+      zoom_info_r(NULL)
+      # Only treat as user double-click if it happened >1s after a programmatic render
+      age <- as.numeric(Sys.time()) - isolate(last_programmatic_t_r())
+      if (age > 1 && isolate(heatmap_mode_r()) == "expanded") {
+        last_programmatic_t_r(as.numeric(Sys.time()))
+        heatmap_mode_r("binned")
+        expanded_peps_r(NULL)
+      }
+    }
+  }, ignoreNULL = TRUE)
+  
+  zoom_debounced_r <- shiny::debounce(zoom_info_r, 500)
+  
+  # Tick-label proxy: only fires on zoom change, only in binned mode
+  observeEvent(zoom_debounced_r(), {
+    req(heatmap_mode_r() == "binned")
+    zoom  <- zoom_debounced_r()
+    hdata <- heatmap_data_r()
+    req(hdata)
+    
+    n_visible <- if (!is.null(zoom)) {
+      x0 <- max(1L, as.integer(round(zoom[1])) + 1L)
+      x1 <- min(ncol(hdata$mat_display), as.integer(round(zoom[2])) + 1L)
+      max(1L, x1 - x0 + 1L)
+    } else {
+      ncol(hdata$mat_display)
+    }
+    
+    show <- n_visible <= 250
+    plotly::plotlyProxy("group_peptide_heatmap_interactive", session) %>%
+      plotly::plotlyProxyInvoke("relayout", list(
+        "xaxis.showticklabels" = show,
+        "margin.b"             = if (show) 120 else 30
+      ))
+  })
+  
+  # Dynamically show/hide x-axis tick labels based on visible column count
+  # Uses plotlyProxy so no full re-render is triggered
+  observe({
+    zoom  <- zoom_debounced_r()
+    hdata <- heatmap_data_r()
+    mode  <- heatmap_mode_r()
+    req(hdata)
+    
+    n_cols <- if (mode == "expanded" && !is.null(expanded_peps_r())) {
+      length(expanded_peps_r())
+    } else {
+      ncol(hdata$mat_display)
+    }
+    
+    n_visible <- if (!is.null(zoom)) {
+      x0 <- max(1L, as.integer(round(zoom[1])) + 1L)
+      x1 <- min(n_cols, as.integer(round(zoom[2])) + 1L)
+      max(1L, x1 - x0 + 1L)
+    } else {
+      n_cols
+    }
+    
+    show <- n_visible <= 250
+    
+    plotly::plotlyProxy("group_peptide_heatmap_interactive", session) %>%
+      plotly::plotlyProxyInvoke("relayout", list(
+        "xaxis.showticklabels" = show,
+        "margin.b"             = if (show) 120 else 30
+      ))
+  })
+  
+  output$group_peptide_heatmap_interactive <- plotly::renderPlotly({
+    hdata <- heatmap_data_r()
+    color <- input$color_palette
+    mode  <- heatmap_mode_r()
+    
+    if (mode == "expanded" && !is.null(expanded_peps_r())) {
+      pep_names    <- expanded_peps_r()
+      mat_to_show  <- hdata$mat_full[, pep_names, drop = FALSE]
+      bin_map_show <- NULL
+      ui_rev       <- paste0("exp_", expand_counter_r())
+    } else {
+      mat_to_show  <- hdata$mat_display
+      bin_map_show <- hdata$bin_map
+      ui_rev       <- "binned"
+    }
+    
+    mat_to_show <- mat_to_show[hdata$row_ord, , drop = FALSE]
+    
+    hover_mat <- matrix("", nrow = nrow(mat_to_show), ncol = ncol(mat_to_show))
+    for (j in seq_len(ncol(mat_to_show))) {
+      cn <- colnames(mat_to_show)[j]
+      if (!is.null(bin_map_show) && cn %in% names(bin_map_show)) {
+        peps  <- bin_map_show[[cn]]
+        n     <- length(peps)
+        shown <- paste(head(peps, 30), collapse = "<br>")
+        extra <- if (n > 30) paste0("<br><i>+", n - 30, " more</i>") else ""
+        hover_mat[, j] <- paste0("<b>", n, " peptides in bin</b><br>", shown, extra)
+      } else {
+        hover_mat[, j] <- cn
+      }
+    }
+    
+    if (color == "default") {
+      cscale <- list(list(0, "lightyellow"), list(1, "red"))
+    } else {
+      vcols  <- viridis::viridis(10, option = color)
+      cscale <- lapply(seq_along(vcols) - 1,
+                       function(i) list(i / (length(vcols) - 1), vcols[i + 1]))
+    }
+    
+    show_ticks <- ncol(mat_to_show) <= 250
+    
+    plotly::plot_ly(
+      source        = "group_hm",
+      x             = colnames(mat_to_show),
+      y             = rownames(mat_to_show),
+      z             = mat_to_show,
+      text          = hover_mat,
+      type          = "heatmap",
+      colorscale    = cscale,
+      hovertemplate = "%{text}<extra></extra>",
+      colorbar      = list(title = "log10(QUANTITY+1)")
+    ) %>%
+      plotly::layout(
+        uirevision = ui_rev,
+        xaxis = list(title = "", showticklabels = show_ticks,
+                     tickfont = list(size = 8), tickangle = -45),
+        yaxis = list(title = "", tickfont = list(size = 8), autorange = "reversed"),
+        margin = list(l = 130, b = if (show_ticks) 120 else 30)
+      ) %>%
+      plotly::event_register("plotly_relayout")
+  })
+  
+  # Manual expand: zoom in first, then click this button
+  observeEvent(input$expand_heatmap_region, {
+    zoom  <- zoom_info_r()
+    hdata <- heatmap_data_r()
+    req(hdata)
+    
+    if (is.null(hdata$bin_map)) {
+      showNotification("Already showing individual peptides.", type = "message")
+      return()
+    }
+    if (is.null(zoom)) {
+      showNotification("Zoom into a region first, then click Expand.", type = "warning")
+      return()
+    }
+    
+    x0 <- max(1L, as.integer(round(zoom[1])) + 1L)
+    x1 <- min(ncol(hdata$mat_display), as.integer(round(zoom[2])) + 1L)
+    vis_bins  <- colnames(hdata$mat_display)[x0:x1]
+    pep_names <- unlist(lapply(vis_bins, function(cn)
+      if (cn %in% names(hdata$bin_map)) hdata$bin_map[[cn]] else cn))
+    
+    if (length(pep_names) > 2000) {
+      showNotification(paste0(length(pep_names), " peptides in view — zoom in more."),
+                       type = "warning", duration = 8)
+      return()
+    }
+    
+    expand_counter_r(isolate(expand_counter_r()) + 1L)   # always unique uirevision
+    last_programmatic_t_r(as.numeric(Sys.time()))
+    expanded_peps_r(pep_names)
+    heatmap_mode_r("expanded")
+    zoom_info_r(NULL)
+  })
+  
+  observeEvent(input$reset_heatmap_view, {
+    last_programmatic_t_r(as.numeric(Sys.time()))  # suppress re-render autorange
+    heatmap_mode_r("binned")
+    expanded_peps_r(NULL)
+    zoom_info_r(NULL)
+  })
+  
+  output$download_visible_peptides <- downloadHandler(
+    filename = function() paste0("peptides_", Sys.Date(), ".txt"),
+    content  = function(file) {
+      hdata <- heatmap_data_r()
+      zoom  <- zoom_info_r()
+      mode  <- heatmap_mode_r()
+      req(hdata)
+      
+      if (mode == "expanded" && !is.null(expanded_peps_r())) {
+        peptides <- expanded_peps_r()
+        if (!is.null(zoom)) {
+          x0 <- max(1L, as.integer(round(zoom[1])) + 1L)
+          x1 <- min(length(peptides), as.integer(round(zoom[2])) + 1L)
+          if (x0 <= x1) peptides <- peptides[x0:x1]
+        }
+      } else {
+        mat_cols <- colnames(hdata$mat_display)
+        if (!is.null(zoom)) {
+          x0 <- max(1L, as.integer(round(zoom[1])) + 1L)
+          x1 <- min(length(mat_cols), as.integer(round(zoom[2])) + 1L)
+          if (x0 <= x1) mat_cols <- mat_cols[x0:x1]
+        }
+        peptides <- unlist(lapply(mat_cols, function(cn)
+          if (!is.null(hdata$bin_map) && cn %in% names(hdata$bin_map))
+            hdata$bin_map[[cn]] else cn))
+      }
+      
+      writeLines(unique(peptides), file)
+    }
+  )
   
   ## ----Group statistical analysis----
   group_comp_data <- eventReactive(input$update_group_comp, {

@@ -465,9 +465,29 @@ ui <- bs4DashPage(
                   plotOutput("group_venn_plot")
           ),
           bs4Card(title = tagList("Peptide based heatmap", bs4Dash::tooltip(icon("info-circle"),"Cluster peptides based on differential pattern across groups. Clustering distance is 'euclidean' and method is 'complete'. 
-                                                                            The MAX quantity for the peptides is used. Peptide label is removed if # > 200. NA is coloured Gray. Rastering is used for large data.", placement = "right")
+                                                                            The MAX quantity for the peptides is used. Peptides are binned for over 1000+ peptides. Peptide Llabels are remoed when 250+ peptides are visible. Zoom to adjust. NA is coloured Gray.", placement = "right")
                                   ), width = 12, maximizable = TRUE,
-                  plotOutput("group_peptide_heatmap")
+                  plotlyOutput("group_peptide_heatmap_interactive", height = "600px"),
+                  fluidRow(
+                    column(4,tagList(actionButton("expand_heatmap_region", "Expand Visible Bins",icon = icon("search-plus"),class = "btn-sm btn-outline-info mt-2"),
+                             bs4Dash::tooltip(
+                               icon("info-circle"),
+                               title = "Replaces the heatmap with individual peptides from the currently zoomed region. Peptides outside this regions are removed and needs to be reset via Full View button.",
+                               placement = "top"
+                             )
+                           )
+                    ),
+                    column(4,tagList(actionButton("reset_heatmap_view", "Full View",icon = icon("compress"),class = "btn-sm btn-outline-secondary mt-2"),
+                             bs4Dash::tooltip(
+                               icon("info-circle"),
+                               title = "Returns to the full binned heatmap with all peptides. Use this to restore the full data that was cut by the Expand Visible Bins.",
+                               placement = "top"
+                             )
+                           )
+                    ),
+                    column(4,downloadButton("download_visible_peptides", "Download Visible",class = "btn-sm btn-outline-secondary mt-2")
+                    )
+                  )
           ),
           
           ### ---- Statistical Plots ----
