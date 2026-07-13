@@ -463,9 +463,8 @@ plot_stacked_bar(processed_list, column = "CHARGE", fill_label = "Charge", perce
 
 #### Per Measurement
 ```{r QC_Charge_measurement}
-incProgress(1/chunk_num, detail = "Charge per measurement...")
-message("WIP")
-#plot_charge_per_measurement(processed_list, quantity_cols, color = color_palette)
+incProgress(1/chunk_num, detail = "Charge across measurement...")
+plot_charge_per_measurement(lst, quantity_cols, color = color_palette)
 ```
 
 ### Mass {.tabset}
@@ -478,7 +477,7 @@ plot_density(processed_list, column = "MASS", x_label = "Mass (Da)", color = col
 
 #### Per Measurement
 ```{r QC_Mass_measurement}
-incProgress(1/chunk_num, detail = "Mass per measurement...")
+incProgress(1/chunk_num, detail = "Mass across measurement...")
 plot_density_envelope(processed_list, quantity_cols, column = "MASS", x_label = "Mass (Da)", color = color_palette)
 ```
 
@@ -492,7 +491,7 @@ plot_density(processed_list, column = "MZ", x_label = "m/z", color = color_palet
 
 #### Per Measurement
 ```{r QC_MZ_measurement}
-incProgress(1/chunk_num, detail = "m/z per measurement...")
+incProgress(1/chunk_num, detail = "m/z across measurement...")
 plot_density_envelope(processed_list, quantity_cols, column = "MZ", x_label = "m/z", color = color_palette)
 ```
 
@@ -513,7 +512,7 @@ plot_per_sample_grid(
 
 #### Per Measurement
 ```{r QC_RT_measurement}
-incProgress(1/chunk_num, detail = "RT per measurement...")
+incProgress(1/chunk_num, detail = "RT across measurement...")
 for (s in names(processed_list)) {
   p <- plot_rt_histogram_range(processed_list[[s]], s, quantity_cols)
   if (!is.null(p)) print(p)
@@ -530,7 +529,7 @@ plot_density(processed_list, column = "PPM", x_label = "ppm", color = color_pale
 
 #### Per Measurement
 ```{r QC_PPM_measurement}
-incProgress(1/chunk_num, detail = "Mass error per measurement...")
+incProgress(1/chunk_num, detail = "Mass error across measurement...")
 plot_density_envelope(processed_list, quantity_cols, column = "PPM", x_label = "ppm", color = color_palette)
 ```
 
@@ -544,9 +543,8 @@ plot_violin(processed_list, column = "SCORE", color = color_palette)
 
 #### Per Measurement
 ```{r QC_Score_measurement}
-incProgress(1/chunk_num, detail = "Score per measurement...")
-message("WIP")
-#plot_density_envelope(processed_list, quantity_cols, column = "SCORE", x_label = "Score", color = color_palette)
+incProgress(1/chunk_num, detail = "Score across measurement...")
+plot_violin_envelope(lst, quantity_cols, column = "SCORE", x_label = "Score", color = color_palette)
 ```
 
 ## Motif Plot

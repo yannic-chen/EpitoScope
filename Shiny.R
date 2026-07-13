@@ -561,40 +561,38 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
   ## ---- Other numeric columns on per measurement basis ----
-  output$charge_plot_meas <- renderPlot({
-    lst <- data_list_r()
+  output$charge_plot_meas <- plotly::renderPlotly({
+    lst <- processed_data_list()
     check_data_error(lst, required_cols = "CHARGE", na_policy = "all")
-    #plot_charge_per_measurement(lst, default_quantity_cols_r(), color = input$color_palette)
+    plot_charge_per_measurement(lst, default_quantity_cols_r(), color = input$color_palette)
   })
   
   output$mass_plot_meas <- plotly::renderPlotly({
-    lst <- data_list_r()
+    lst <- processed_data_list()
     check_data_error(lst, required_cols = "MASS", na_policy = "any")
     plot_density_envelope(lst, default_quantity_cols_r(), "MASS", "Mass (Da)", color = input$color_palette)
   })
   
   output$mz_plot_meas <- plotly::renderPlotly({
-    lst <- data_list_r()
+    lst <- processed_data_list()
     check_data_error(lst, required_cols = "MZ", na_policy = "any")
     plot_density_envelope(lst, default_quantity_cols_r(), "MZ", "m/z", color = input$color_palette)
   })
   
   output$ppm_plot_meas <- plotly::renderPlotly({
-    lst <- data_list_r()
+    lst <- processed_data_list()
     check_data_error(lst, required_cols = "PPM", na_policy = "any")
     plot_density_envelope(lst, default_quantity_cols_r(), column = "PPM", x_label = "ppm", color = input$color_palette)
   })
   
-
-
-  #output$score_violin_meas <- renderPlot({
-  #  lst <- data_list_r()
-  #  check_data_error(lst, required_cols = "SCORE", na_policy = "any")
-  #  plot_density_envelope(lst, default_quantity_cols_r(), "SCORE", "Score", color = input$color_palette)
-  #})
+  output$score_violin_meas <- plotly::renderPlotly({
+    lst <- processed_data_list()
+    check_data_error(lst, required_cols = "SCORE", na_policy = "any")
+    plot_violin_envelope(lst, default_quantity_cols_r(), column = "SCORE", x_label = "Score", color = input$color_palette)
+  })
   
   output$RT_plot_meas <- renderUI({
-    lst <- data_list_r()
+    lst <- processed_data_list()
     check_data_error(lst, required_cols = "RT", na_policy = "all")
     qcols <- default_quantity_cols_r()
     layout_column_wrap(

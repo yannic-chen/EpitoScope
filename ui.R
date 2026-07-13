@@ -202,9 +202,8 @@ ui <- bs4DashPage(
                              tabsetPanel(
                                tabPanel("Per Sample",      
                                         plotOutput("charge_plot2")),
-                               tabPanel("Per Measurement",
-                                        h6("WIP: Think up a way for visualization.")
-                                        #plotOutput("charge_plot_meas")
+                               tabPanel("Across Measurement",
+                                        plotlyOutput("charge_plot_meas")
                                )
                              )
                     ),
@@ -213,7 +212,7 @@ ui <- bs4DashPage(
                              tabsetPanel(
                                tabPanel("Per Sample",    
                                         plotlyOutput("mass_plot2")),
-                               tabPanel("Per Measurement",
+                               tabPanel("Across Measurement",
                                         h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
                                         plotlyOutput("mass_plot_meas")
                                )
@@ -223,7 +222,7 @@ ui <- bs4DashPage(
                              tabsetPanel(
                                tabPanel("Per Sample",      
                                         plotlyOutput("mz_plot2")),
-                               tabPanel("Per Measurement",
+                               tabPanel("Across Measurement",
                                         h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
                                         plotlyOutput("mz_plot_meas")
                                )
@@ -233,7 +232,7 @@ ui <- bs4DashPage(
                              tabsetPanel(
                                tabPanel("Per Sample",      
                                         uiOutput("RT_plot2")),
-                               tabPanel("Per Measurement",
+                               tabPanel("Across Measurement",
                                         h6("The light shaded band across the histogram represents the range between measurements."),
                                         uiOutput("RT_plot_meas")
                                )
@@ -244,7 +243,7 @@ ui <- bs4DashPage(
                              tabsetPanel(
                                tabPanel("Per Sample",      
                                         plotlyOutput("ppm_plot2")),
-                               tabPanel("Per Measurement", 
+                               tabPanel("Across Measurement", 
                                         h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
                                         plotlyOutput("ppm_plot_meas")
                                )
@@ -254,9 +253,9 @@ ui <- bs4DashPage(
                              tabsetPanel(
                                tabPanel("Per Sample",      
                                         plotlyOutput("score_violin2")),
-                               tabPanel("Per Measurement", 
-                                        h6("WIP: Think up a way for visualization."),
-                                        #plotOutput("score_violin_meas")
+                               tabPanel("Across Measurement", 
+                                        h6("Line is mean distribution. THe dashed line is min and the shaded area is max."),
+                                        plotlyOutput("score_violin_meas")
                                )
                              )
                     )

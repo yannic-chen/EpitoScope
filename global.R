@@ -1702,6 +1702,12 @@ plot_violin <- function(lst, column, x_label = "Sample", y_label = NULL, title =
     setNames(viridis(n, option = color), names(lst))
   }
   
+  all_vals <- unlist(lapply(lst, function(df) {
+    vals <- df[[column]]
+    vals[!is.na(vals) & is.finite(vals)]
+  }))
+  y_range <- range(all_vals, na.rm = TRUE)
+  
   p <- plotly::plot_ly()
   for (i in seq_along(lst)) {
     sname <- names(lst)[i]
@@ -1722,7 +1728,7 @@ plot_violin <- function(lst, column, x_label = "Sample", y_label = NULL, title =
   
   p %>% plotly::layout(
     xaxis = list(title = x_label, tickangle = -45),
-    yaxis = list(title = y_label),
+    yaxis = list(title = y_label, range = y_range),
     showlegend = FALSE
   )
 }
@@ -1936,78 +1942,107 @@ extract_legend <- function(p) {
   leg
 }
 
-plot_charge_per_measurement <- function(lst, quantity_cols, color = "default") {
-  
-  parse_charge <- function(x) {
-    sapply(as.character(x), function(v) {
-      nums <- suppressWarnings(as.integer(unlist(regmatches(v, gregexpr("[0-9]+", v)))))
-      nums <- nums[!is.na(nums)]
-      if (length(nums) == 0) NA_integer_ else min(nums)
-    })
-  }
-  
-  stats <- dplyr::bind_rows(lapply(names(lst), function(s) {
-    df        <- lst[[s]]
+plot_charge_per_measurement <- function(lst, quantity_cols, column = "CHARGE",
+                                        fill_label = "Charge", percentage = FALSE,
+                                        color = "default") {
+  rows <- list()
+  for (sname in names(lst)) {
+    df        <- lst[[sname]]
+    if (!column %in% colnames(df)) next
     meas_cols <- intersect(quantity_cols, colnames(df))
-    if (!"CHARGE" %in% colnames(df)) return(NULL)
-    
-    df$CHARGE <- parse_charge(df$CHARGE)
-    df <- df[!is.na(df$CHARGE), ]
-    if (nrow(df) == 0) return(NULL)
-    
-    all_charges <- sort(unique(df$CHARGE))
-    if (length(meas_cols) == 0) meas_cols <- list(NULL)
-    
-    per_meas <- dplyr::bind_rows(lapply(meas_cols, function(m) {
-      if (is.null(m)) {
-        charges <- df$CHARGE
-      } else {
-        col      <- df[[m]]
-        detected <- if (any(is.na(col))) !is.na(col) else col > 0
-        charges  <- df$CHARGE[detected]
-      }
-      if (length(charges) == 0) return(NULL)
-      tbl <- table(factor(charges, levels = all_charges))
-      pct <- as.numeric(tbl) / sum(tbl) * 100
-      data.frame(Charge = all_charges, Pct = pct)
-    }))
-    
-    if (is.null(per_meas) || nrow(per_meas) == 0) return(NULL)
-    
-    per_meas %>%
-      dplyr::group_by(Charge) %>%
-      dplyr::summarise(Mean = mean(Pct), Min = min(Pct), Max = max(Pct),
-                       .groups = "drop") %>%
-      dplyr::mutate(Sample = s)
-  }))
+    if (length(meas_cols) == 0) next
+    for (m in meas_cols) {
+      col_vals <- df[[m]]
+      detected <- if (any(is.na(col_vals))) !is.na(col_vals) else col_vals > 0
+      sub_df   <- df[detected, column, drop = FALSE]
+      if (nrow(sub_df) == 0) next
+      counts <- as.data.frame(table(sub_df[[column]]), stringsAsFactors = FALSE)
+      colnames(counts) <- c("Charge", "Count")
+      counts$Sample      <- sname
+      counts$Measurement <- m
+      rows[[length(rows) + 1]] <- counts
+    }
+  }
+  if (length(rows) == 0) return(NULL)
   
-  if (is.null(stats) || nrow(stats) == 0) return(NULL)
-  
-  has_range   <- any(stats$Min != stats$Max)
-  fill_colors <- if (color == "default") NULL else
-    setNames(viridis(length(unique(stats$Sample)), option = color),
-             unique(stats$Sample))
-  
-  p <- ggplot(stats, aes(x = Sample, y = Mean, fill = Sample)) +
-    geom_col() +
-    facet_wrap(~ paste("Charge", Charge), scales = "free_y") +
-    labs(x = "Sample", y = "% of detected peptides") +
-    theme_minimal() +
-    theme(axis.text.x  = element_text(angle = 45, hjust = 1),
-          legend.position = "none",
-          strip.text = element_text(face = "bold"))
-  
-  if (has_range) {
-    p <- p +
-      geom_errorbar(aes(ymin = Min, ymax = Max), width = 0.25, linewidth = 0.8) +
-      geom_text(aes(y = Max, label = sprintf("%.1f%%\n[%.1f\u2013%.1f]", Mean, Min, Max)),
-                vjust = -0.3, size = 3)
-  } else {
-    p <- p + geom_text(aes(label = sprintf("%.1f%%", Mean)), vjust = -0.3, size = 4)
+  df_long <- do.call(rbind, rows)
+  if (percentage) {
+    df_long <- df_long %>%
+      dplyr::group_by(Sample, Measurement) %>%
+      dplyr::mutate(Count = 100 * Count / sum(Count)) %>%
+      dplyr::ungroup()
   }
   
-  if (!is.null(fill_colors)) p <- p + scale_fill_manual(values = fill_colors)
-  p
+  # Preserve sample order from lst, measurements in the order they appear
+  meas_order <- unlist(lapply(names(lst), function(s) {
+    intersect(quantity_cols, colnames(lst[[s]]))
+  }))
+  meas_order <- meas_order[meas_order %in% df_long$Measurement]
+  
+  charges    <- sort(unique(df_long$Charge), decreasing = FALSE)
+  n_ch       <- length(charges)
+  plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
+                  '#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52')
+  charge_cols <- if (color == "default") {
+    setNames(plotly_pal[((seq_len(n_ch) - 1L) %% length(plotly_pal)) + 1L], charges)
+  } else {
+    setNames(viridis(n_ch, option = color), charges)
+  }
+  
+  meas_df <- data.frame(Measurement = meas_order, stringsAsFactors = FALSE)
+  p <- plotly::plot_ly()
+  for (ch in charges) {
+    d <- merge(meas_df,
+               df_long[df_long$Charge == ch, c("Measurement", "Count")],
+               by = "Measurement", all.x = TRUE)
+    d$Count[is.na(d$Count)] <- 0
+    d <- d[match(meas_order, d$Measurement), ]
+    p <- p %>% plotly::add_trace(
+      type = "bar",
+      x    = meas_order,
+      y    = d$Count,
+      name = paste(fill_label, ch),
+      marker = list(color = charge_cols[[ch]]),
+      hovertemplate = paste0(fill_label, " ", ch, ": %{y}<extra>%{x}</extra>")
+    )
+  }
+  
+  # Sample group labels + dividers
+  annotations <- list()
+  shapes      <- list()
+  for (i in seq_along(names(lst))) {
+    sname     <- names(lst)[i]
+    meas_cols <- intersect(quantity_cols, colnames(lst[[sname]]))
+    meas_cols <- meas_cols[meas_cols %in% meas_order]
+    if (length(meas_cols) == 0) next
+    positions <- which(meas_order %in% meas_cols) - 1L  # 0-based for plotly
+    annotations[[length(annotations) + 1]] <- list(
+      x = mean(positions), y = -0.18,
+      xref = "x", yref = "paper",
+      text = paste0("<b>", sname, "</b>"),
+      showarrow = FALSE, xanchor = "center",
+      font = list(size = 11)
+    )
+    if (i > 1) {
+      shapes[[length(shapes) + 1]] <- list(
+        type = "line",
+        x0 = min(positions) - 0.5, x1 = min(positions) - 0.5,
+        y0 = 0, y1 = 1,
+        xref = "x", yref = "paper",
+        line = list(color = "grey60", width = 1, dash = "dot")
+      )
+    }
+  }
+  
+  p %>% plotly::layout(
+    barmode = "stack",
+    xaxis   = list(title = "", tickangle = -45, tickfont = list(size = 8)),
+    yaxis   = list(title = if (percentage) "Percentage (%)" else "Count"),
+    legend  = list(title = list(text = fill_label)),
+    margin  = list(b = 100),
+    annotations = annotations,
+    shapes      = shapes
+  )
 }
 
 plot_density_envelope <- function(lst, quantity_cols, column, x_label, color = "default") {
@@ -2078,6 +2113,101 @@ plot_density_envelope <- function(lst, quantity_cols, column, x_label, color = "
     yaxis = list(title = "Density", rangemode = "tozero"),
     hovermode = "x unified",
     legend = list(title = list(text = "Sample"))
+  )
+}
+
+plot_violin_envelope <- function(lst, quantity_cols, column, x_label = "Sample", y_label = NULL, color = "default") {
+  if (is.null(y_label)) y_label <- column
+  n          <- length(lst)
+  plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
+                  '#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52')
+  cols <- if (color == "default") {
+    setNames(plotly_pal[((seq_len(n) - 1L) %% length(plotly_pal)) + 1L], names(lst))
+  } else {
+    setNames(viridis(n, option = color), names(lst))
+  }
+  
+  p <- plotly::plot_ly()
+  
+  for (i in seq_along(lst)) {
+    sname     <- names(lst)[i]
+    df        <- lst[[sname]]
+    meas_cols <- intersect(quantity_cols, colnames(df))
+    if (length(meas_cols) == 0 || !column %in% colnames(df)) next
+    
+    all_vals <- df[[column]][is.finite(df[[column]])]
+    if (length(all_vals) < 2) next
+    y_grid <- seq(min(all_vals), max(all_vals), length.out = 256)
+    
+    dens_list <- Filter(Negate(is.null), lapply(meas_cols, function(m) {
+      col_vals <- df[[m]]
+      detected <- if (any(is.na(col_vals))) !is.na(col_vals) else col_vals > 0
+      vals     <- df[[column]][detected & is.finite(df[[column]])]
+      if (length(vals) < 2) return(NULL)
+      d <- density(vals, from = min(y_grid), to = max(y_grid), n = 256)
+      approx(d$x, d$y, xout = y_grid)$y
+    }))
+    if (length(dens_list) == 0) next
+    
+    dens_mat <- do.call(rbind, dens_list)
+    mean_d   <- colMeans(dens_mat, na.rm = TRUE)
+    min_d    <- apply(dens_mat, 2, min, na.rm = TRUE)
+    max_d    <- apply(dens_mat, 2, max, na.rm = TRUE)
+    
+    scale_f  <- 0.4 / max(max_d, na.rm = TRUE)
+    mean_d   <- mean_d * scale_f
+    min_d    <- min_d  * scale_f
+    max_d    <- max_d  * scale_f
+    
+    col   <- cols[[sname]]
+    rgb_v <- col2rgb(col)[, 1]
+    fill  <- sprintf("rgba(%d,%d,%d,0.2)", rgb_v[1], rgb_v[2], rgb_v[3])
+    
+    # Mirrored polygon helpers
+    violin_x <- function(d) c(i + d, i - rev(d))
+    violin_y <- function()  c(y_grid, rev(y_grid))
+    
+    p <- p %>%
+      # Shaded envelope (max extent across measurements)
+      plotly::add_trace(
+        type = "scatter", mode = "lines",
+        x = violin_x(max_d), y = violin_y(),
+        fill = "toself", fillcolor = fill,
+        line = list(color = "rgba(0,0,0,0)"),
+        name = sname, legendgroup = sname, showlegend = TRUE,
+        hovertemplate = "<extra></extra>"
+      ) %>%
+      # Mean violin outline
+      plotly::add_trace(
+        type = "scatter", mode = "lines",
+        x = violin_x(mean_d), y = violin_y(),
+        fill = "toself", fillcolor = "rgba(0,0,0,0)",
+        line = list(color = col, width = 2),
+        name = sname, legendgroup = sname, showlegend = FALSE,
+        hovertemplate = "%{y:.4g}<extra></extra>"
+      ) %>%
+      # Min violin outline (dashed)
+      plotly::add_trace(
+        type = "scatter", mode = "lines",
+        x = violin_x(min_d), y = violin_y(),
+        fill = "toself", fillcolor = "rgba(0,0,0,0)",
+        line = list(color = col, width = 1, dash = "dot"),
+        name = sname, legendgroup = sname, showlegend = FALSE,
+        hovertemplate = "<extra></extra>"
+      )
+  }
+  
+  p %>% plotly::layout(
+    xaxis = list(
+      title    = x_label,
+      tickvals = seq_len(n),
+      ticktext = names(lst),
+      tickangle = -45,
+      range    = c(0.5, n + 0.5)
+    ),
+    yaxis     = list(title = y_label),
+    hovermode = "closest",
+    showlegend= FALSE
   )
 }
 
