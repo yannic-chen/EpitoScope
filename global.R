@@ -2749,6 +2749,69 @@ plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster 
   ht
 }
 
+plot_heatmap_plotly <- function(mat, color = "default", log_transform = FALSE, transpose = FALSE) {
+  if (log_transform) mat <- log10(mat + 1)
+  if (transpose)     mat <- t(mat)
+  
+  clust_na0 <- function(x) { x2 <- x; x2[!is.finite(x2)] <- 0; dist(x2) }
+  
+  bin_map <- NULL
+  n_orig  <- ncol(mat)   # save before binning overwrites mat
+  
+  if (ncol(mat) > 1000L) {
+    mat     <- bin_heatmap_columns(mat, max_cols = 1000L)
+    bin_map <- attr(mat, "bin_map")   # extract list that bin_heatmap_columns already attaches
+  } else {
+    col_ord <- tryCatch(hclust(clust_na0(t(mat)), method = "complete")$order,
+                        error = function(e) seq_len(ncol(mat)))
+    mat <- mat[, col_ord, drop = FALSE]
+  }
+  
+  row_ord <- tryCatch(hclust(clust_na0(mat), method = "complete")$order,
+                      error = function(e) seq_len(nrow(mat)))
+  mat <- mat[row_ord, , drop = FALSE]
+  
+  hover_mat <- matrix("", nrow = nrow(mat), ncol = ncol(mat))
+  for (j in seq_len(ncol(mat))) {
+    cn <- colnames(mat)[j]
+    if (!is.null(bin_map) && cn %in% names(bin_map)) {
+      peps  <- bin_map[[cn]]; n <- length(peps)
+      shown <- paste(head(peps, 30), collapse = "<br>")
+      extra <- if (n > 30) paste0("<br><i>+", n - 30, " more</i>") else ""
+      hover_mat[, j] <- paste0("<b>", n, " peptides in bin</b><br>", shown, extra)
+    } else {
+      hover_mat[, j] <- cn
+    }
+  }
+  
+  if (color == "default") {
+    cscale <- list(list(0, "lightyellow"), list(1, "red"))
+  } else {
+    vcols  <- viridis::viridis(10, option = color)
+    cscale <- lapply(seq_along(vcols) - 1,
+                     function(i) list(i / (length(vcols) - 1), vcols[i + 1]))
+  }
+  
+  show_ticks <- ncol(mat) <= 150
+  bin_note   <- if (!is.null(bin_map))
+    paste0("Binned: ", n_orig, "\u2192", ncol(mat),
+           " representative peptide bins. Hover columns for members.") else NULL
+  
+  plotly::plot_ly(
+    x = colnames(mat), y = rownames(mat), z = mat, text = hover_mat,
+    type = "heatmap", colorscale = cscale,
+    hovertemplate = "%{text}<extra></extra>",
+    colorbar = list(title = if (log_transform) "log10(val+1)" else "value")
+  ) %>%
+    plotly::layout(
+      title = list(text = bin_note, font = list(size = 10, color = "grey50")),
+      xaxis = list(title = "", showticklabels = show_ticks,
+                   tickfont = list(size = 8), tickangle = -45),
+      yaxis = list(title = "", tickfont = list(size = 8), autorange = "reversed"),
+      margin = list(l = 130, b = if (show_ticks) 120 else 30)
+    )
+}
+
 plot_PCA <- function(lst, color = "default") {
   peptides <- lapply(lst, function(df) {
     df %>%

@@ -868,32 +868,29 @@ if (!is.null(group_list)) {
 ```{r Group_heatmap}
 incProgress(1/chunk_num, detail = "Group Heatmap...")
 if (!is.null(group_list)) {
-    lst <- processed_list
-    groups <- group_list
-    
-    quantity_cols <- data_info %>%
-      filter(final_name == "QUANTITY") %>%
-      dplyr::select(-final_name) %>% 
-      unlist(recursive = TRUE, use.names = FALSE)
-    
-    if(length(quantity_cols) < 1) {
-      cat("No QUANTITY columns found.")
-      return(NULL)
-    }
-    
-    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets, col_map = col_map)
+  lst    <- processed_list
+  groups <- group_list
 
-    
-    if(nrow(pep_mat)  < 1) {
+  quantity_cols <- data_info %>%
+    filter(final_name == "QUANTITY") %>%
+    dplyr::select(-final_name) %>%
+    unlist(recursive = TRUE, use.names = FALSE)
+
+  if (length(quantity_cols) < 1) {
+    cat("No QUANTITY columns found.")
+  } else {
+    pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols,
+                                      group_peptide_sets, col_map = col_map)
+    if (nrow(pep_mat) < 1) {
       cat("No peptides to plot.")
-      return(NULL)
+    } else {
+      plot_heatmap_plotly(pep_mat, color = color_palette,
+                          transpose = TRUE, log_transform = TRUE)
     }
-    
-    plot_heatmap(pep_mat, color = color_palette, transpose = TRUE, log_transform = TRUE)
+  }
 } else {
   cat("no Groups defined")
 }
-```
 
 ## Group Comparison {.tabset}
 
