@@ -1546,36 +1546,35 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     groups    <- group_list()
     data_info <- data_info_r()
     req(lst, groups, data_info, length(groups) > 0)
-    
     quantity_cols <- data_info %>%
       dplyr::filter(final_name == "QUANTITY") %>%
       dplyr::select(-final_name) %>%
       unlist(recursive = TRUE, use.names = FALSE)
-    
     shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
-    
     col_map_hm <- measurement_col_map_r()
     pep_mat <- prepare_peptide_matrix(lst, groups, quantity_cols, group_peptide_sets(),
                                       col_map = col_map_hm)
-    
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
-    
     mat_full <- log10(pep_mat + 1)
     mat_full <- t(mat_full)
-    
-    bin_map     <- NULL
-    mat_display <- mat_full
+    clust_na0 <- function(x) { x2 <- x; x2[!is.finite(x2)] <- 0; dist(x2) }
+    bin_map <- NULL; mat_display <- mat_full; col_ord <- seq_len(ncol(mat_full))
     if (ncol(mat_full) > 1000L) {
       mat_binned  <- bin_heatmap_columns(mat_full, max_cols = 1000L)
       bin_map     <- attr(mat_binned, "bin_map")
       mat_display <- mat_binned
+      # bin_heatmap_columns already groups by presence pattern; no further column clustering
+    } else {
+      col_ord <- tryCatch(
+        hclust(clust_na0(t(mat_full)), method = "complete")$order,
+        error = function(e) seq_len(ncol(mat_full))
+      )
+      mat_display <- mat_full[, col_ord, drop = FALSE]
     }
-    
-    clust_na0 <- function(x) { x2 <- x; x2[!is.finite(x2)] <- 0; dist(x2) }
-    row_ord <- tryCatch({
-      hclust(clust_na0(mat_display), method = "complete")$order
-    }, error = function(e) seq_len(nrow(mat_display)))
-    
+    row_ord <- tryCatch(
+      hclust(clust_na0(mat_display), method = "complete")$order,
+      error = function(e) seq_len(nrow(mat_display))
+    )
     list(mat_full = mat_full, mat_display = mat_display,
          bin_map = bin_map, row_ord = row_ord)
   })
