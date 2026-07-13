@@ -891,6 +891,7 @@ if (!is.null(group_list)) {
 } else {
   cat("no Groups defined")
 }
+```
 
 ## Group Comparison {.tabset}
 
