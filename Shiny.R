@@ -705,51 +705,20 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
                        color = input$color_palette, quantity_cols = default_quantity_cols_r())
   })
   
-  ## ----Dynamic Range plots----
+  ## ----Dynamic Range plots (individual, one subplot figure)----
   output$dynrange_individual_ui <- renderUI({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "MAX_QUANTITY", na_policy = "any")
-    
-    # Wrap plots in a grid (like motif plots)
-    layout_column_wrap(
-      width = "400px",  # each plot approx width
-      !!!lapply(names(lst), function(sample_name) {
-        plotlyOutput(paste0("dynrange_", sample_name), height = "300px")
-      })
-    )
+    n     <- sum(vapply(lst, function(df)
+      nrow(df) >= 10 && "MAX_QUANTITY" %in% colnames(df), logical(1)))
+    nrows <- max(1L, ceiling(n / 3))
+    plotly::plotlyOutput("dynrange_grid", height = paste0(nrows * 320, "px"))
   })
   
-  output$dynrange_combined <- renderPlot({
+  output$dynrange_grid <- renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "MAX_QUANTITY", na_policy = "any")
-    dynamic_range_plot_combined(df_list = lst, data_col = "MAX_QUANTITY", color = input$color_palette)
-  })
-  
-  observe({
-    lst <- processed_data_list()
-    check_data_error(lst, required_cols = "MAX_QUANTITY", na_policy = "any")
-    
-    for (sample_name in names(lst)) {
-      
-      local({
-        df_local <- lst[[sample_name]]
-        sample_val <- sample_name
-        
-        output[[paste0("dynrange_", sample_val)]] <- renderPlotly({
-          
-          shiny::validate(shiny::need(nrow(df_local) >= 10, "Not enough peptides. Need at least 10."))
-          
-          dynamic_range_plot(
-            df = df_local,
-            data_col = "MAX_QUANTITY",
-            title_name = paste("Dynamic Range –", sample_val),
-            name_col = "PROTEIN",
-            gene = "HLA",               # Default highlight can be HLA
-            gene_regex = "HLA[A-C]+" #Only HLA-A,B and C
-          )
-        })
-      })
-    }
+    dynamic_range_subplot(lst, data_col = "MAX_QUANTITY", ncol = 3)
   })
   
   observeEvent(list(input$dynrange_search, input$dynrange_pep_search), {
@@ -757,69 +726,136 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     prot_query <- trimws(if (is.null(input$dynrange_search))     "" else input$dynrange_search)
     pep_query  <- trimws(if (is.null(input$dynrange_pep_search)) "" else input$dynrange_pep_search)
     
-    # Match `query` against any of `cols`; returns logical of length n.
+    samples <- names(lst)[vapply(lst, function(df)
+      nrow(df) >= 10 && "MAX_QUANTITY" %in% colnames(df), logical(1))]
+    if (length(samples) == 0) return()
+    
     match_idx_fn <- function(query, cols, n) {
       if (nchar(query) == 0) return(rep(FALSE, n))
       idx <- tryCatch(
         Reduce(`|`, lapply(cols, function(col)
           grepl(query, col, ignore.case = TRUE, perl = TRUE))),
-        error = function(e) {
-          rep(FALSE, n)
-        })
+        error = function(e) rep(FALSE, n))
       idx[is.na(idx)] <- FALSE
       idx
     }
     
-    prot_over <- FALSE
-    pep_over  <- FALSE
+    k <- length(samples)
+    X <- vector("list", 3 * k); Y <- vector("list", 3 * k)
+    T <- vector("list", 3 * k); H <- vector("list", 3 * k)
     
-    for (sample_name in names(lst)) {
-      df <- lst[[sample_name]]
-      if (!all(c("PROTEIN", "MAX_QUANTITY") %in% colnames(df))) next
+    for (i in seq_along(samples)) {
+      df <- lst[[samples[i]]]
       df$MAX_QUANTITY[df$MAX_QUANTITY == 0] <- NA
-      if (nrow(df) < 10 || all(is.na(df$MAX_QUANTITY))) next
-      n <- nrow(df)
+      df <- df[!is.na(df$MAX_QUANTITY), , drop = FALSE]
+      b <- (i - 1L) * 3L
       
-      df$Rank   <- rank(-df$MAX_QUANTITY, ties.method = "first", na.last = "keep")
+      if (nrow(df) == 0) {
+        X[[b+1]] <- list(); Y[[b+1]] <- list(); T[[b+1]] <- list(); H[[b+1]] <- "text"
+        X[[b+2]] <- list(); Y[[b+2]] <- list(); T[[b+2]] <- list(); H[[b+2]] <- "text"
+        X[[b+3]] <- list(); Y[[b+3]] <- list(); T[[b+3]] <- list(); H[[b+3]] <- "text"
+        next
+      }
+      
+      prot_vec <- if ("PROTEIN" %in% names(df)) df$PROTEIN else rep("", nrow(df))
+      pep_vec  <- if ("PEPTIDE" %in% names(df)) df$PEPTIDE else rep("", nrow(df))
+      df$Rank   <- rank(-df$MAX_QUANTITY, ties.method = "first")
       df$y_vals <- log2(df$MAX_QUANTITY)
+      gene_nm   <- sub(".*?GN=([0-9A-Z/\\-]+).*", "\\1", prot_vec, perl = TRUE)
+      disp_nm   <- ifelse(gene_nm == prot_vec, prot_vec, paste0(gene_nm, "<br>", prot_vec))
+      df$hover_text <- paste0("<b>", disp_nm, "</b><br>", pep_vec, "<br>",
+                              "log2(MAX_QUANTITY): ", round(df$y_vals, 2), "<br>Rank: ", df$Rank)
       
-      gene_names   <- sub(".*?GN=([0-9A-Z/\\-]+).*", "\\1", df$PROTEIN, perl = TRUE)
-      display_name <- ifelse(gene_names == df$PROTEIN, df$PROTEIN,
-                             paste0(gene_names, "<br>", df$PROTEIN))
-      df$hover_text <- paste0("<b>", display_name, "</b><br>",
-                              df$PEPTIDE, "<br>",
-                              "log2(MAX_QUANTITY): ", round(df$y_vals, 2), "<br>",
-                              "Rank: ", df$Rank)
+      n <- nrow(df)
+      prot_idx <- match_idx_fn(prot_query, list(prot_vec), n)
+      pep_idx  <- match_idx_fn(pep_query,  list(df$STRIPPED, pep_vec), n)
+      pep_idx  <- pep_idx & !prot_idx
+      base_idx <- !(prot_idx | pep_idx)
       
-      prot_idx <- match_idx_fn(prot_query, list(df$PROTEIN), n)
-      pep_idx  <- match_idx_fn(pep_query,  list(df$STRIPPED, df$PEPTIDE), n)
-      pep_idx  <- pep_idx & !prot_idx    # protein highlight wins on overlap
+      base_hi <- if (sum(prot_idx) + sum(pep_idx) > 0) "skip" else "text"
       
-      prot_hits <- df[prot_idx, ]
-      pep_hits  <- df[pep_idx, ]
-      non_hits  <- df[!(prot_idx | pep_idx), ]
-      
-      blue_hoverinfo <- if (nrow(prot_hits) + nrow(pep_hits) > 0) "skip" else "text"
-      
-      plotly::plotlyProxy(paste0("dynrange_", sample_name), session) %>%
-        plotly::plotlyProxyInvoke(
-          "restyle",
-          list(
-            x = list(as.list(non_hits$Rank),
-                     as.list(prot_hits$Rank),
-                     as.list(pep_hits$Rank)),
-            y = list(as.list(non_hits$y_vals),
-                     as.list(prot_hits$y_vals),
-                     as.list(pep_hits$y_vals)),
-            text = list(as.list(non_hits$hover_text),
-                        as.list(prot_hits$hover_text),
-                        as.list(pep_hits$hover_text)),
-            hoverinfo = list(blue_hoverinfo, "text", "text")
-          ),
-          list(0L, 1L, 2L)
-        )
+      X[[b+1]] <- as.list(df$Rank[base_idx]); Y[[b+1]] <- as.list(df$y_vals[base_idx]); T[[b+1]] <- as.list(df$hover_text[base_idx]); H[[b+1]] <- base_hi
+      X[[b+2]] <- as.list(df$Rank[prot_idx]); Y[[b+2]] <- as.list(df$y_vals[prot_idx]); T[[b+2]] <- as.list(df$hover_text[prot_idx]); H[[b+2]] <- "text"
+      X[[b+3]] <- as.list(df$Rank[pep_idx]);  Y[[b+3]] <- as.list(df$y_vals[pep_idx]);  T[[b+3]] <- as.list(df$hover_text[pep_idx]);  H[[b+3]] <- "text"
     }
-})
+    
+    idxs <- as.list(seq_len(3L * k) - 1L)
+    plotly::plotlyProxy("dynrange_grid", session) %>%
+      plotly::plotlyProxyInvoke("restyle",
+                                list(x = X, y = Y, text = T, hoverinfo = H), idxs)
+  })
+  
+  ## ----Dynamic Range plots combined----
+  output$dynrange_combined <- renderPlotly({
+    lst <- processed_data_list()
+    check_data_error(lst, required_cols = "MAX_QUANTITY", na_policy = "any")
+    dynamic_range_plot_combined(df_list = lst, data_col = "MAX_QUANTITY", color = input$color_palette)
+  })
+  
+  observeEvent(list(input$dynrange_search, input$dynrange_pep_search), {
+    lst        <- processed_data_list()
+    prot_query <- trimws(if (is.null(input$dynrange_search))     "" else input$dynrange_search)
+    pep_query  <- trimws(if (is.null(input$dynrange_pep_search)) "" else input$dynrange_pep_search)
+    
+    samples <- names(lst)[vapply(lst, function(df)
+      nrow(df) >= 10 && "MAX_QUANTITY" %in% colnames(df), logical(1))]
+    if (length(samples) == 0) return()
+    
+    match_idx_fn <- function(query, cols, n) {
+      if (nchar(query) == 0) return(rep(FALSE, n))
+      idx <- tryCatch(
+        Reduce(`|`, lapply(cols, function(col)
+          grepl(query, col, ignore.case = TRUE, perl = TRUE))),
+        error = function(e) rep(FALSE, n))
+      idx[is.na(idx)] <- FALSE
+      idx
+    }
+    
+    base_x <- base_y <- base_t <- vector("list", length(samples))
+    prot_x <- numeric(0); prot_y <- numeric(0); prot_t <- character(0)
+    pep_x  <- numeric(0); pep_y  <- numeric(0); pep_t  <- character(0)
+    
+    for (i in seq_along(samples)) {
+      df <- lst[[samples[i]]]
+      df$MAX_QUANTITY[df$MAX_QUANTITY == 0] <- NA
+      df <- df[!is.na(df$MAX_QUANTITY), , drop = FALSE]
+      if (nrow(df) == 0) { base_x[[i]] <- list(); base_y[[i]] <- list(); base_t[[i]] <- list(); next }
+      
+      prot_vec <- if ("PROTEIN" %in% names(df)) df$PROTEIN else rep("", nrow(df))
+      pep_vec  <- if ("PEPTIDE" %in% names(df)) df$PEPTIDE else rep("", nrow(df))
+      df$Rank   <- rank(-df$MAX_QUANTITY, ties.method = "first")
+      df$y_vals <- log2(df$MAX_QUANTITY)
+      gene_nm   <- sub(".*?GN=([0-9A-Z/\\-]+).*", "\\1", prot_vec, perl = TRUE)
+      disp_nm   <- ifelse(gene_nm == prot_vec, prot_vec, paste0(gene_nm, "<br>", prot_vec))
+      df$hover_text <- paste0("<b>", samples[i], "</b><br>", disp_nm, "<br>", pep_vec, "<br>",
+                              "log2(MAX_QUANTITY): ", round(df$y_vals, 2), "<br>Rank: ", df$Rank)
+      
+      n <- nrow(df)
+      prot_idx <- match_idx_fn(prot_query, list(prot_vec), n)
+      pep_idx  <- match_idx_fn(pep_query,  list(df$STRIPPED, pep_vec), n)
+      pep_idx  <- pep_idx & !prot_idx
+      base_idx <- !(prot_idx | pep_idx)
+      
+      base_x[[i]] <- as.list(df$Rank[base_idx])
+      base_y[[i]] <- as.list(df$y_vals[base_idx])
+      base_t[[i]] <- as.list(df$hover_text[base_idx])
+      
+      prot_x <- c(prot_x, df$Rank[prot_idx]); prot_y <- c(prot_y, df$y_vals[prot_idx]); prot_t <- c(prot_t, df$hover_text[prot_idx])
+      pep_x  <- c(pep_x,  df$Rank[pep_idx]);  pep_y  <- c(pep_y,  df$y_vals[pep_idx]);  pep_t  <- c(pep_t,  df$hover_text[pep_idx])
+    }
+    
+    base_hoverinfo <- if (length(prot_x) + length(pep_x) > 0) "skip" else "text"
+    
+    x_vals  <- c(base_x, list(as.list(prot_x)), list(as.list(pep_x)))
+    y_vals  <- c(base_y, list(as.list(prot_y)), list(as.list(pep_y)))
+    t_vals  <- c(base_t, list(as.list(prot_t)), list(as.list(pep_t)))
+    hi_vals <- c(rep(list(base_hoverinfo), length(samples)), list("text"), list("text"))
+    idxs    <- as.list(seq_len(length(samples) + 2L) - 1L)
+    
+    plotly::plotlyProxy("dynrange_combined", session) %>%
+      plotly::plotlyProxyInvoke("restyle",
+                                list(x = x_vals, y = y_vals, text = t_vals, hoverinfo = hi_vals), idxs)
+  })
   
   ##----1/k0 vs m/z----
   output$scatterplots_ui <- renderUI({
@@ -2442,8 +2478,8 @@ shinyApp(
   ui = ui,
   server = function(input, output, session) {
     server(input, output, session, 
-           #input_variable = annotation_COGNATE_MM_noCEDAR_5,
-           input_variable = test_annotation,
+           #input_variable = data_list,
+           input_variable = preloaded_data[1:10,],
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 

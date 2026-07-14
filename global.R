@@ -2252,124 +2252,128 @@ plot_rt_histogram_range <- function(df, sample_name, quantity_cols, color = "ste
     theme_minimal()
 }
 
-
-dynamic_range_plot <- function(df, data_col = "MAX_QUANTITY", title_name = "Dynamic range plot",
-                               name_col = "PROTEIN", gene = "", rev_rank = TRUE,
-                               gene_regex = "(?<=GN=)[0-9A-Z//-]+") {
-  if (!data_col %in% colnames(df)) stop(paste("Column", data_col, "not found in dataframe"))
+#This is for subplotting dynamic range to a single plot so it only counts as a single context.
+dynamic_range_subplot <- function(lst, data_col = "MAX_QUANTITY", ncol = 3) {
+  samples <- names(lst)[vapply(lst, function(df)
+    nrow(df) >= 10 && data_col %in% colnames(df), logical(1))]
   
-  df[[data_col]][df[[data_col]] == 0] <- NA
-  if (all(is.na(df[[data_col]]))) {
-    return(plotly::plot_ly() %>%
-             plotly::layout(title = "All values are 0 or NA"))
-  }
+  if (length(samples) == 0)
+    return(plotly::plot_ly() %>% plotly::layout(
+      title = "Not enough peptides to plot dynamic range",
+      xaxis = list(visible = FALSE), yaxis = list(visible = FALSE)))
   
-  df$Rank <- if (rev_rank) {
-    rank(-df[[data_col]], ties.method = "first")
-  } else {
-    rank(df[[data_col]], ties.method = "first")
-  }
+  figs <- lapply(samples, function(sname) {
+    df <- lst[[sname]]
+    df[[data_col]][df[[data_col]] == 0] <- NA
+    df <- df[!is.na(df[[data_col]]), , drop = FALSE]
+    
+    if (nrow(df) == 0) {
+      rank_v <- numeric(0); y_v <- numeric(0); hover <- character(0)
+    } else {
+      prot_vec <- if ("PROTEIN" %in% names(df)) df$PROTEIN else rep("", nrow(df))
+      pep_vec  <- if ("PEPTIDE" %in% names(df)) df$PEPTIDE else rep("", nrow(df))
+      rank_v  <- rank(-df[[data_col]], ties.method = "first")
+      y_v     <- log2(df[[data_col]])
+      gene_nm <- sub(".*?GN=([0-9A-Z/\\-]+).*", "\\1", prot_vec, perl = TRUE)
+      disp_nm <- ifelse(gene_nm == prot_vec, prot_vec, paste0(gene_nm, "<br>", prot_vec))
+      hover   <- paste0("<b>", disp_nm, "</b><br>", pep_vec, "<br>",
+                        "log2(", data_col, "): ", round(y_v, 2), "<br>Rank: ", rank_v)
+    }
+    
+    plotly::plot_ly() %>%
+      plotly::add_trace(type = "scattergl", mode = "markers",           # base
+                        x = rank_v, y = y_v, text = hover, hoverinfo = "text",
+                        marker = list(color = "steelblue", size = 4, opacity = 0.5), showlegend = FALSE) %>%
+      plotly::add_trace(type = "scattergl", mode = "markers",           # protein match
+                        x = numeric(0), y = numeric(0), text = character(0), hoverinfo = "text",
+                        marker = list(color = "red", size = 8, symbol = "square"), showlegend = FALSE) %>%
+      plotly::add_trace(type = "scattergl", mode = "markers",           # peptide match
+                        x = numeric(0), y = numeric(0), text = character(0), hoverinfo = "text",
+                        marker = list(color = "#2CA02C", size = 8, symbol = "square"), showlegend = FALSE) %>%
+      plotly::layout(
+        xaxis = list(title = ""), yaxis = list(title = ""),
+        annotations = list(list(text = sname, x = 0.5, y = 0.98,
+                                xref = "paper", yref = "paper", xanchor = "center", yanchor = "top",
+                                showarrow = FALSE, font = list(size = 11))))
+  })
   
-  y_vals <- log2(df[[data_col]])
-  
-  # Extract gene name from protein description
-  gene_names <- sub(".*?GN=([0-9A-Z/\\-]+).*", "\\1", df[[name_col]], perl = TRUE)
-  
-  temp <<-df[[name_col]] 
-  
-  df$hover_text <- paste0(
-    "<b>", gene_names, "</b><br>",
-    df$PEPTIDE, "<br>",
-    "log2(", data_col, "): ", round(y_vals, 2), "<br>",
-    "Rank: ", df$Rank
-  )
-  
-  plotly::plot_ly() %>%
-    plotly::add_trace(
-      type = "scattergl", mode = "markers",
-      x = df$Rank, y = y_vals, text = df$hover_text,
-      hoverinfo = "text",
-      marker = list(color = "steelblue", size = 4, opacity = 0.6),
-      name = "All"
-    ) %>%
-    plotly::add_trace(
-      type = "scattergl", mode = "markers",
-      x = numeric(0), y = numeric(0), text = character(0),
-      hoverinfo = "text",
-      marker = list(color = "red", size = 8),
-      name = "protein match"
-    ) %>%
-    plotly::add_trace(
-      type = "scattergl", mode = "markers",
-      x = numeric(0), y = numeric(0), text = character(0),
-      hoverinfo = "text",
-      marker = list(color = "green", size = 8),
-      name = "peptide match"
-    ) %>%
-    plotly::layout(
-      title  = list(text = title_name),
-      xaxis  = list(title = "Rank"),
-      yaxis  = list(title = paste0("log2(", data_col, ")")),
-      hovermode = "closest",
-      hoverdistance = 5
-    )
+  nrows <- ceiling(length(figs) / ncol)
+  plotly::subplot(figs, nrows = nrows, shareX = FALSE, shareY = FALSE,
+                  titleX = FALSE, titleY = FALSE,
+                  heights = rep(1 / nrows, nrows)) %>%
+    plotly::layout(hovermode = "closest", hoverdistance = 30)
 }
 
 dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", color = "default") {
+  # Same inclusion rule the observer relies on for trace-index alignment
+  df_list <- df_list[sapply(df_list, function(df)
+    nrow(df) >= 10 && data_col %in% colnames(df))]
   
-  # Filter out empty or insufficient samples
-  df_list <- df_list[sapply(df_list, function(df) nrow(df) >= 10 && data_col %in% colnames(df))]
+  empty_msg <- function(msg)
+    plotly::plot_ly() %>% plotly::layout(
+      title = msg,
+      xaxis = list(visible = FALSE), yaxis = list(visible = FALSE))
   
-  if (length(df_list) == 0) {
-    plot.new()
-    text(0.5, 0.5, "Not enough peptides to plot combined dynamic range",
-         cex = 1.2, col = "red")
-    return(invisible(NULL))
+  if (length(df_list) == 0)
+    return(empty_msg("Not enough peptides to plot combined dynamic range"))
+  
+  n_samples  <- length(df_list)
+  plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
+                  '#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52')
+  cols <- if (color == "default") {
+    setNames(plotly_pal[((seq_len(n_samples) - 1L) %% length(plotly_pal)) + 1L], names(df_list))
+  } else setNames(viridis(n_samples, option = color), names(df_list))
+  
+  p <- plotly::plot_ly()
+  any_points <- FALSE
+  for (sname in names(df_list)) {
+    df <- df_list[[sname]]
+    df[[data_col]][df[[data_col]] == 0] <- NA
+    df <- df[!is.na(df[[data_col]]), , drop = FALSE]
+    
+    if (nrow(df) == 0) {
+      # keep an (empty) trace so indices stay aligned with the observer
+      p <- p %>% plotly::add_trace(
+        type = "scattergl", mode = "markers",
+        x = numeric(0), y = numeric(0), text = character(0), hoverinfo = "text",
+        marker = list(color = cols[[sname]], size = 4, opacity = 0.5),
+        name = sname, legendgroup = sname)
+      next
+    }
+    any_points <- TRUE
+    
+    prot_vec <- if ("PROTEIN" %in% names(df)) df$PROTEIN else rep("", nrow(df))
+    pep_vec  <- if ("PEPTIDE" %in% names(df)) df$PEPTIDE else rep("", nrow(df))
+    rank_v   <- rank(-df[[data_col]], ties.method = "first")
+    y_v      <- log2(df[[data_col]])
+    gene_nm  <- sub(".*?GN=([0-9A-Z/\\-]+).*", "\\1", prot_vec, perl = TRUE)
+    disp_nm  <- ifelse(gene_nm == prot_vec, prot_vec, paste0(gene_nm, "<br>", prot_vec))
+    hover    <- paste0("<b>", sname, "</b><br>", disp_nm, "<br>", pep_vec, "<br>",
+                       "log2(", data_col, "): ", round(y_v, 2), "<br>Rank: ", rank_v)
+    
+    p <- p %>% plotly::add_trace(
+      type = "scattergl", mode = "markers",
+      x = rank_v, y = y_v, text = hover, hoverinfo = "text",
+      marker = list(color = cols[[sname]], size = 4, opacity = 0.5),
+      name = sname, legendgroup = sname)
   }
+  if (!any_points) return(empty_msg("No data points available to display"))
   
+  # Highlight traces — appended AFTER all sample traces (indices n_samples, n_samples+1)
+  p <- p %>%
+    plotly::add_trace(type = "scattergl", mode = "markers",
+                      x = numeric(0), y = numeric(0), text = character(0), hoverinfo = "text",
+                      marker = list(color = "red", size = 8, symbol = "square"), name = "Protein match") %>%
+    plotly::add_trace(type = "scattergl", mode = "markers",
+                      x = numeric(0), y = numeric(0), text = character(0), hoverinfo = "text",
+                      marker = list(color = "#2CA02C", size = 8, symbol = "square"), name = "Peptide match")
   
-  if (color == "default") {
-    color <- NULL  # ggplot will use default fill colors
-  } else {
-    color <- viridis(length(df_list), option = color)
-  }
-  
-  df_all <- bind_rows(lapply(names(df_list), function(nm) {
-    df <- df_list[[nm]]
-    df <- df[, data_col, drop = FALSE]
-    df <- df[!is.na(df[[data_col]]), , drop = FALSE]  # remove NAs
-    if (nrow(df) == 0) return(NULL)
-    df$Sample <- nm
-    df
-  }))
-  
-  # If bind_rows produced nothing
-  if (is.null(df_all) || nrow(df_all) == 0 || all(is.na(df_all[[data_col]]))) {
-    return(
-      ggplot() +
-        annotate("text", x = 0.5, y = 0.5, label = "No data points available to display", size = 5) +
-        theme_void()
-    )
-  }
-  
-  df_all <- df_all %>%
-    dplyr::group_by(Sample) %>%
-    dplyr::mutate(Rank = rank(-.data[[data_col]], ties.method = "first")) %>%
-    ungroup()
-  
-  p <- ggplot(df_all, aes(x = Rank, y = log2(.data[[data_col]]), color = Sample)) +
-    geom_point(alpha = 0.5, size = 1.5) +
-    theme_minimal() +
-    labs(
-      title = "Combined Dynamic Range for All Samples",
-      x = "Rank",
-      y = "log2(Intensity)"
-    )
-  
-  if (!is.null(color)) {
-    p <- p + scale_color_manual(values = color)
-  }
-  return(p)
+  p %>% plotly::layout(
+    title = list(text = "Combined Dynamic Range for All Samples"),
+    xaxis = list(title = "Rank"),
+    yaxis = list(title = paste0("log2(", data_col, ")")),
+    hovermode = "closest", hoverdistance = 40,
+    legend = list(title = list(text = "Sample")))
 }
 
 generate_scatterplot <- function(df, s_name, color = "default") {
@@ -3885,20 +3889,6 @@ generate_motif_grid <- function(lst, lengths = 7:20) {
   }
   
   length_plots
-}
-
-generate_dynrange_grid <- function(lst, data_col = "MAX_QUANTITY") {
-  
-  lapply(names(lst), function(sample_name) {
-    df <- lst[[sample_name]]
-    if (nrow(df) < 10) {
-      ggplot() + 
-        annotate("text", x = 0.5, y = 0.5, label = "Not enough peptides", size = 6) + 
-        theme_void()
-    } else {
-      dynamic_range_plot(df, data_col, paste("Dynamic Range –", sample_name))
-    }
-  })
 }
 
 #----Running external stuff------
