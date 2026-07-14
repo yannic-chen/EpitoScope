@@ -714,7 +714,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     layout_column_wrap(
       width = "400px",  # each plot approx width
       !!!lapply(names(lst), function(sample_name) {
-        plotOutput(paste0("dynrange_", sample_name), height = "300px")
+        plotlyOutput(paste0("dynrange_", sample_name), height = "300px")
       })
     )
   })
@@ -735,7 +735,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         df_local <- lst[[sample_name]]
         sample_val <- sample_name
         
-        output[[paste0("dynrange_", sample_val)]] <- renderPlot({
+        output[[paste0("dynrange_", sample_val)]] <- renderPlotly({
           
           shiny::validate(shiny::need(nrow(df_local) >= 10, "Not enough peptides. Need at least 10."))
           
@@ -751,6 +751,75 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       })
     }
   })
+  
+  observeEvent(list(input$dynrange_search, input$dynrange_pep_search), {
+    lst        <- processed_data_list()
+    prot_query <- trimws(if (is.null(input$dynrange_search))     "" else input$dynrange_search)
+    pep_query  <- trimws(if (is.null(input$dynrange_pep_search)) "" else input$dynrange_pep_search)
+    
+    # Match `query` against any of `cols`; returns logical of length n.
+    match_idx_fn <- function(query, cols, n) {
+      if (nchar(query) == 0) return(rep(FALSE, n))
+      idx <- tryCatch(
+        Reduce(`|`, lapply(cols, function(col)
+          grepl(query, col, ignore.case = TRUE, perl = TRUE))),
+        error = function(e) {
+          rep(FALSE, n)
+        })
+      idx[is.na(idx)] <- FALSE
+      idx
+    }
+    
+    prot_over <- FALSE
+    pep_over  <- FALSE
+    
+    for (sample_name in names(lst)) {
+      df <- lst[[sample_name]]
+      if (!all(c("PROTEIN", "MAX_QUANTITY") %in% colnames(df))) next
+      df$MAX_QUANTITY[df$MAX_QUANTITY == 0] <- NA
+      if (nrow(df) < 10 || all(is.na(df$MAX_QUANTITY))) next
+      n <- nrow(df)
+      
+      df$Rank   <- rank(-df$MAX_QUANTITY, ties.method = "first", na.last = "keep")
+      df$y_vals <- log2(df$MAX_QUANTITY)
+      
+      gene_names   <- sub(".*?GN=([0-9A-Z/\\-]+).*", "\\1", df$PROTEIN, perl = TRUE)
+      display_name <- ifelse(gene_names == df$PROTEIN, df$PROTEIN,
+                             paste0(gene_names, "<br>", df$PROTEIN))
+      df$hover_text <- paste0("<b>", display_name, "</b><br>",
+                              df$PEPTIDE, "<br>",
+                              "log2(MAX_QUANTITY): ", round(df$y_vals, 2), "<br>",
+                              "Rank: ", df$Rank)
+      
+      prot_idx <- match_idx_fn(prot_query, list(df$PROTEIN), n)
+      pep_idx  <- match_idx_fn(pep_query,  list(df$STRIPPED, df$PEPTIDE), n)
+      pep_idx  <- pep_idx & !prot_idx    # protein highlight wins on overlap
+      
+      prot_hits <- df[prot_idx, ]
+      pep_hits  <- df[pep_idx, ]
+      non_hits  <- df[!(prot_idx | pep_idx), ]
+      
+      blue_hoverinfo <- if (nrow(prot_hits) + nrow(pep_hits) > 0) "skip" else "text"
+      
+      plotly::plotlyProxy(paste0("dynrange_", sample_name), session) %>%
+        plotly::plotlyProxyInvoke(
+          "restyle",
+          list(
+            x = list(as.list(non_hits$Rank),
+                     as.list(prot_hits$Rank),
+                     as.list(pep_hits$Rank)),
+            y = list(as.list(non_hits$y_vals),
+                     as.list(prot_hits$y_vals),
+                     as.list(pep_hits$y_vals)),
+            text = list(as.list(non_hits$hover_text),
+                        as.list(prot_hits$hover_text),
+                        as.list(pep_hits$hover_text)),
+            hoverinfo = list(blue_hoverinfo, "text", "text")
+          ),
+          list(0L, 1L, 2L)
+        )
+    }
+})
   
   ##----1/k0 vs m/z----
   output$scatterplots_ui <- renderUI({
@@ -795,7 +864,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     # Drop columns with no data at all (would make cor() fail entirely)
     pep_mat <- pep_mat[, colSums(!is.na(pep_mat)) > 0, drop = FALSE]
     shiny::validate(shiny::need(ncol(pep_mat) >= 2, "Need at least 2 measurements with data for correlation."))
-    
     
     cor_mat <- cor(pep_mat, method = "pearson", use = "pairwise.complete.obs")
     

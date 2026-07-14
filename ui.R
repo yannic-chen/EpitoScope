@@ -289,8 +289,11 @@ ui <- bs4DashPage(
           ### ---- Dynamic Range plot ----
           bs4Card(title = tagList("Dynamic Rang", bs4Dash::tooltip(icon("info-circle"),"Minimum of 10 sequences are required for Motif generation.", placement = "right")
                                   ), width = 12, maximizable = TRUE, 
+                  textInput("dynrange_search", "Highlight protein (regex supported):", placeholder = "HLA[ABC]"),
+                  textInput("dynrange_pep_search","Highlight peptide (regex, stripped or peptidoform):",placeholder = "e.g. SLLQHLIGL|SINFKL"),
+                  h6("Plots with Protein matches have hoverinfo for non-matches deactivated to allow better hovering over matches."),
                   tabsetPanel(
-                    tabPanel("Individual", h6("HLA[A-C] are highlighted"),uiOutput("dynrange_individual_ui")),
+                    tabPanel("Individual", uiOutput("dynrange_individual_ui")),
                     tabPanel("Combined", plotOutput("dynrange_combined"))
                     )
                   ),

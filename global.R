@@ -2253,64 +2253,66 @@ plot_rt_histogram_range <- function(df, sample_name, quantity_cols, color = "ste
 }
 
 
-dynamic_range_plot <- function(df, data_col = "MAX_QUANTITY", title_name = "Dynamic range plot", name_col = "PROTEIN", 
-                               gene = "", rev_rank = TRUE, gene_regex = "(?<=GN=)[0-9A-Z//-]+") {
+dynamic_range_plot <- function(df, data_col = "MAX_QUANTITY", title_name = "Dynamic range plot",
+                               name_col = "PROTEIN", gene = "", rev_rank = TRUE,
+                               gene_regex = "(?<=GN=)[0-9A-Z//-]+") {
+  if (!data_col %in% colnames(df)) stop(paste("Column", data_col, "not found in dataframe"))
   
-  # --- Safety ---
-  if (!data_col %in% colnames(df)) {
-    stop(paste("Column", data_col, "not found in dataframe"))
-  }
-  
-  
-  df[[data_col]][df[[data_col]] == 0] <- NA #convert 0 to NA, to avoid log2(0) = -inf error.
+  df[[data_col]][df[[data_col]] == 0] <- NA
   if (all(is.na(df[[data_col]]))) {
-    return(
-      ggplot() +
-        annotate("text", x = 0.5, y = 0.5, label = "All MAX_QUANTITY = 0 or NA", size = 5) +
-        theme_void()
-    )
+    return(plotly::plot_ly() %>%
+             plotly::layout(title = "All values are 0 or NA"))
   }
-    
-  # --- Ranking ---
+  
   df$Rank <- if (rev_rank) {
     rank(-df[[data_col]], ties.method = "first")
   } else {
     rank(df[[data_col]], ties.method = "first")
   }
   
-  # --- Base plot (always present) ---
-  p <- ggplot(df, aes(x = Rank, y = log2(.data[[data_col]]))) +
-    geom_point() +
-    labs(title = title_name)
+  y_vals <- log2(df[[data_col]])
   
-  # --- Highlighting logic ---
-  if (!is.null(name_col) && gene != "") {
-    
-    df$Gene <- stringr::str_extract(df[[name_col]], gene_regex)
-    
-    highlight_df <- df %>%
-      dplyr::filter(!is.na(Gene),
-                    stringr::str_detect(Gene, gene))
-    
-    if (nrow(highlight_df) > 0) {
-      p <- p +
-        geom_point(
-          data = highlight_df,
-          aes(x = Rank, y = log2(.data[[data_col]])),
-          color = "red",
-          size = 2
-        ) +
-        ggrepel::geom_text_repel(
-          data = highlight_df,
-          aes(x = Rank, y = log2(.data[[data_col]]), label = Gene),
-          color = "red",
-          box.padding = 0.5,
-          max.overlaps = Inf
-        )
-    }
-  } 
+  # Extract gene name from protein description
+  gene_names <- sub(".*?GN=([0-9A-Z/\\-]+).*", "\\1", df[[name_col]], perl = TRUE)
   
-  p + theme_minimal()
+  temp <<-df[[name_col]] 
+  
+  df$hover_text <- paste0(
+    "<b>", gene_names, "</b><br>",
+    df$PEPTIDE, "<br>",
+    "log2(", data_col, "): ", round(y_vals, 2), "<br>",
+    "Rank: ", df$Rank
+  )
+  
+  plotly::plot_ly() %>%
+    plotly::add_trace(
+      type = "scattergl", mode = "markers",
+      x = df$Rank, y = y_vals, text = df$hover_text,
+      hoverinfo = "text",
+      marker = list(color = "steelblue", size = 4, opacity = 0.6),
+      name = "All"
+    ) %>%
+    plotly::add_trace(
+      type = "scattergl", mode = "markers",
+      x = numeric(0), y = numeric(0), text = character(0),
+      hoverinfo = "text",
+      marker = list(color = "red", size = 8),
+      name = "protein match"
+    ) %>%
+    plotly::add_trace(
+      type = "scattergl", mode = "markers",
+      x = numeric(0), y = numeric(0), text = character(0),
+      hoverinfo = "text",
+      marker = list(color = "green", size = 8),
+      name = "peptide match"
+    ) %>%
+    plotly::layout(
+      title  = list(text = title_name),
+      xaxis  = list(title = "Rank"),
+      yaxis  = list(title = paste0("log2(", data_col, ")")),
+      hovermode = "closest",
+      hoverdistance = 5
+    )
 }
 
 dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", color = "default") {
