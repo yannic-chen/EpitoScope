@@ -1132,7 +1132,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     } else {
       setNames(samples, samples)          # colour by sample identity
     }
-  })
+  }) 
   
   pca_fit <- reactive({
     lst <- processed_data_list()
@@ -1734,6 +1734,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   last_programmatic_t_r   <- reactiveVal(0)
   expand_counter_r <- reactiveVal(0L)
   
+  
   observeEvent(plotly::event_data("plotly_relayout", source = "group_hm"), {
     ed <- plotly::event_data("plotly_relayout", source = "group_hm")
     if (!is.null(ed[["xaxis.range[0]"]])) {
@@ -1750,7 +1751,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       }
     }
   }, ignoreNULL = TRUE)
-  
+
   zoom_debounced_r <- shiny::debounce(zoom_info_r, 500)
   
   # Tick-label proxy: only fires on zoom change, only in binned mode
