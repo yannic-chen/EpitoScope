@@ -721,10 +721,19 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     dynamic_range_subplot(lst, data_col = "MAX_QUANTITY", ncol = 3)
   })
   
-  observeEvent(list(input$dynrange_search, input$dynrange_pep_search), {
+  applied_search <- reactiveVal(list(prot = "", pep = ""))
+  
+  observeEvent(input$dynrange_go, {
+    g <- function(x) if (is.null(x)) "" else trimws(x)
+    applied_search(list(prot = g(input$dynrange_search),
+                        pep  = g(input$dynrange_pep_search)))
+  })
+  
+  observeEvent(list(applied_search()), {
     lst        <- processed_data_list()
-    prot_query <- trimws(if (is.null(input$dynrange_search))     "" else input$dynrange_search)
-    pep_query  <- trimws(if (is.null(input$dynrange_pep_search)) "" else input$dynrange_pep_search)
+    q          <- applied_search()
+    prot_query <- q$prot
+    pep_query  <- q$pep
     
     samples <- names(lst)[vapply(lst, function(df)
       nrow(df) >= 10 && "MAX_QUANTITY" %in% colnames(df), logical(1))]
@@ -789,13 +798,16 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$dynrange_combined <- renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "MAX_QUANTITY", na_policy = "any")
-    dynamic_range_plot_combined(df_list = lst, data_col = "MAX_QUANTITY", color = input$color_palette)
+    rm <- isolate(if (is.null(input$dynrange_rank_mode)) "absolute" else input$dynrange_rank_mode)
+    dynamic_range_plot_combined(df_list = lst, data_col = "MAX_QUANTITY",color = input$color_palette, rank_mode = rm)
   })
   
-  observeEvent(list(input$dynrange_search, input$dynrange_pep_search), {
+  observeEvent(list(applied_search(),input$dynrange_rank_mode), {
     lst        <- processed_data_list()
-    prot_query <- trimws(if (is.null(input$dynrange_search))     "" else input$dynrange_search)
-    pep_query  <- trimws(if (is.null(input$dynrange_pep_search)) "" else input$dynrange_pep_search)
+    q          <- applied_search()
+    prot_query <- q$prot
+    pep_query  <- q$pep
+    rank_mode  <- if (is.null(input$dynrange_rank_mode)) "absolute" else input$dynrange_rank_mode
     
     samples <- names(lst)[vapply(lst, function(df)
       nrow(df) >= 10 && "MAX_QUANTITY" %in% colnames(df), logical(1))]
@@ -824,6 +836,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       prot_vec <- if ("PROTEIN" %in% names(df)) df$PROTEIN else rep("", nrow(df))
       pep_vec  <- if ("PEPTIDE" %in% names(df)) df$PEPTIDE else rep("", nrow(df))
       df$Rank   <- rank(-df$MAX_QUANTITY, ties.method = "first")
+      n_pts     <- nrow(df)
+      df$rank_x <- if (rank_mode == "relative") 100 * df$Rank / n_pts else df$Rank
       df$y_vals <- log2(df$MAX_QUANTITY)
       gene_nm   <- sub(".*?GN=([0-9A-Z/\\-]+).*", "\\1", prot_vec, perl = TRUE)
       disp_nm   <- ifelse(gene_nm == prot_vec, prot_vec, paste0(gene_nm, "<br>", prot_vec))
@@ -836,12 +850,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       pep_idx  <- pep_idx & !prot_idx
       base_idx <- !(prot_idx | pep_idx)
       
-      base_x[[i]] <- as.list(df$Rank[base_idx])
-      base_y[[i]] <- as.list(df$y_vals[base_idx])
-      base_t[[i]] <- as.list(df$hover_text[base_idx])
-      
-      prot_x <- c(prot_x, df$Rank[prot_idx]); prot_y <- c(prot_y, df$y_vals[prot_idx]); prot_t <- c(prot_t, df$hover_text[prot_idx])
-      pep_x  <- c(pep_x,  df$Rank[pep_idx]);  pep_y  <- c(pep_y,  df$y_vals[pep_idx]);  pep_t  <- c(pep_t,  df$hover_text[pep_idx])
+      base_x[[i]] <- as.list(df$rank_x[base_idx]); base_y[[i]] <- as.list(df$y_vals[base_idx]); base_t[[i]] <- as.list(df$hover_text[base_idx])
+      prot_x <- c(prot_x, df$rank_x[prot_idx]); prot_y <- c(prot_y, df$y_vals[prot_idx]); prot_t <- c(prot_t, df$hover_text[prot_idx])
+      pep_x  <- c(pep_x,  df$rank_x[pep_idx]);  pep_y  <- c(pep_y,  df$y_vals[pep_idx]);  pep_t  <- c(pep_t,  df$hover_text[pep_idx])
     }
     
     base_hoverinfo <- if (length(prot_x) + length(pep_x) > 0) "skip" else "text"
@@ -851,10 +862,12 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     t_vals  <- c(base_t, list(as.list(prot_t)), list(as.list(pep_t)))
     hi_vals <- c(rep(list(base_hoverinfo), length(samples)), list("text"), list("text"))
     idxs    <- as.list(seq_len(length(samples) + 2L) - 1L)
+    x_title <- if (rank_mode == "relative") "Rank (percentile %)" else "Rank"
     
     plotly::plotlyProxy("dynrange_combined", session) %>%
       plotly::plotlyProxyInvoke("restyle",
-                                list(x = x_vals, y = y_vals, text = t_vals, hoverinfo = hi_vals), idxs)
+                                list(x = x_vals, y = y_vals, text = t_vals, hoverinfo = hi_vals), idxs) %>%
+      plotly::plotlyProxyInvoke("relayout", list(xaxis = list(title = x_title)))
   })
   
   ##----1/k0 vs m/z----
@@ -888,77 +901,31 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   ## ---- measurement specific heatmap ----
   cor_mat_cache <- reactiveVal(matrix(NA, nrow = 5, ncol = 5)) #necessary as the space reserving rungs before the code.
   
-  output$measurement_heatmap <- renderPlot({
+  output$measurement_heatmap <- renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
+    quantity_cols <- data_info_r() %>%
+      dplyr::filter(final_name == "QUANTITY") %>% dplyr::select(-final_name) %>%
+      unlist(recursive = TRUE, use.names = FALSE)
+    shiny::validate(shiny::need(length(quantity_cols) > 0, "No QUANTITY columns found."))
     
-    shiny::validate(shiny::need(length(default_quantity_cols_r()) > 0, "No QUANTITY columns found."))
-    
-    pep_mat <- prepare_measurement_matrix(lst, default_quantity_cols_r())
+    pep_mat <- prepare_measurement_matrix(lst, quantity_cols)
+    shiny::validate(shiny::need(ncol(pep_mat) >= 2, "Need at least 2 groups for correlation."))
     shiny::validate(shiny::need(nrow(pep_mat) > 0, "No peptides to plot."))
-    
-    # Drop columns with no data at all (would make cor() fail entirely)
-    pep_mat <- pep_mat[, colSums(!is.na(pep_mat)) > 0, drop = FALSE]
-    shiny::validate(shiny::need(ncol(pep_mat) >= 2, "Need at least 2 measurements with data for correlation."))
-    
-    cor_mat <- cor(pep_mat, method = "pearson", use = "pairwise.complete.obs")
-    
-    # Replace any remaining NAs (pairs with zero shared peptides) with 0
-    cor_mat[is.na(cor_mat)] <- 0
-    cor_mat_cache(cor_mat)
+    cor_mat <- cor(pep_mat, method = "pearson", use = "complete.obs")
     
     group_names <- names(lst)
     get_group <- function(colname) {
-      matched <- group_names[sapply(group_names, function(g) startsWith(colname, g))]
-      if (length(matched) == 0) return(NA)
-      matched[1]
+      m <- group_names[sapply(group_names, function(g) startsWith(colname, g))]
+      if (length(m) == 0) NA else m[1]
     }
     groups <- sapply(colnames(cor_mat), get_group)
     
-    #remove the sample prefix. However, if there will be duplicate names, keep the sample prefix
-    colnames(cor_mat) <- sub("^.* \\| ", "", colnames(cor_mat))
-    rownames(cor_mat) <- colnames(cor_mat)
-    
-    fs <- max(6, min(10, floor(800 / nrow(cor_mat))))
-    
-    stripped <- sub("^.* \\| ", "", colnames(cor_mat))
-    if (anyDuplicated(stripped) == 0) {
-      colnames(cor_mat) <- stripped
-      rownames(cor_mat) <- stripped
-    }
-      
-    if(input$cluster_mode_ea == "sample") {
-      ht <- plot_heatmap(cor_mat,color = input$color_palette, cluster = "none", row_groups = groups, col_groups = groups, label = "Pearson", fontsize = fs)
-    } else if (input$cluster_mode_ea == "mix") {
-      ht <- plot_heatmap(cor_mat,color = input$color_palette, cluster = "rows",row_groups = NULL, col_groups = groups, label = "Pearson", fontsize = fs)
-    } else {
-      ht <- plot_heatmap(cor_mat,color = input$color_palette, cluster = input$cluster_mode_ea, label = "Pearson", fontsize = fs)
-    }
-    
-    safe_draw(ht, heatmap_legend_side = "left"
-    )
-  }, width = "auto", 
-  height = function() {
-    n <- nrow(cor_mat_cache())
-    min(500, n * 12 + 200)
+    plot_correlation_heatmap_interactive(cor_mat, color = input$color_palette,
+                                    cluster = input$cluster_mode_ea, groups = groups,
+                                    label = "Pearson")
   })
   
-  ##----aa heatmap----
-  output$aa_heatmap <- renderPlot({
-    lst <- processed_data_list()
-    check_data_error(lst, na_policy = "ignore")
-    
-    shiny::validate(shiny::need(length(lst) >= 2, "need 2 or more samples to plot"))
-    
-    ht <- plot_aa_composition(
-      lst,
-      color = input$color_palette
-    )
-    
-    safe_draw(ht)
-    
-  }, res = 144,
-  height = function() {(length(processed_data_list()) * 50) + 500 })
 #---------------------Results Tab-------------------------
   ##----Data Completeness----
   output$completeness_plot <- renderPlot({
@@ -2478,8 +2445,8 @@ shinyApp(
   ui = ui,
   server = function(input, output, session) {
     server(input, output, session, 
-           #input_variable = data_list,
-           input_variable = preloaded_data[1:10,],
+           #input_variable = test_annotation,
+           input_variable = preloaded_data[1:20,],
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 

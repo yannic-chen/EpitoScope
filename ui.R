@@ -99,6 +99,16 @@ ui <- bs4DashPage(
   ## ---- Main ----
   body = bs4DashBody(
     shinyjs::useShinyjs(), #needed to make button grey out
+    tags$head(tags$style(HTML("html { scrollbar-gutter: stable; }"))),
+    tags$script(HTML("
+      document.addEventListener('keydown', function(e){
+        if (e.key === 'Enter' &&
+            (e.target.id === 'dynrange_search' || e.target.id === 'dynrange_pep_search')) {
+          e.preventDefault();
+          document.getElementById('dynrange_go').click();
+        }
+      });
+    ")),
     bs4TabItems(
       ### ---- RAW summary ----
       bs4TabItem(
@@ -291,10 +301,15 @@ ui <- bs4DashPage(
                                   ), width = 12, maximizable = TRUE, 
                   textInput("dynrange_search", "Highlight protein (regex supported):", placeholder = "HLA[ABC]"),
                   textInput("dynrange_pep_search","Highlight peptide (regex, stripped or peptidoform):",placeholder = "e.g. SLLQHLIGL|SINFKL"),
+                  actionButton("dynrange_go", "Highlight", icon = icon("magnifying-glass")),
                   h6("Plots with Protein matches have hoverinfo for non-matches deactivated to allow better hovering over matches."),
                   tabsetPanel(
                     tabPanel("Individual", uiOutput("dynrange_individual_ui")),
-                    tabPanel("Combined", plotlyOutput("dynrange_combined"))
+                    tabPanel("Combined", 
+                             radioButtons("dynrange_rank_mode", "Rank scale:",
+                                          choices  = c("Absolute" = "absolute", "Relative (%)" = "relative"),
+                                          selected = "absolute", inline = TRUE),
+                             plotlyOutput("dynrange_combined"))
                     )
                   ),
           
@@ -310,20 +325,11 @@ ui <- bs4DashPage(
                                 "Sample" = "sample",
                                 "Rows only" = "rows",
                                 "Columns only" = "columns",
-                                "Rows + columns" = "both",
-                                "Sample + rows" = "mix"
+                                "Rows + columns" = "both"
                               ), selected = "sample"
                               
                   ),
-                  plotOutput("measurement_heatmap", width= "100%", height = "auto")
-                  ),
-          
-          ### ---- Composition profiling ----
-          bs4Card(title = tagList("Composition profiling", bs4Dash::tooltip(icon("info-circle"),"Ideally I want to integrate the whole C.profiler from Vacic et al. 2007, but that is only written in python.", placement = "right")
-                                  ), width = 12, maximizable = TRUE, solidHeader = TRUE, status = "warning", collapsed = TRUE,
-                  h6("WIP: If we want to compute enrichment, then we need to do it compared to a background. Either the reference proteome or the sum of peptides of all samples can be used. For reference proteome, probably just hardcode the info.", style = "color: red;"),
-                  h6("WIP: Colour or number in the heatmap should represent difference to background. Is it possible to get numbers on the bargraph?", style = "color: red;"),
-                  plotOutput("aa_heatmap", width = "1200", height = "auto")
+                  plotlyOutput("measurement_heatmap", width = "auto", height = "650px")
                   )
           )
         ),

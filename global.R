@@ -46,6 +46,10 @@ library(ggVennDiagram)
 library(plotly)
 library(ComplexUpset)
 library(ComplexHeatmap)
+library(TSP) #required for heatmaply
+library(registry) #required for heatmaply
+library(ca) #required for heatmaply
+library(heatmaply)
 library(circlize)
 library(grid)
 library(patchwork) #This is only used for the 1/k0 vs m/z plot. Could remove this by changing the code.
@@ -2304,7 +2308,7 @@ dynamic_range_subplot <- function(lst, data_col = "MAX_QUANTITY", ncol = 3) {
     plotly::layout(hovermode = "closest", hoverdistance = 30)
 }
 
-dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", color = "default") {
+dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", color = "default", rank_mode = "absolute") {
   # Same inclusion rule the observer relies on for trace-index alignment
   df_list <- df_list[sapply(df_list, function(df)
     nrow(df) >= 10 && data_col %in% colnames(df))]
@@ -2345,6 +2349,8 @@ dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", colo
     prot_vec <- if ("PROTEIN" %in% names(df)) df$PROTEIN else rep("", nrow(df))
     pep_vec  <- if ("PEPTIDE" %in% names(df)) df$PEPTIDE else rep("", nrow(df))
     rank_v   <- rank(-df[[data_col]], ties.method = "first")
+    n_pts    <- length(rank_v)
+    rank_x   <- if (rank_mode == "relative") 100 * rank_v / n_pts else rank_v
     y_v      <- log2(df[[data_col]])
     gene_nm  <- sub(".*?GN=([0-9A-Z/\\-]+).*", "\\1", prot_vec, perl = TRUE)
     disp_nm  <- ifelse(gene_nm == prot_vec, prot_vec, paste0(gene_nm, "<br>", prot_vec))
@@ -2368,9 +2374,10 @@ dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", colo
                       x = numeric(0), y = numeric(0), text = character(0), hoverinfo = "text",
                       marker = list(color = "#2CA02C", size = 8, symbol = "square"), name = "Peptide match")
   
+  x_title <- if (rank_mode == "relative") "Rank (percentile %)" else "Rank"
   p %>% plotly::layout(
     title = list(text = "Combined Dynamic Range for All Samples"),
-    xaxis = list(title = "Rank"),
+    xaxis = list(title = x_title),
     yaxis = list(title = paste0("log2(", data_col, ")")),
     hovermode = "closest", hoverdistance = 40,
     legend = list(title = list(text = "Sample")))
@@ -2813,103 +2820,6 @@ plot_heatmap_interactive <- function(pep_mat, color = "default") {
     )
 }
 
-plot_heatmap <- function(mat, color = "default", log_transform = FALSE, cluster = "both", transpose = FALSE, row_groups = NULL, col_groups = NULL, label = "QUANTITY", fontsize = NULL, max_cols = 1000) {
-  
-  fs_row <- if (is.null(fontsize)) 8  else fontsize
-  fs_col <- if (is.null(fontsize)) 10 else fontsize
-  
-  # Log-transform if requested
-  if (log_transform) {
-    mat <- log10(mat)
-    mat[is.infinite(mat)] <- 0
-  }
-  
-  if (transpose) mat <- t(mat)
-  
-  bin_map  <- NULL
-  bin_note <- NULL
-  if (ncol(mat) > max_cols) {
-    n_orig   <- ncol(mat)
-    mat <- bin_heatmap_columns(mat, max_cols = max_cols)
-    bin_map <- attr(mat, "bin_map")
-    bin_note <- paste0("Binned: ", n_orig, " \u2192 ", ncol(mat),
-                       " representative peptide bins.")
-  }
-  
-  # Raster decision on the FINAL matrix size
-  n_cells = nrow(mat) * ncol(mat)
-  if (n_cells < 1000) {
-    use_raster  <- FALSE
-    raster_qual <- 1
-  } else if (n_cells < 10000) {
-    use_raster  <- TRUE
-    raster_qual <- 2
-  } else {
-    use_raster  <- TRUE
-    raster_qual <- 1
-  }
-  
-  # NA-safe distance: impute NA → 0 before computing distances so hclust
-  # never receives NA/Inf pairwise distances (happens with sparse matrices
-  # where two rows share no non-NA positions)
-  dist_na0 <- function(x) {
-    x[is.na(x)] <- 0
-    dist(x, method = "euclidean")
-  }
-  
-  # Define color function
-  mat_range <- range(mat, na.rm = TRUE)
-  if (!is.finite(mat_range[1]) || mat_range[1] == mat_range[2]) {
-    mat_range <- c(mat_range[1] - 0.5, mat_range[1] + 0.5)
-  }
-  if (color == "default") {
-    col_fun <- colorRamp2(mat_range, c("white", "red"))
-  } else {
-    cols <- viridis(100, option = color)
-    col_fun <- colorRamp2(mat_range, c(cols[1], cols[100]))
-  }
-  
-  
-  # ---- Handle grouping vs clustering ----
-  clust_fn <- function(m) {
-    m[is.na(m)] <- 0
-    fastcluster::hclust(dist(m), method = "complete")
-  }
-  
-  row_clust_fn <- if (cluster %in% c("rows", "both"))    clust_fn else FALSE
-  col_clust_fn <- if (cluster %in% c("columns", "both")) clust_fn else FALSE
-  
-  # ---- Build heatmap ----
-  
-  show_col_names <- ncol(mat) <= 100
-  
-  ht <- Heatmap(
-    mat,
-    name = if (log_transform) paste("log10(",label, ")") else label,
-    col = col_fun,
-    na_col = "grey90",
-    
-    # clustering
-    cluster_rows    = row_clust_fn,
-    cluster_columns = col_clust_fn,
-    
-    row_split    = row_groups,
-    column_split = col_groups,
-    use_raster   = use_raster,
-    raster_quality = raster_qual,
-    show_column_names = show_col_names,
-    row_names_gp    = gpar(fontsize = fs_row),
-    column_names_gp = gpar(fontsize = fs_col),
-    
-    column_title      = bin_note,
-    column_title_side = "bottom",
-    column_title_gp   = gpar(fontsize = 9, col = "grey50", fontface = "italic")
-  )
-  
-  attr(ht, "bin_map") <- bin_map
-  ht
-}
-
 plot_heatmap_plotly <- function(mat, color = "default", log_transform = FALSE, transpose = FALSE) {
   if (log_transform) mat <- log10(mat + 1)
   if (transpose)     mat <- t(mat)
@@ -2971,6 +2881,43 @@ plot_heatmap_plotly <- function(mat, color = "default", log_transform = FALSE, t
       yaxis = list(title = "", tickfont = list(size = 8), autorange = "reversed"),
       margin = list(l = 130, b = if (show_ticks) 120 else 30)
     )
+}
+
+plot_correlation_heatmap_interactive <- function(cor_mat, color = "default",
+                                                 cluster_mode = "both", groups = NULL,
+                                                 label = "Pearson", tick_limit = 60) {
+  n <- ncol(cor_mat)
+  if (is.null(rownames(cor_mat))) rownames(cor_mat) <- colnames(cor_mat)
+  
+  anchors <- if (color == "default") c("lightyellow", "orange", "red")
+  else viridisLite::viridis(3, option = color)
+  pal_vec   <- colorRampPalette(anchors)(256)
+  show_tick <- n <= tick_limit
+  side <- if (!is.null(groups)) data.frame(Sample = as.factor(groups)) else NULL
+  
+  if (cluster_mode == "sample" && !is.null(groups)) {
+    # order by sample; side-bar shows the blocks (Colv/Rowv FALSE → order preserved)
+    ord     <- order(groups)
+    cor_mat <- cor_mat[ord, ord, drop = FALSE]
+    if (!is.null(side)) side <- side[ord, , drop = FALSE]
+    dend <- "none"; Rowv <- FALSE; Colv <- FALSE
+    
+  } else {
+    dend <- switch(cluster_mode, both = "both", rows = "row",
+                   columns = "column", none = "none", "both")
+    Rowv <- dend %in% c("both", "row"); Colv <- dend %in% c("both", "column")
+    # side stays in original order — heatmaply reorders it with the dendrogram
+  }
+  
+  heatmaply::heatmaply(
+    cor_mat,
+    dendrogram      = dend, Rowv = Rowv, Colv = Colv,
+    seriate         = "none",
+    hclustfun       = fastcluster::hclust,
+    colors          = pal_vec, limits = c(min(cor_mat, na.rm = TRUE), 1),
+    col_side_colors = side,
+    showticklabels  = c(show_tick, show_tick),
+    key.title       = label)
 }
 
 plot_PCA <- function(lst, color = "default") {
@@ -3151,145 +3098,6 @@ summarize_binders <- function(df) {
     dplyr::group_by(Allele, Binder) %>%
     dplyr::summarise(Count = n(), .groups = "drop") %>%
     pivot_wider(names_from = Binder, values_from = Count, values_fill = 0)
-}
-
-plot_aa_composition <- function(lst, color = "default",show_numbers = TRUE) {
-  
-  aa_order <- c(
-    "A","C","D","E","F","G","H","I","K","L",
-    "M","N","P","Q","R","S","T","V","W","Y",
-    "U","X"   # U and X are those rare amino acids that are often not found at all.
-  )
-  
-  build_aa_matrix <- function(lst) {
-    
-    comp_list <- lapply(lst, function(df) {
-      if (!"STRIPPED" %in% colnames(df))
-        stop("STRIPPED column missing")
-      
-      aa_comp_from_peptides(df$STRIPPED)
-    })
-    
-    mat <- matrix(0,
-                  nrow = length(comp_list),
-                  ncol = length(aa_order),
-                  dimnames = list(names(comp_list), aa_order))
-    
-    for (i in seq_along(comp_list)) {
-      mat[i, names(comp_list[[i]])] <- comp_list[[i]]  # missing AAs stay 0
-      }
-    mat
-  }
-  
-  mat <- build_aa_matrix(lst)
-  
-  bg <- unlist(lapply(lst, function(df) df$STRIPPED))
-  bg <- aa_comp_from_peptides(bg)
-  bg_full <- numeric(length(aa_order))
-  names(bg_full) <- aa_order
-  bg_full[names(bg)] <- bg
-  bg <- bg_full
-  
-  mat_diff <- sweep(mat, 2, bg, FUN = "-")
-  
-  #This was calculated separately from human_20586_2023-6-29.fasta
-  human_ref <- c(
-    A = 7.0114394770,
-    C = 2.3020849101,
-    D = 4.7350149446,
-    E = 7.1070651632,
-    F = 3.6501492529,
-    G = 6.5774142723,
-    H = 2.6236727595,
-    I = 4.3322364677,
-    K = 5.7304201058,
-    L = 9.9669958082,
-    M = 2.1321177950,
-    N = 3.5837093961,
-    P = 6.3150838295,
-    Q = 4.7674806718,
-    R = 5.6396265687,
-    S = 8.3358604917,
-    T = 5.3513901944,
-    U = 0.0003157121,
-    V = 5.9612758066,
-    W = 1.2143339606,
-    X = 0.0005875753,
-    Y = 2.6617248369
-  )
-  
-  if (color == "default") {
-    col_fun <- colorRamp2(
-      c(min(mat_diff), 0, max(mat_diff)),
-      c("blue", "white", "red")
-    )
-  } else {
-    cols <- viridis(100, option = color)
-    col_fun <- colorRamp2(
-      c(min(mat_diff), 0, max(mat_diff)),
-      c(cols[1], cols[50], cols[100])
-    )
-  }
-  
-  # ---- numbers in cells ----
-  cell_fun <- if (show_numbers) {
-    function(j, i, x, y, w, h, fill) {
-      grid::grid.text(
-        sprintf("%.1f", mat[i, j]),
-        x, y,
-        gp = grid::gpar(fontsize = 8)
-      )
-    }
-  } else NULL
-  
-  # ---- background bars (top annotation) ----
-  top_anno <- NULL
-  top_anno <- HeatmapAnnotation(
-    "Uniprot Human" = anno_barplot(
-      human_ref,
-      gp = grid::gpar(fill = "grey70"),
-      border = FALSE,
-      height = unit(3, "cm"),
-      cell_fun = function(j, x, y, width, height, fill) {
-        grid::grid.rect(x, y, width, height, gp = grid::gpar(fill = fill))
-        grid::grid.text(sprintf("%.1f", human_ref[j]),
-                        x, y + height/2 + unit(1, "mm"),
-                        gp = grid::gpar(fontsize = 8, col = "white"))
-      }
-    ),
-    "Background" = anno_barplot(
-      bg,
-      gp = grid::gpar(fill = "grey70"),
-      border = FALSE,
-      height = unit(3, "cm"),
-      cell_fun = function(j, x, y, width, height, fill) {
-        grid::grid.rect(x, y, width, height, gp = grid::gpar(fill = fill))
-        grid::grid.text(sprintf("%.1f", bg[j]),
-                        x, y + height/2 + unit(1, "mm"),
-                        gp = grid::gpar(fontsize = 8))
-      }
-    ),
-    show_annotation_name = TRUE
-  )
-  
-  row_dend <- if (nrow(mat_diff) > 1) {
-    fastcluster::hclust(dist(mat_diff), method = "complete")
-  } else {
-    FALSE
-  }
-  
-  Heatmap(
-    mat_diff,
-    name = "Abs. diff. to background",
-    col = col_fun,
-    top_annotation = top_anno,
-    cluster_rows = row_dend,
-    cluster_columns = FALSE,
-    rect_gp = grid::gpar(col = "white"),
-    cell_fun = cell_fun,
-    row_names_side = "left",
-    column_names_rot = 45
-  )
 }
 
 #------Statistical caluclations-------

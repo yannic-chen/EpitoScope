@@ -590,16 +590,12 @@ plot_unique_counts(data_list, column = "PROTEIN", y_label = "Number of unique pr
 
 ```{r Dyn_range_individual}
 incProgress(1/chunk_num, detail = "Dynamic Range Individual...")
-try(grid::upViewport(0), silent = TRUE)  # reset any dirty grid state from prior chunks
-plot_per_sample_grid(
-  lst      = processed_list,
-  plot_fn  = dynamic_range_plot,
-  ncol     = 2,
-  data_col = "MAX_QUANTITY",
-  name_col = "PROTEIN",
-  gene     = "HLA",
-  gene_regex = "HLA[A-C]+"
-)
+n_dr  <- sum(vapply(processed_list,
+                    function(df) nrow(df) >= 10 && "MAX_QUANTITY" %in% colnames(df),
+                    logical(1)))
+nrows <- max(1L, ceiling(n_dr / 3))
+dynamic_range_subplot(processed_list, data_col = "MAX_QUANTITY", ncol = 3) %>%
+  plotly::layout(height = nrows * 300)
 ```
 
 ### Combined
