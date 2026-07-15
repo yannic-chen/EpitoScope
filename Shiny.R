@@ -1089,12 +1089,92 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
   ## ----PCA plot----
-  output$pca <- renderPlot({
-    lst <- processed_data_list()
-    req(lst)
-    shiny::validate(shiny::need(length(lst) >= 2, "Need 2 or more sets to plot Upset"))
-    plot_PCA(lst, color = input$color_palette)
+  output$pca_group_ui <- renderUI({
+    has_conditions <- annotation_provided() &&
+      length(attr(annotation_df_r(), "condition_cols")) > 0
+    cond_cols <- if (has_conditions) attr(annotation_df_r(), "condition_cols") else character(0)
+    
+    tagList(
+      radioButtons("pca_group_mode", "Colour by",
+                   choices = c("Sample" = "sample", "Manual groups" = "manual", "Condition" = "condition"),
+                   selected = "sample", inline = TRUE),
+      conditionalPanel("input.pca_group_mode == 'condition'",
+                       selectInput("pca_condition_col", "Condition column", choices = cond_cols)),
+      conditionalPanel("input.pca_group_mode == 'manual'",
+                       helpText("Uses the Manual groups defined in the Group Comparison tab.")),
+      if (!has_conditions) tags$script(HTML("
+        setTimeout(function(){
+          $('input[name=pca_group_mode][value=condition]').prop('disabled', true)
+            .closest('label, .radio, .shiny-options-group > *')
+            .css({'color':'#aaa','opacity':'0.55','cursor':'not-allowed'});
+        }, 100);
+      "))
+    )
   })
+  
+  pca_sample_group <- reactive({
+    samples <- names(processed_data_list())
+    mode    <- if (is.null(input$pca_group_mode)) "sample" else input$pca_group_mode
+    
+    if (mode == "manual") {
+      n <- if (is.null(input$n_groups)) 0 else input$n_groups
+      m <- setNames(rep(NA_character_, length(samples)), samples)
+      for (i in seq_len(n)) {
+        gname <- input[[paste0("group_name_", i)]]
+        samps <- input[[paste0("group_", i)]]
+        if (!is.null(samps) && length(samps)) m[samps] <- gname
+      }
+      m
+    } else if (mode == "condition" && annotation_provided()) {
+      ann <- annotation_df_r(); col <- input$pca_condition_col
+      if (is.null(col) || !col %in% colnames(ann)) setNames(samples, samples)
+      else setNames(as.character(ann[[col]])[match(samples, ann$name)], samples)
+    } else {
+      setNames(samples, samples)          # colour by sample identity
+    }
+  })
+  
+  pca_fit <- reactive({
+    lst <- processed_data_list()
+    shiny::validate(shiny::need(length(lst) >= 2, "Need \u22652 samples for PCA."))
+    level <- if (is.null(input$pca_level)) "sample" else input$pca_level
+    group_names <- names(lst)
+    get_group <- function(cn) {
+      m <- group_names[sapply(group_names, function(g) startsWith(cn, g))]
+      if (length(m) == 0) NA_character_ else m[1]
+    }
+    
+    if (level == "measurement") {
+      qc <- default_quantity_cols_r()
+      shiny::validate(shiny::need(length(qc) >= 3, "Need \u22653 measurements."))
+      mat <- prepare_measurement_matrix(lst, qc)
+      points <- colnames(mat); samp_of <- vapply(points, get_group, character(1))
+    } else {
+      peptides <- lapply(lst, function(df) df %>% dplyr::select(STRIPPED, MAX_QUANTITY) %>%
+                           dplyr::group_by(STRIPPED) %>%
+                           dplyr::summarise(MAX_QUANTITY = max(MAX_QUANTITY, na.rm = TRUE), .groups = "drop"))
+      dfm <- Reduce(function(x, y) dplyr::full_join(x, y, by = "STRIPPED"), peptides)
+      mat <- as.matrix(dfm[, -1]); colnames(mat) <- group_names; rownames(mat) <- dfm$STRIPPED
+      points <- group_names; samp_of <- setNames(group_names, group_names)
+    }
+    mat[is.na(mat)] <- 0
+    mat <- mat[apply(mat, 1, function(r) stats::sd(r) > 0), , drop = FALSE]
+    shiny::validate(shiny::need(nrow(mat) >= 2 && ncol(mat) >= 3,
+                                "Not enough data/variance for PCA."))
+    list(pca = prcomp(t(mat), scale. = TRUE), points = points, samp_of = samp_of)
+  })
+  
+  output$pca <- renderPlotly({
+    fit <- pca_fit()
+    s2g <- pca_sample_group()
+    groups <- unname(s2g[fit$samp_of[fit$points]]); groups[is.na(groups)] <- "Ungrouped"
+    dim <- if (is.null(input$pca_dim)) "2d" else input$pca_dim
+    pca_scatter_plotly(fit$pca, labels = fit$points, groups = groups,
+                       color = input$color_palette,
+                       show_labels = length(fit$points) <= 30, dim = dim)
+  })
+  
+  output$pca_variance <- renderPlotly({ plot_pca_variance(pca_fit()$pca) })
   
   ## ----Number of peptides and peptidoforms----
   output$summary_peptides_plot2 <- renderPlot({
@@ -2446,7 +2526,7 @@ shinyApp(
   server = function(input, output, session) {
     server(input, output, session, 
            #input_variable = test_annotation,
-           input_variable = preloaded_data[1:20,],
+           input_variable = preloaded_data[1:10,],
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 

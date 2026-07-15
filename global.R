@@ -2920,55 +2920,70 @@ plot_correlation_heatmap_interactive <- function(cor_mat, color = "default",
     key.title       = label)
 }
 
-plot_PCA <- function(lst, color = "default") {
-  peptides <- lapply(lst, function(df) {
-    df %>%
-      dplyr::select(STRIPPED, MAX_QUANTITY) %>%
-      dplyr::group_by(STRIPPED) %>%
-      dplyr::summarise(MAX_QUANTITY = {
-        #this collapses for cases of PTM peptidoforms.
-        x <- MAX_QUANTITY[is.finite(MAX_QUANTITY)] #remove NA
-        if (length(x) == 0) NA_real_ else max(x)
-      }, .groups = "drop") 
-  })
+pca_scatter_plotly <- function(pca, labels, groups = NULL, color = "default",
+                               show_labels = TRUE, dim = "2d") {
+  imp <- summary(pca)$importance[2, ] * 100
+  npc <- ncol(pca$x)
+  use3d <- (dim == "3d") && npc >= 3
   
-  # Merge all samples into one data frame
-  df_merged <- Reduce(function(x, y) full_join(x, y, by = "STRIPPED"), peptides)
+  d <- data.frame(PC1 = pca$x[, 1], PC2 = pca$x[, 2],
+                  PC3 = if (npc >= 3) pca$x[, 3] else 0,
+                  Label = labels,
+                  Group = if (is.null(groups)) "All" else as.character(groups),
+                  stringsAsFactors = FALSE)
+  glev <- unique(d$Group); n_grp <- length(glev)
+  plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
+                  '#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52')
+  cols <- if (color == "default")
+    setNames(plotly_pal[((seq_len(n_grp) - 1) %% length(plotly_pal)) + 1], glev)
+  else setNames(viridisLite::viridis(n_grp, option = color), glev)
   
-  # Assign column names
-  colnames(df_merged) <- c("STRIPPED", names(lst))
-  
-  # Convert to matrix: rows = peptides, columns = samples
-  mat <- as.matrix(df_merged[,-1])
-  rownames(mat) <- df_merged$STRIPPED
-  
-  #WIP: need to check how to solve missing values.
-  mat[is.na(mat)] <- 0
-  
-  # Remove peptides with no variance across samples (e.g. all-zero after imputation)
-  keep <- apply(mat, 1, var) > 0
-  shiny::validate(shiny::need(sum(keep) >= 2, "Not enough variable peptides for PCA."))
-  mat <- mat[keep, , drop = FALSE]
-  
-  pca <- prcomp(t(mat), scale. = TRUE) 
-  
-  df <- as.data.frame(pca$x)
-  df$Sample <- rownames(df)
-  
-  p <- ggplot(df, aes(x = PC1, y = PC2, label = Sample)) +
-    geom_point(size = 3) +
-    geom_text(vjust = -0.5) +
-    xlab(paste0("PC1 (", round(summary(pca)$importance[2,1]*100,1), "%)")) +
-    ylab(paste0("PC2 (", round(summary(pca)$importance[2,2]*100,1), "%)")) +
-    theme_minimal()
-  
-  #Currently thiscode is redundant, since there is no color variable in aes(). All dots are black. It might be useful to have colours in some scenarios, especially with the annotation table.
-  if (color != "default") {
-    cols <- setNames(viridis(nrow(df), option = color), df$Sample)
-    p <- p + scale_color_manual(values = cols)
+  mode <- if (show_labels) "markers+text" else "markers"
+  p <- plotly::plot_ly()
+  for (g in glev) {
+    dg <- d[d$Group == g, , drop = FALSE]
+    common <- list(data = dg, name = g, mode = mode, text = ~Label,
+                   textposition = "top center", textfont = list(size = 9),
+                   customdata = ~Group,
+                   hovertemplate = "<b>%{text}</b><br>Group: %{customdata}<extra></extra>")
+    if (use3d) {
+      p <- do.call(plotly::add_trace, c(common, list(type = "scatter3d",
+                                                     x = ~PC1, y = ~PC2, z = ~PC3, marker = list(size = 4, color = cols[[g]])), list(p = p)))
+    } else {
+      p <- do.call(plotly::add_trace, c(common, list(type = "scatter",
+                                                     x = ~PC1, y = ~PC2, marker = list(size = 10, color = cols[[g]])), list(p = p)))
+    }
   }
-  
-  return(p)
+  if (use3d) {
+    p %>% plotly::layout(scene = list(
+      xaxis = list(title = sprintf("PC1 (%.1f%%)", imp[1])),
+      yaxis = list(title = sprintf("PC2 (%.1f%%)", imp[2])),
+      zaxis = list(title = sprintf("PC3 (%.1f%%)", imp[3]))),
+      legend = list(title = list(text = "Group")))
+  } else {
+    p %>% plotly::layout(
+      xaxis = list(title = sprintf("PC1 (%.1f%%)", imp[1]), zeroline = FALSE),
+      yaxis = list(title = sprintf("PC2 (%.1f%%)", imp[2]), zeroline = FALSE),
+      legend = list(title = list(text = "Group")), hovermode = "closest")
+  }
+}
+
+plot_pca_variance <- function(pca, max_pc = 10) {
+  ve  <- summary(pca)$importance[2, ] * 100
+  k   <- min(length(ve), max_pc)
+  ve  <- ve[seq_len(k)]; cum <- cumsum(ve); pcs <- paste0("PC", seq_len(k))
+  plotly::plot_ly() %>%
+    plotly::add_bars(x = pcs, y = ve, name = "Individual",
+                     marker = list(color = "#636EFA"),
+                     hovertemplate = "%{x}: %{y:.1f}%<extra></extra>") %>%
+    plotly::add_trace(x = pcs, y = cum, type = "scatter", mode = "lines+markers",
+                      name = "Cumulative", line = list(color = "#EF553B"),
+                      hovertemplate = "%{x}: %{y:.1f}% cumulative<extra></extra>") %>%
+    plotly::layout(
+      xaxis = list(title = "Principal component", categoryorder = "array", categoryarray = pcs),
+      yaxis = list(title = "Explained variance (%)", range = c(0, 100)),
+      legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1.15),
+      hovermode = "x unified")
 }
 
 plot_binders <- function(df, color = "default", percent = TRUE, alleles = NULL) {

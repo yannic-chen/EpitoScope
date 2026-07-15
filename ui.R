@@ -414,7 +414,18 @@ ui <- bs4DashPage(
           
           ### ---- PCA plot ----
           bs4Card(title = "PCA plot", width = 12, maximizable = TRUE,
-                  plotOutput("pca")
+                  radioButtons("pca_level", "PCA level",
+                               c("Sample-level" = "sample", "Measurement-level" = "measurement"),
+                               selected = "sample", inline = TRUE),
+                  radioButtons("pca_dim", "View", c("2D" = "2d", "3D" = "3d"),
+                               selected = "2d", inline = TRUE),
+                  uiOutput("pca_group_ui"),
+                  plotlyOutput("pca", height = "600px"),
+                  tags$hr(),
+                  h5("Explained variance"),
+                  h6("This plot shows how many principle components (PC) are required to explain how much of the variance 
+                     and how much each PC controbutes. The more PC are required to explain a given variance, the more complex the data is to group."),
+                  plotlyOutput("pca_variance", height = "300px")
           ),
           
         )
