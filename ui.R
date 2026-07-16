@@ -581,21 +581,21 @@ ui <- bs4DashPage(
           ),
           
           ### ---- Summary barchart ----
-          bs4Card(title = tagList("Summary barchart", bs4Dash::tooltip(icon("info-circle"),"The binders is the best category for all alleles.", placement = "right")
-                                  ), width = 12, maximizable = TRUE,
-                  tabsetPanel(
-                    # --- absolute ---
-                    tabPanel(
-                      "Absolute",
-                      plotOutput("binding_plot_absolute")
-                    ),
-                    
-                    # --- percentage ---
-                    tabPanel(
-                      "Percentage",
-                      plotOutput("binding_plot_percent")
-                    )
-                  )
+          bs4Card(title = tagList("Binding summary", bs4Dash::tooltip(icon("info-circle"),
+                                                                      "Best = best class across selected alleles (min rank). Per allele = each allele's own count breakdown, one panel per sample.",
+                                                                      placement = "right")),
+                  width = 12, maximizable = TRUE,
+                  radioButtons("binding_view", "View:",
+                               c("Best (any allele)" = "best", "Per allele" = "per_allele"),
+                               selected = "best", inline = TRUE),
+                  radioButtons("binding_scale", "Scale:",
+                               c("Absolute" = "absolute", "Percentage" = "percent"),
+                               selected = "absolute", inline = TRUE),
+                  conditionalPanel("input.binding_view == 'per_allele'",
+                                   radioButtons("binding_group", "Group by:",
+                                                c("Sample" = "sample", "Allele" = "allele"),
+                                                selected = "sample", inline = TRUE)),
+                  uiOutput("binding_plot_ui")
           ),
           
           ### ---- Peptide Table ----

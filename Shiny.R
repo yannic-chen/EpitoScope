@@ -2358,18 +2358,46 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     binder_summary_all()
   })
   
-  output$binding_plot_percent <- renderPlot({
+  output$binding_plot_ui <- renderUI({
     cache <- prediction_cache()
-    shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    req(!is.null(peptide_wide_unique()))
-    plot_binders(peptide_wide_unique(), color = input$color_palette, percent = TRUE, alleles = input$allele_viz_select)
+    if (ncol(cache) <= 1) return(helpText("No prediction data"))
+    view <- if (is.null(input$binding_view)) "best" else input$binding_view
+    
+    if (view == "per_allele") {
+      d      <- peptide_wide_unique()
+      all_c  <- grep("^HLA", colnames(d), value = TRUE)
+      sel    <- input$allele_viz_select
+      n_all  <- if (is.null(sel) || !length(sel)) length(all_c) else length(intersect(all_c, sel))
+      n_samp <- length(unique(d$Set))
+      grp    <- if (is.null(input$binding_group)) "sample" else input$binding_group
+      # panels = the facet dimension; rows within each panel = the other dimension
+      if (grp == "sample") { n_panel <- n_samp; rows_each <- n_all  }
+      else                 { n_panel <- n_all;  rows_each <- n_samp }
+      per <- max(140, rows_each * 30 + 70)
+      plotly::plotlyOutput("binding_plot", height = paste0(n_panel * per, "px"))
+    } else {
+      n_samp <- length(unique(peptide_wide_unique()$Set))
+      plotly::plotlyOutput("binding_plot", height = paste0(max(300, n_samp * 55 + 150), "px"))
+    }
   })
   
-  output$binding_plot_absolute <- renderPlot({
+  output$binding_plot <- renderPlotly({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
     req(!is.null(peptide_wide_unique()))
-    plot_binders(peptide_wide_unique(), color = input$color_palette, percent = FALSE, alleles = input$allele_viz_select)
+    
+    view    <- if (is.null(input$binding_view))  "best"     else input$binding_view
+    percent <- (if (is.null(input$binding_scale)) "absolute" else input$binding_scale) == "percent"
+    
+    if (view == "per_allele") {
+      grp <- if (is.null(input$binding_group)) "sample" else input$binding_group
+      plot_binders_per_allele_plotly(peptide_wide_unique(), color = input$color_palette,
+                                     percent = percent, alleles = input$allele_viz_select,
+                                     facet_by = grp)
+    } else {
+      plot_binders_plotly(peptide_wide_unique(), color = input$color_palette,
+                          percent = percent, alleles = input$allele_viz_select)
+    }
   })
   
   output$binding_table <- DT::renderDT({
@@ -2520,7 +2548,7 @@ shinyApp(
   server = function(input, output, session) {
     server(input, output, session, 
            #input_variable = test_annotation,
-           input_variable = preloaded_data[1:10,],
+           input_variable = preloaded_data[1:5,],
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 

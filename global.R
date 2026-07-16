@@ -2841,61 +2841,103 @@ plot_pca_variance <- function(pca, max_pc = 10) {
       hovermode = "x unified")
 }
 
-plot_binders <- function(df, color = "default", percent = TRUE, alleles = NULL) {
+# --- best across alleles: one bar per sample (min rank) ---
+plot_binders_plotly <- function(df, color = "default", percent = TRUE, alleles = NULL) {
   allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+  if (!is.null(alleles) && length(alleles) > 0) allele_cols <- intersect(allele_cols, alleles)
+  shiny::validate(shiny::need(length(allele_cols) > 0, "No alleles selected."))
   
-  if (!is.null(alleles) && length(alleles) > 0) {
-    allele_cols <- intersect(allele_cols, alleles)
-  }
-  
-  df$min <- do.call(pmin, c(df[,allele_cols], na.rm=TRUE))
-  
-  df <- df %>%
-    dplyr::mutate(
-      class = dplyr::case_when(
-        is.na(min)       ~ "NA",
-        min <= 0.5       ~ "Strong",
-        min <= 2         ~ "Weak",
-        TRUE             ~ "Non-binder"
-      )
-    ) %>%
+  minrank <- suppressWarnings(do.call(pmin, c(df[, allele_cols, drop = FALSE], na.rm = TRUE)))
+  d <- data.frame(Set = df$Set, min = minrank) %>%
+    dplyr::mutate(class = dplyr::case_when(
+      !is.finite(min) ~ "NA",          # all alleles unpredicted -> NA (see note)
+      min <= 0.5      ~ "Strong",
+      min <= 2        ~ "Weak",
+      TRUE            ~ "Non-binder")) %>%
     dplyr::count(Set, class, name = "n") %>%
-    dplyr::group_by(Set) %>%
-    dplyr::mutate(
-      percent = 100 * n / sum(n),
-      class = factor(
-        class,
-        levels = c("Strong", "Weak", "Non-binder", "NA")
-      )
-    ) %>%
+    dplyr::group_by(Set) %>% dplyr::mutate(percent = 100 * n / sum(n)) %>% dplyr::ungroup()
+  
+  build_binder_stack(d, catcol = "Set", percent = percent, orientation = "h",)
+}
+
+# --- per allele: stacked bars, one subplot panel per sample ---
+plot_binders_per_allele_plotly <- function(df, color = "default", percent = TRUE,
+                                           alleles = NULL,
+                                           facet_by = c("sample", "allele")) {
+  facet_by <- match.arg(facet_by)
+  allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+  if (!is.null(alleles) && length(alleles) > 0) allele_cols <- intersect(allele_cols, alleles)
+  shiny::validate(shiny::need(length(allele_cols) > 0, "No alleles selected."))
+  
+  long <- df %>%
+    tidyr::pivot_longer(cols = dplyr::all_of(allele_cols),
+                        names_to = "Allele", values_to = "Rank") %>%
+    dplyr::mutate(class = dplyr::case_when(
+      is.na(Rank) ~ "NA",
+      Rank <= 0.5 ~ "Strong",
+      Rank <= 2   ~ "Weak",
+      TRUE        ~ "Non-binder")) %>%
+    dplyr::count(Set, Allele, class, name = "n") %>%
+    tidyr::complete(Set, Allele, class, fill = list(n = 0)) %>%
+    dplyr::group_by(Set, Allele) %>%
+    dplyr::mutate(percent = if (sum(n) > 0) 100 * n / sum(n) else 0) %>%
     dplyr::ungroup()
   
-  if(percent) {
-    p <- ggplot(df, aes(x = Set, y = percent, fill = class)) +
-      geom_col() +
-      labs(
-        x = "Set",
-        y = "Percent of peptides",
-        fill = "Binding class"
-      ) + 
-      geom_text(
-        aes(label = ifelse(percent > 5, sprintf("%.1f%%", percent), "")),
-        position = position_stack(vjust = 0.5),
-        size = 3
-      ) +
-      scale_y_continuous(labels = scales::percent_format(scale = 1))
-  } else {
-    p <- ggplot(df, aes(x = Set, y = n, fill = class)) +
-      geom_col() +
-      labs(
-        x = "Set",
-        y = "Number of peptides",
-        fill = "Binding class"
-      )
+  # facet variable vs. y-axis category
+  if (facet_by == "sample") { facet_col <- "Set";    cat_col <- "Allele" }
+  else                      { facet_col <- "Allele"; cat_col <- "Set"    }
+  
+  facets <- sort(unique(long[[facet_col]]))
+  figs <- lapply(seq_along(facets), function(i)
+    build_binder_stack(long[long[[facet_col]] == facets[i], , drop = FALSE],
+                       catcol = cat_col, percent = percent, orientation = "h",
+                       show_legend = (i == 1), title = facets[i]))
+  
+  plotly::subplot(figs, nrows = length(figs), shareX = TRUE,
+                  titleY = FALSE, margin = 0.03)
+}
+
+## --- shared: build one stacked-bar figure from a class-count data.frame ---
+build_binder_stack <- function(d, catcol, percent = TRUE, show_legend = TRUE,
+                               title = NULL, orientation = "v") {
+  class_levels <- c("Strong", "Weak", "Non-binder", "NA")
+  class_cols   <- c("Strong" = "#31a354", "Weak" = "#fee08b",
+                    "Non-binder" = "#969696", "NA" = "#e0e0e0")
+  vcol   <- if (percent) "percent" else "n"
+  horiz  <- orientation == "h"
+  valfmt <- if (percent) ".1f}%" else ".0f}"
+  vtitle <- if (percent) "% of peptides" else "# peptides"
+  
+  p <- plotly::plot_ly()
+  for (cl in class_levels) {
+    dc <- d[d$class == cl, , drop = FALSE]
+    if (nrow(dc) == 0) next
+    if (horiz) {
+      p <- p %>% plotly::add_bars(
+        y = dc[[catcol]], x = dc[[vcol]], orientation = "h", name = cl,
+        marker = list(color = unname(class_cols[cl])),
+        legendgroup = cl, showlegend = show_legend,
+        hovertemplate = paste0("%{y}<br>", cl, ": %{x:", valfmt, "<extra></extra>"))
+    } else {
+      p <- p %>% plotly::add_bars(
+        x = dc[[catcol]], y = dc[[vcol]], name = cl,
+        marker = list(color = unname(class_cols[cl])),
+        legendgroup = cl, showlegend = show_legend,
+        hovertemplate = paste0("%{x}<br>", cl, ": %{y:", valfmt, "<extra></extra>"))
+    }
   }
   
-  p + theme_minimal()
-
+  ax_cat <- list(title = "", tickangle = if (horiz) 0 else -45)
+  ax_val <- list(title = vtitle)
+  p %>% plotly::layout(
+    barmode = "stack",
+    xaxis = if (horiz) ax_val else ax_cat,
+    yaxis = if (horiz) c(ax_cat, list(autorange = "reversed")) else ax_val,
+    legend = list(title = list(text = "Binding class")),
+    annotations = if (is.null(title)) NULL else list(list(
+      text = title, x = 0.5, y = 1.03, xref = "paper", yref = "paper",
+      xanchor = "center", yanchor = "bottom", showarrow = FALSE,
+      font = list(size = 12))))
 }
 
 #-----Table function------
