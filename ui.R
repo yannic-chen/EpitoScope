@@ -602,8 +602,6 @@ ui <- bs4DashPage(
           bs4Card(title = "Peptide Table", width = 12, maximizable = TRUE,
                   DT::DTOutput("binding_table")
           ),
-          h6("WIP: Maybe remove everything (sample and EL_rank) and only keep the peptide sequence? Makes copy-pasting easier.", style = "color: red;"),
-          h6("WIP: With this we would be able to unique by peptide to remove duplicates. Since comma separated list (Set) destroys the csv style file format.", style = "color: red;"),
           fluidRow(
             column(3, downloadButton("dl_all", "Download All Peptides")),
             column(3, downloadButton("dl_binders", "Download Binders")),

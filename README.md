@@ -11,7 +11,7 @@ Task List
 - [X] Combine the unique and lookup table, to one unified table
 - [X] Accept an anotation table to better differentiate measurements into biological/technical replicate and condition. This allows fine tuned handling of conditions within the same input data.
 - [X] Overhaul the HTML report and update the report generation function.
-- [ ] Make Sequence motif (stretches too much for only 1 sample) and measurement specific heatmap plots format better.
+- [X] Make Sequence motif (stretches too much for only 1 sample) and measurement specific heatmap plots format better.
 - [ ] clearly separate, and if needed add option, between peptide and peptidoform plots.
 - [ ] Solve the automatic ordering of categorical data by ggplot.
 - [ ] Prevent filtering criteria reset when selecting/deselecting samples. Likewise the groups for the grouped analysis.

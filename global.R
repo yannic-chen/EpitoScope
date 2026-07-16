@@ -1549,7 +1549,7 @@ plot_histogram <- function(df, column, x_label, title_name = "RT plot", color = 
 
   
   if (color == "default") {
-    color <- NULL  # ggplot will use default fill colors
+    color <- "grey35"  # ggplot will use default fill colors
   } else {
     color <- viridis(1, option = color)
   }
@@ -2389,41 +2389,53 @@ dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", colo
     legend = list(title = list(text = "Sample")))
 }
 
-generate_scatterplot <- function(df, s_name, color = "default") {
-  if (nrow(df) == 0) {
-    return(
-      ggplot() +
-        annotate("text", x = 0.5, y = 0.5,
-                 label = paste("No k0/mz data for sample:", s_name),
-                 size = 6, color = "red") +
-        theme_void()
-    )
-  }
+plot_scatter_mz_k0_plotly <- function(lst, color = "default", ncol = 3) {
+  ok <- vapply(lst, function(df)
+    !is.null(df) && nrow(df) > 0 && all(c("MZ", "K0") %in% colnames(df)), logical(1))
+  samples <- names(lst)[ok]
+  if (length(samples) == 0)
+    return(plotly::plotly_empty() %>% plotly::layout(title = "No m/z / 1/K0 data"))
   
-  charges <- sort(unique(df$CHARGE))
+  charges <- sort(unique(unlist(lapply(lst[samples], function(df) df$CHARGE))))
+  charges <- charges[!is.na(charges)]
+  if (length(charges) == 0) charges <- NA
   
-  cols <- if (color == "default") {
-    NULL
-  } else {
-    setNames(viridis(length(charges), option = color), charges)
-  }
+  plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
+                  '#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52')
+  ccols <- if (color == "default")
+    setNames(plotly_pal[((seq_along(charges) - 1) %% length(plotly_pal)) + 1], as.character(charges))
+  else setNames(viridisLite::viridis(length(charges), option = color), as.character(charges))
   
-  p <- ggplot(df, aes(x = MZ, y = K0, color = as.factor(CHARGE))) +
-    geom_point(size = 1.5, alpha = 0.7) +
-    theme_minimal() +
-    labs(title = paste("1/k0 vs m/z:", s_name), x = "m/z", y = "1/k0", color = "Charge")
+  figs <- lapply(seq_along(samples), function(si) {
+    df <- lst[[samples[si]]]
+    df <- df[is.finite(df$MZ) & is.finite(df$K0), , drop = FALSE]
+    p <- plotly::plot_ly()
+    for (ch in charges) {
+      d <- df[!is.na(df$CHARGE) & df$CHARGE == ch, , drop = FALSE]
+      if (nrow(d) == 0) next
+      p <- p %>% plotly::add_trace(
+        x = d$MZ, y = d$K0, type = "scattergl", mode = "markers",
+        name = paste0("z = ", ch), legendgroup = paste0("z", ch),  # shared toggle
+        showlegend = (si == 1),                                    # one legend only
+        marker = list(color = ccols[[as.character(ch)]], size = 3, opacity = 0.5),
+        hoverinfo = "skip")                                        # no per-dot info
+    }
+    p %>% plotly::layout(annotations = list(list(
+      text = samples[si], x = 0.5, y = 1.03, xref = "paper", yref = "paper",
+      xanchor = "center", yanchor = "bottom", showarrow = FALSE, font = list(size = 11))))
+  })
   
-  if (!is.null(cols)) p <- p + scale_color_manual(values = cols)
-  p
-}
-
-generate_scatterplots <- function(data_list, color = "default") {
-  lapply(names(data_list), function(nm) {
-    tryCatch(
-      generate_scatterplot(data_list[[nm]], nm, color = color),
-      error = function(e) NULL
-    )
-  }) |> setNames(names(data_list))
+  fig <- plotly::subplot(figs, nrows = ceiling(length(figs) / ncol),
+                         shareX = FALSE, shareY = FALSE,       # aligned axes + fewer ticks to draw
+                         titleX = FALSE, titleY = FALSE, margin = 0.03)
+  # shared axis labels
+  fig$x$layout$annotations <- c(fig$x$layout$annotations, list(
+    list(text = "m/z",  x = 0.5,  y = -0.04, xref = "paper", yref = "paper",
+         xanchor = "center", yanchor = "top",    showarrow = FALSE),
+    list(text = "1/K0", x = -0.04, y = 0.5,  xref = "paper", yref = "paper",
+         xanchor = "right",  yanchor = "middle", textangle = -90, showarrow = FALSE)))
+  fig %>% plotly::layout(legend = list(title = list(text = "Charge")),
+                         margin = list(l = 50, b = 45))
 }
 
 plot_completeness <- function(lst, spectra_cols, percent = FALSE, title = "Data Completeness",color = "default") {

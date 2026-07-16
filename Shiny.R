@@ -648,7 +648,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         ),
         
         # Layout for sample plots
-        do.call(layout_column_wrap, c(width = "250px", sample_plots))
+        do.call(layout_column_wrap, c(width = "250px", fixed_width = TRUE, sample_plots))
       )
     })
     
@@ -872,30 +872,17 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   ##----1/k0 vs m/z----
   output$scatterplots_ui <- renderUI({
-    lst <- processed_data_list()
-    
-    layout_column_wrap(
-      width = "300px",
-      !!!lapply(names(lst), function(sample_name) {
-        plotOutput(paste0("scatter_", sample_name), height = "300px")
-      })
-    )
+    lst   <- processed_data_list()
+    n     <- sum(vapply(lst, function(df)
+      !is.null(df) && nrow(df) > 0 && all(c("MZ","K0") %in% colnames(df)), logical(1)))
+    nrows <- max(1L, ceiling(n / 3))
+    plotly::plotlyOutput("scatterplots", height = paste0(nrows * 320, "px"))
   })
   
-  observe({
+  output$scatterplots <- renderPlotly({
     lst <- processed_data_list()
-    
-    for (sample_name in names(lst)) {
-      local({
-        sample_local <- sample_name
-        df_local     <- lst[[sample_local]]
-        
-        output[[paste0("scatter_", sample_local)]] <- renderPlot({
-          check_data_error(df_local, required_cols = c("MZ", "K0"), na_policy = "all")
-          generate_scatterplot(df_local, sample_local, color = input$color_palette)
-        })
-      })
-    }
+    check_data_error(lst, required_cols = c("MZ", "K0"), na_policy = "all")
+    plot_scatter_mz_k0_plotly(lst, color = input$color_palette, ncol = 3)
   })
   
   ## ---- measurement specific heatmap ----
@@ -2154,7 +2141,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       
       tabPanel(
         paste("Length", L),
-        do.call(layout_column_wrap, c(list(width = "250px"), sample_plots))
+        do.call(layout_column_wrap, c(list(width = "250px"), fixed_width = TRUE, sample_plots))
       )
     })
     
