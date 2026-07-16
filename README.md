@@ -16,7 +16,7 @@ Task List
 - [ ] Solve the automatic ordering of categorical data by ggplot.
 - [ ] Prevent filtering criteria reset when selecting/deselecting samples. Likewise the groups for the grouped analysis.
 - [X] Change functions to pkg::fun() style (i.e. dplyr::mutate()). This avoids future function masking.
-- [ ] Decouple data calculations and plotting function, so that when changing window size only the plotting function is rerun and not the whole calculation
+- [X] ~Decouple data calculations and plotting function, so that when changing window size only the plotting function is rerun and not the whole calculation~. Switch to plotly, which automates this
 - [X] Have a better way to separate PROTEIN names for different input formats.
 - [ ] How to do NA handling for PCA plot. Sometimes user-input data is biologically too different for imputation.
 - [ ] Unify PTM nomenclature between output. Translate mass difference to PTM.
@@ -39,9 +39,10 @@ Task List
 - [ ] Add normalization methods options for group based analysis
 - [ ] More variable handling of reported decoys. DIA-NN now also reports decoy with the "rev_" prefix
 - [ ] Allow more species in the app. For example, HLA nomenclature is different for mouse.
-- [ ] Annotation table condition applying colour to PCA plot
+- [x] Annotation table condition applying colour to PCA plot
 - [x] Handle the reactive nature better to allow more filtering adjustments before plot update.
 - [ ] Return netMHCpan results location, so user can save it up.
+- [ ] Allow the measurement decoupling from sample, so each measurement is its own sample or group the measuremuents by condition or replicate.
 
 ### Maybe?
 - [ ] Flexible Length Range Percentage plot for MHC2 and perhaps other species

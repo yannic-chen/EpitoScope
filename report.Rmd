@@ -737,14 +737,14 @@ plot_upset(processed_list,
 
 ```{r Pairwise_overlap_count}
 incProgress(1/chunk_num, detail = "Pairwise Overlap Matrix Count...")
-plot_shared_peptide(processed_list, mode = "count", percent_type = "union", color = color_palette)
+plot_shared_peptide_interactive(processed_list, mode = "count", percent_type = "union", color = color_palette)
 ```
 
 ### Percent
 
 ```{r Pairwise_overlap_percent}
 incProgress(1/chunk_num, detail = "Pairwise Overlap Matrix Percentage...")
-plot_shared_peptide(processed_list, mode = "percent", percent_type = "union", color = color_palette)
+plot_shared_peptide_interactive(processed_list, mode = "percent", percent_type = "union", color = color_palette)
 ```
 
 ## Pairwise comparison Matrix {.tabset}
@@ -753,14 +753,14 @@ plot_shared_peptide(processed_list, mode = "percent", percent_type = "union", co
 
 ```{r Pairwise_comp}
 incProgress(1/chunk_num, detail = "Pairwise Comparison no Cluster...")
-plot_pairwise_peptide_quant_correlation(processed_list, color = color_palette, cluster = "none")
+plot_pairwise_quant_correlation_interactive(processed_list, color = color_palette, cluster = "none")
 ```
 
 ### Cluster
 
 ```{r Pairwise_comp_cluster}
 incProgress(1/chunk_num, detail = "Pairwise Comparison Cluster...")
-plot_pairwise_peptide_quant_correlation(processed_list, color = color_palette, cluster = "both")
+plot_pairwise_quant_correlation_interactive(processed_list, color = color_palette, cluster = "both")
 ```
 
 ## PCA plot

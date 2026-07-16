@@ -393,7 +393,7 @@ ui <- bs4DashPage(
           bs4Card(title = tagList("Pairwise shared peptide matrix", bs4Dash::tooltip(icon("info-circle"),"Pairwise comparison of number of shared peptides. For Percent visualization union is used (i.e. jaccard style).", placement = "right")
                                   ), width = 12, maximizable = TRUE,
                   selectInput("shared_mode", "Visualization:", choices = c("Count" = "count", "Percent" = "percent")),
-                  plotOutput("Pairwise_shared_peptide_matrix")
+                  plotlyOutput("Pairwise_shared_peptide_matrix")
                   ),
           
           ### ---- Pairwise shared peptide quantity comparison matrix ----
@@ -409,7 +409,7 @@ ui <- bs4DashPage(
                       ), selected = "none"
 
           ),
-          plotOutput("pairwise_peptide_quant_correlation")
+          plotlyOutput("pairwise_peptide_quant_correlation")
           ),
           
           ### ---- PCA plot ----

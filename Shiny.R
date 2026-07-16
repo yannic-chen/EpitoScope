@@ -1063,29 +1063,22 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
   ## ----Pairwise comparison of shared peptides----
-  output$Pairwise_shared_peptide_matrix <- renderPlot({
+  output$Pairwise_shared_peptide_matrix <- renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
     shiny::validate(shiny::need(length(lst) >= 2, "Need 2 or more samples to plot"))
     req(input$shared_mode)
-    
-    ht <- plot_shared_peptide(
-      lst,
-      mode  = input$shared_mode,
-      color = input$color_palette,
-      percent_type = "union"
-    )
-    
-    safe_draw(ht)
+    plot_shared_peptide_interactive(lst, mode = input$shared_mode,
+                                    color = input$color_palette, percent_type = "union")
   })
   
   ## ----Pairwise comparison of shared peptides quantity----
-  output$pairwise_peptide_quant_correlation <- renderPlot({
+  output$pairwise_peptide_quant_correlation <- renderPlotly({
     lst <- processed_data_list()
     shiny::validate(shiny::need(length(lst) >= 2, "Need 2 or more samples to plot"))
-    check_data_error(lst, required_cols = "MAX_QUANTITY" , na_policy = "any")
-    ht <- plot_pairwise_peptide_quant_correlation(lst, color = input$color_palette, cluster = input$cluster_mode)
-    safe_draw(ht)
+    check_data_error(lst, required_cols = "MAX_QUANTITY", na_policy = "any")
+    plot_pairwise_quant_correlation_interactive(lst, color = input$color_palette,
+                                                cluster_mode = input$cluster_mode)
   })
   
   ## ----PCA plot----

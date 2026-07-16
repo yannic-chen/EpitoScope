@@ -2569,140 +2569,51 @@ compute_upset_intersections <- function(data_list, stripped = TRUE,
   results
 }
 
-plot_shared_peptide <- function(lst, color = "default", mode = c("count", "percent"), percent_type = c("min", "union")) {
-  
-  mode <- match.arg(mode)
-  percent_type <- match.arg(percent_type)
-  
+plot_shared_peptide_interactive <- function(lst, color = "default",
+                                            mode = c("count", "percent"),
+                                            percent_type = c("min", "union"),
+                                            cluster_mode = "both") {
+  mode <- match.arg(mode); percent_type <- match.arg(percent_type)
   peptides <- lapply(lst, function(df) unique(as.character(df$STRIPPED)))
-  samples <- names(peptides)
-  n <- length(samples)
-  
-  shared_mat <- matrix(0, nrow = n, ncol = n,
-                       dimnames = list(samples, samples))
-  
-  for (i in samples) {
-    for (j in samples) {
-      shared <- length(dplyr::intersect(peptides[[i]], peptides[[j]]))
-      
-      if (mode == "count") {
-        shared_mat[i, j] <- shared
-        
-      } else {
-        denom <- switch(
-          percent_type,
-          min   = min(length(peptides[[i]]), length(peptides[[j]])),
-          union = length(union(peptides[[i]], peptides[[j]]))
-        )
-        
-        shared_mat[i, j] <- ifelse(denom > 0, 100 * shared / denom, NA)
-      }
-    }
-  }
-  
-  # Color mapping
-  if (color == "default") {
-    col_fun <- if (mode == "count") {
-      colorRamp2(c(min(shared_mat), max(shared_mat, na.rm = TRUE)), c("white", "red"))
+  samples <- names(peptides); n <- length(samples)
+  m <- matrix(0, n, n, dimnames = list(samples, samples))
+  for (i in samples) for (j in samples) {
+    shared <- length(dplyr::intersect(peptides[[i]], peptides[[j]]))
+    if (mode == "count") {
+      m[i, j] <- shared
     } else {
-      colorRamp2(c(0, 100), c("white", "red"))
+      denom <- switch(percent_type,
+                      min   = min(length(peptides[[i]]), length(peptides[[j]])),
+                      union = length(union(peptides[[i]], peptides[[j]])))
+      m[i, j] <- if (denom > 0) 100 * shared / denom else NA
     }
-  } else {
-    cols <- viridis(100, option = color)
-    col_fun <- colorRamp2(
-      range(shared_mat, na.rm = TRUE),
-      c(cols[1], cols[100])
-    )
   }
-  
-  #fast clustering
-  row_dend <- if (nrow(shared_mat) > 1) {
-    function(m) fastcluster::hclust(dist(m), method = "complete")
-  } else FALSE
-  
-  col_dend <- if (ncol(shared_mat) > 1) {
-    function(m) fastcluster::hclust(dist(t(m)), method = "complete")
-  } else FALSE
-  
-  Heatmap(
-    shared_mat,
-    name    = if (mode == "count") "# shared peptides" else "% shared peptides",
-    col     = col_fun,
-    na_col  = "grey90",
-    cluster_rows    = row_dend,
-    cluster_columns = col_dend
-  )
+  lab  <- if (mode == "count") "# shared peptides" else "% shared peptides"
+  lims <- if (mode == "count") c(0, max(m, na.rm = TRUE)) else c(0, 100)
+  if (diff(lims) == 0) lims <- c(0, 1)                      # guard degenerate scale
+  plot_correlation_heatmap_interactive(m, color = color, cluster_mode = cluster_mode,
+                                       label = lab, limits = lims)
 }
 
-plot_pairwise_peptide_quant_correlation <- function(lst, method = "pearson", min_shared = 2, color = "default", cluster = c("none", "rows", "columns", "both")) {
- 
-  # Keep only peptide -> quantity mapping per sample
-  peptides <- lapply(lst, function(df) {
-    df %>%
-      dplyr::select(STRIPPED, MAX_QUANTITY) %>%
+plot_pairwise_quant_correlation_interactive <- function(lst, method = "pearson",
+                                                        min_shared = 2, color = "default",
+                                                        cluster_mode = "both") {
+  peptides <- lapply(lst, function(df)
+    df %>% dplyr::select(STRIPPED, MAX_QUANTITY) %>%
       dplyr::group_by(STRIPPED) %>%
-      dplyr::summarise(MAX_QUANTITY = max(MAX_QUANTITY, na.rm = TRUE), .groups = "drop") #this collapses for cases of PTM peptidoforms.
-  })
-  
-  samples <- names(peptides)
-  n <- length(samples)
-  cluster <- match.arg(cluster)
-  
-  cor_mat <- matrix(NA_real_, nrow = n, ncol = n,
-                    dimnames = list(samples, samples))
-  
-  for (i in samples) {
-    for (j in samples) {
-      
-      merged <- merge(
-        peptides[[i]],
-        peptides[[j]],
-        by = "STRIPPED",
-        suffixes = c("_i", "_j")
-      )
-      
-      if (nrow(merged) >= min_shared) {
-        cor_mat[i, j] <- suppressWarnings(cor(
-          merged$MAX_QUANTITY_i,
-          merged$MAX_QUANTITY_j,
-          method = method,
-          use = "complete.obs"
-        ))
-      }
-    }
+      dplyr::summarise(MAX_QUANTITY = max(MAX_QUANTITY, na.rm = TRUE), .groups = "drop"))
+  samples <- names(peptides); n <- length(samples)
+  m <- matrix(NA_real_, n, n, dimnames = list(samples, samples))
+  for (i in samples) for (j in samples) {
+    merged <- merge(peptides[[i]], peptides[[j]], by = "STRIPPED", suffixes = c("_i", "_j"))
+    if (nrow(merged) >= min_shared)
+      m[i, j] <- suppressWarnings(cor(merged$MAX_QUANTITY_i, merged$MAX_QUANTITY_j,
+                                      method = method, use = "complete.obs"))
   }
-  
-  mat_range <- range(cor_mat, na.rm = TRUE)
-  if (!is.finite(mat_range[1]) || mat_range[1] == mat_range[2]) {
-    mat_range <- c(mat_range[1] - 0.5, mat_range[1] + 0.5)
-  }
-  if (color == "default") {
-    col_fun <- colorRamp2(mat_range, c("white", "red"))
-  } else {
-    cols <- viridis(100, option = color)
-    col_fun <- colorRamp2(mat_range, c(cols[1], cols[100]))
-  }
-  
-  do_rows <- cluster %in% c("rows", "both")
-  do_cols <- cluster %in% c("columns", "both")
-  
-  if (do_rows || do_cols) {
-    dend <- fastcluster::hclust(dist(cor_mat, method = "euclidean"), method = "complete")
-  }
-  row_dend <- if (do_rows) dend else FALSE
-  col_dend <- if (do_cols) dend else FALSE
-  
-  Heatmap(
-    cor_mat,
-    name    = paste(method, "correlation"),
-    col     = col_fun,
-    na_col  = "grey90",
-    cluster_rows    = row_dend,
-    cluster_columns = col_dend
-    # clustering_distance/method params removed — ignored when hclust passed
-  )
+  plot_correlation_heatmap_interactive(m, color = color, cluster_mode = cluster_mode,
+                                       label = paste(method, "correlation"),
+                                       limits = NULL)        # correlation → auto range (diag = 1)
 }
-
 bin_heatmap_columns <- function(mat, max_cols = 1000) {
   if (ncol(mat) <= max_cols) return(mat)
   n <- ncol(mat); k <- min(max_cols, n)
@@ -2828,7 +2739,7 @@ plot_heatmap_interactive <- function(pep_mat, color = "default") {
 
 plot_correlation_heatmap_interactive <- function(cor_mat, color = "default",
                                                  cluster_mode = "both", groups = NULL,
-                                                 label = "Pearson", tick_limit = 60) {
+                                                 label = "Pearson", tick_limit = 60, limits = NULL) {
   n <- ncol(cor_mat)
   if (is.null(rownames(cor_mat))) rownames(cor_mat) <- colnames(cor_mat)
   
@@ -2857,7 +2768,8 @@ plot_correlation_heatmap_interactive <- function(cor_mat, color = "default",
     dendrogram      = dend, Rowv = Rowv, Colv = Colv,
     seriate         = "none",
     hclustfun       = fastcluster::hclust,
-    colors          = pal_vec, limits = c(min(cor_mat, na.rm = TRUE), 1),
+    colors          = pal_vec, 
+    limits          = if (is.null(limits)) range(cor_mat, na.rm = TRUE) else limits,
     col_side_colors = side,
     showticklabels  = c(show_tick, show_tick),
     key.title       = label)
