@@ -33,6 +33,8 @@ params:
   upset_min_degree:  1
   upset_n_intersect: 40
   default_quantity_cols_r: NULL
+  dynrange_prot_query: ""
+  dynrange_pep_query: ""
   
 ---
 
@@ -377,14 +379,14 @@ plot_stacked_bar(data_list, column = "CHARGE", fill_label = "Charge", percentage
 
 ```{r RAW_Mass}
 incProgress(1/chunk_num, detail = "Mass...")
-plot_density(data_list, column = "MASS", x_label = "Mass (Da)", color = color_palette)
+plot_density_static(data_list, column = "MASS", x_label = "Mass (Da)", color = color_palette)
 ```
 
 ### m/z
 
 ```{r Raw_MZ}
 incProgress(1/chunk_num, detail = "m/z...")
-plot_density(data_list, column = "MZ", x_label = "m/z", color = color_palette)
+plot_density_static(data_list, column = "MZ", x_label = "m/z", color = color_palette)
 ```
 
 ### Retention Time
@@ -405,14 +407,14 @@ plot_per_sample_grid(
 
 ```{r RAW_ppm}
 incProgress(1/chunk_num, detail = "Mass Error...")
-plot_density(data_list, column = "PPM", x_label = "ppm", color = color_palette)
+plot_density_static(data_list, column = "PPM", x_label = "ppm", color = color_palette)
 ```
 
 ### Score
 
 ```{r RAW_Score}
 incProgress(1/chunk_num, detail = "Score...")
-plot_violin(data_list, column = "SCORE", color = color_palette)
+plot_violin_static(data_list, column = "SCORE", color = color_palette)
 ```
 
 ## Summary Table
@@ -472,7 +474,7 @@ plot_charge_per_measurement(lst, quantity_cols, color = color_palette)
 #### Per Sample
 ```{r QC_Mass_sample}
 incProgress(1/chunk_num, detail = "Mass per sample...")
-plot_density(processed_list, column = "MASS", x_label = "Mass (Da)", color = color_palette)
+plot_density_static(processed_list, column = "MASS", x_label = "Mass (Da)", color = color_palette)
 ```
 
 #### Per Measurement
@@ -486,7 +488,7 @@ plot_density_envelope(processed_list, quantity_cols, column = "MASS", x_label = 
 #### Per Sample
 ```{r QC_MZ_sample}
 incProgress(1/chunk_num, detail = "m/z per sample...")
-plot_density(processed_list, column = "MZ", x_label = "m/z", color = color_palette)
+plot_density_static(processed_list, column = "MZ", x_label = "m/z", color = color_palette)
 ```
 
 #### Per Measurement
@@ -524,7 +526,7 @@ for (s in names(processed_list)) {
 #### Per Sample
 ```{r QC_PPM_sample}
 incProgress(1/chunk_num, detail = "Mass error per sample...")
-plot_density(processed_list, column = "PPM", x_label = "ppm", color = color_palette)
+plot_density_static(processed_list, column = "PPM", x_label = "ppm", color = color_palette)
 ```
 
 #### Per Measurement
@@ -538,7 +540,7 @@ plot_density_envelope(processed_list, quantity_cols, column = "PPM", x_label = "
 #### Per Sample
 ```{r QC_score_sample}
 incProgress(1/chunk_num, detail = "Score per sample...")
-plot_violin(processed_list, column = "SCORE", color = color_palette)
+plot_violin_static(processed_list, column = "SCORE", color = color_palette)
 ```
 
 #### Per Measurement
@@ -593,16 +595,18 @@ incProgress(1/chunk_num, detail = "Dynamic Range Individual...")
 n_dr  <- sum(vapply(processed_list,
                     function(df) nrow(df) >= 10 && "MAX_QUANTITY" %in% colnames(df),
                     logical(1)))
-nrows <- max(1L, ceiling(n_dr / 3))
-dynamic_range_subplot(processed_list, data_col = "MAX_QUANTITY", ncol = 3) %>%
-  plotly::layout(height = nrows * 300)
+dynamic_range_static(processed_list, data_col = "MAX_QUANTITY", ncol = 3,
+                     prot_query = params$dynrange_prot_query,
+                     pep_query  = params$dynrange_pep_query)
 ```
 
 ### Combined
 
 ```{r dynrange_combined}
 incProgress(1/chunk_num, detail = "Dynamic Range Combined...")
-dynamic_range_plot_combined(df_list = processed_list, data_col = "MAX_QUANTITY", color = color_palette)
+dynamic_range_combined_static(processed_list, data_col = "MAX_QUANTITY", color = color_palette,
+                              prot_query = params$dynrange_prot_query,
+                              pep_query  = params$dynrange_pep_query)
 ```
 
 ## 1/k0 vs m/z
@@ -613,62 +617,36 @@ scatter_list <- generate_scatterplots(processed_list, color = color_palette)
 scatter_list <- Filter(Negate(is.null), scatter_list)
 
 if (length(scatter_list) == 0) {
-  ggplot() + annotate("text", x=.5, y=.5, label="No scatterplots available", size=6, color="red") + theme_void()
+  ggplot() + annotate("text", x = .5, y = .5, label = "No scatterplots available",
+                      size = 6, color = "red") + theme_void()
 } else {
   wrap_plots(scatter_list, ncol = min(2, length(scatter_list)))
 }
 ```
 
 ## Measurement Correlation Heatmap
-````{r measurement_heatmap}
+```{r measurement_heatmap}
 incProgress(1/chunk_num, detail = "Measurement correlation heatmap...")
 if (length(quantity_cols) == 0) {
   cat("No QUANTITY columns found.")
 } else {
   pep_mat <- prepare_measurement_matrix(processed_list, quantity_cols)
-  
   if (ncol(pep_mat) < 2 || nrow(pep_mat) == 0) {
-    cat("_Not enough data to compute correlation.")
+    cat("_Not enough data to compute correlation._")
   } else {
-    
     cor_mat <- cor(pep_mat, method = "pearson", use = "complete.obs")
-    
-    group_names <- names(lst)
-
+    group_names <- names(processed_list)
     get_group <- function(colname) {
       matched <- group_names[sapply(group_names, function(g) startsWith(colname, g))]
-      if (length(matched) == 0) return(NA)
-      matched[1]
+      if (length(matched) == 0) NA else matched[1]
     }
-    
-    if (cluster_mode_ea == "sample") {
-      groups <- sapply(colnames(cor_mat), get_group)
-      ht <- plot_heatmap(cor_mat, color = color_palette,
-                         row_groups = groups, col_groups = groups, label = "Pearson")
-    } else if (cluster_mode_ea == "mix") {
-      col_groups <- sapply(colnames(cor_mat), get_group)
-      ht <- plot_heatmap(cor_mat, color = color_palette, cluster = "rows",
-                         row_groups = NULL, col_groups = col_groups, label = "Pearson")
-    } else {
-      ht <- plot_heatmap(cor_mat, color = color_palette,
-                         cluster = cluster_mode_ea, label = "Pearson")
-    }
-    
-    pad <- compute_padding(colnames(cor_mat), fontsize = 10, rot = 90)
-    
-    draw(ht,
-         heatmap_legend_side = "left",
-         padding = unit.c(
-           unit(pad / 2, "mm"),
-           unit(2,       "mm"),
-           unit(2,       "mm"),
-           unit(pad,     "mm")
-         )
-    )
+    groups <- sapply(colnames(cor_mat), get_group)
+    plot_correlation_heatmap_interactive(cor_mat, color = color_palette,
+                                         cluster_mode = cluster_mode_ea,
+                                         groups = groups, label = "Pearson")
   }
 }
-
-````
+```
 
 # Results {.tabset}
 
@@ -767,7 +745,24 @@ plot_pairwise_quant_correlation_interactive(processed_list, color = color_palett
 
 ```{r PCA_plot}
 incProgress(1/chunk_num, detail = "PCA...")
-plot_PCA(processed_list, color = color_palette)
+peptides <- lapply(processed_list, function(df)
+  df %>% dplyr::select(STRIPPED, MAX_QUANTITY) %>%
+    dplyr::group_by(STRIPPED) %>%
+    dplyr::summarise(MAX_QUANTITY = max(MAX_QUANTITY, na.rm = TRUE), .groups = "drop"))
+dfm <- Reduce(function(x, y) dplyr::full_join(x, y, by = "STRIPPED"), peptides)
+mat <- as.matrix(dfm[, -1]); colnames(mat) <- names(processed_list); rownames(mat) <- dfm$STRIPPED
+mat[is.na(mat)] <- 0
+mat <- mat[apply(mat, 1, function(r) stats::sd(r) > 0), , drop = FALSE]
+if (nrow(mat) >= 2 && ncol(mat) >= 3) {
+  pca <- prcomp(t(mat), scale. = TRUE)
+  htmltools::tagList(
+    pca_scatter_plotly(pca, labels = colnames(mat), groups = colnames(mat),
+                       color = color_palette, show_labels = TRUE, dim = "2d"),
+    plot_pca_variance(pca)
+  )
+} else {
+  cat("Not enough data/variance for PCA.")
+}
 ```
 
 # Groups {.tabset}
@@ -1069,10 +1064,8 @@ if (!is.null(binder_summary_all)) {
 ```{r Binding_barchart_abs}
 incProgress(1/chunk_num, detail = "Binding Barchart Absolute...")
 if (!is.null(binder_unique)) {
-  plot_binders(binder_unique, color = color_palette, percent = FALSE)
-} else {
-  cat("no binding data")
-}
+  plot_binders_plotly(binder_unique, color = color_palette, percent = FALSE)
+} else { cat("no binding data") }
 ```
 
 ### Percent
@@ -1080,10 +1073,62 @@ if (!is.null(binder_unique)) {
 ```{r Binding_barchart_perc}
 incProgress(1/chunk_num, detail = "Binding Barchart Percent...")
 if (!is.null(binder_unique)) {
-  plot_binders(binder_unique, color = color_palette, percent = TRUE)
-} else {
-  cat("no binding data")
-}
+  plot_binders_plotly(binder_unique, color = color_palette, percent = TRUE)
+} else { cat("no binding data") }
+```
+
+## Per-Allele Binding {.tabset}
+
+### By sample — Absolute
+
+```{r Binding_allele_samp_abs}
+incProgress(1/chunk_num, detail = "Per-allele (sample, absolute)...")
+if (!is.null(binder_unique)) {
+  n_all  <- length(grep("^HLA", colnames(binder_unique), value = TRUE))
+  n_samp <- length(unique(binder_unique$Set))
+  plot_binders_per_allele_plotly(binder_unique, color = color_palette,
+                                 percent = FALSE, facet_by = "sample") %>%
+    plotly::layout(height = n_samp * max(140, n_all * 30 + 70))
+} else { cat("no binding data") }
+```
+
+### By sample — Percentage
+
+```{r Binding_allele_samp_perc}
+incProgress(1/chunk_num, detail = "Per-allele (sample, percentage)...")
+if (!is.null(binder_unique)) {
+  n_all  <- length(grep("^HLA", colnames(binder_unique), value = TRUE))
+  n_samp <- length(unique(binder_unique$Set))
+  plot_binders_per_allele_plotly(binder_unique, color = color_palette,
+                                 percent = TRUE, facet_by = "sample") %>%
+    plotly::layout(height = n_samp * max(140, n_all * 30 + 70))
+} else { cat("no binding data") }
+```
+
+### By allele — Absolute
+
+```{r Binding_allele_all_abs}
+incProgress(1/chunk_num, detail = "Per-allele (allele, absolute)...")
+if (!is.null(binder_unique)) {
+  n_all  <- length(grep("^HLA", colnames(binder_unique), value = TRUE))
+  n_samp <- length(unique(binder_unique$Set))
+  plot_binders_per_allele_plotly(binder_unique, color = color_palette,
+                                 percent = FALSE, facet_by = "allele") %>%
+    plotly::layout(height = n_all * max(140, n_samp * 30 + 70))
+} else { cat("no binding data") }
+```
+
+### By allele — Percentage
+
+```{r Binding_allele_all_perc}
+incProgress(1/chunk_num, detail = "Per-allele (allele, percentage)...")
+if (!is.null(binder_unique)) {
+  n_all  <- length(grep("^HLA", colnames(binder_unique), value = TRUE))
+  n_samp <- length(unique(binder_unique$Set))
+  plot_binders_per_allele_plotly(binder_unique, color = color_palette,
+                                 percent = TRUE, facet_by = "allele") %>%
+    plotly::layout(height = n_all * max(140, n_samp * 30 + 70))
+} else { cat("no binding data") }
 ```
 
 ## Binding Table
@@ -1109,7 +1154,7 @@ if (!is.null(binder_unique)) {
 # Lookup
 For unique peptides per sample, set n_datasets = 1
 ```{r Lookup}
-incProgress(1/chunk_num, detail = "Lookup TabSle...")
+incProgress(1/chunk_num, detail = "Lookup Table...")
 keep_cols <- c("Sample", "PEPTIDE", "STRIPPED", "MAX_QUANTITY","LENGTH" ,"MASS" ,"CHARGE", "MZ" ,"K0", "RT", "PROTEIN")
     
 combined <- imap_dfr(data_list, ~ dplyr::select(.x, intersect(keep_cols, colnames(.x))) %>% mutate(Sample = .y))

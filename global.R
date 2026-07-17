@@ -70,10 +70,13 @@ if (requireNamespace("fastcluster", quietly = TRUE)) {
 }
 
 #Suppress warnings from everywhere, including plot_ly
-globalCallingHandlers(warning = function(w) {
-  if (grepl("group_hm", conditionMessage(w), fixed = TRUE))
-    invokeRestart("muffleWarning")
-})
+tryCatch(
+  globalCallingHandlers(warning = function(w) {
+    if (grepl("group_hm", conditionMessage(w), fixed = TRUE))
+      invokeRestart("muffleWarning")
+  }),
+  error = function(e) invisible(NULL)   # e.g. during knitr/report render — handlers already on stack
+)
 
 #-----------Column extraction------------
 # Here we initiate all the possible column names important for us from all different input formats
@@ -1701,6 +1704,26 @@ plot_density <- function(lst, column, transform = NULL, x_label = NULL, alpha = 
   )
 }
 
+#This is for report generation to keep it small.
+plot_density_static <- function(lst, column, transform = NULL, x_label = NULL, color = "default") {
+  if (is.null(x_label)) x_label <- column
+  df <- dplyr::bind_rows(lapply(names(lst), function(s) {
+    v <- lst[[s]][[column]]; if (!is.null(transform)) v <- transform(v)
+    v <- v[is.finite(v)]; if (!length(v)) return(NULL)
+    data.frame(Sample = s, value = v)
+  }))
+  if (is.null(df) || !nrow(df)) return(ggplot() + theme_void())
+  n <- length(unique(df$Sample))
+  p <- ggplot(df, aes(x = value, color = Sample, fill = Sample)) +
+    geom_density(alpha = 0.12) +
+    labs(x = x_label, y = "Density") + theme_minimal()
+  if (color != "default") {
+    cols <- viridis(n, option = color)
+    p <- p + scale_color_manual(values = cols) + scale_fill_manual(values = cols)
+  }
+  p
+}
+
 plot_violin <- function(lst, column, x_label = "Sample", y_label = NULL, title = NULL, add_boxplot = TRUE, color = "default") {
   if (is.null(y_label)) y_label <- column
   n          <- length(lst)
@@ -1741,6 +1764,25 @@ plot_violin <- function(lst, column, x_label = "Sample", y_label = NULL, title =
     yaxis = list(title = y_label, range = y_range),
     showlegend = FALSE
   )
+}
+
+#This is for report generation to keep it small.
+plot_violin_static <- function(lst, column, x_label = "Sample", y_label = NULL,
+                               color = "default", add_boxplot = TRUE) {
+  if (is.null(y_label)) y_label <- column
+  df <- dplyr::bind_rows(lapply(names(lst), function(s) {
+    v <- lst[[s]][[column]]; v <- v[is.finite(v)]
+    if (!length(v)) return(NULL)
+    data.frame(Sample = s, value = v)
+  }))
+  if (is.null(df) || !nrow(df)) return(ggplot() + theme_void())
+  n <- length(unique(df$Sample))
+  p <- ggplot(df, aes(x = Sample, y = value, fill = Sample)) + geom_violin(alpha = 0.5)
+  if (add_boxplot) p <- p + geom_boxplot(width = 0.1, fill = "white", outlier.size = 0.4)
+  p <- p + labs(x = x_label, y = y_label) + theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  if (color != "default") p <- p + scale_fill_manual(values = viridis(n, option = color))
+  p
 }
 
 plot_length_distribution <- function(lst, color = "default") {
@@ -2389,6 +2431,82 @@ dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", colo
     legend = list(title = list(text = "Sample")))
 }
 
+## These are for the static dynamic range plot in the html report, to contain highlighted regex.
+.dr_prep <- function(d, data_col) {
+  v <- d[[data_col]]; v[v == 0] <- NA
+  keep <- is.finite(v); d <- d[keep, , drop = FALSE]; v <- v[keep]
+  if (length(v) < 10) return(NULL)
+  data.frame(Rank = rank(-v, ties.method = "first"), y = log2(v),
+             PROTEIN  = if ("PROTEIN"  %in% names(d)) d$PROTEIN  else "",
+             STRIPPED = if ("STRIPPED" %in% names(d)) d$STRIPPED else "",
+             PEPTIDE  = if ("PEPTIDE"  %in% names(d)) d$PEPTIDE  else "",
+             stringsAsFactors = FALSE)
+}
+.dr_hits <- function(df, prot_query, pep_query) {
+  sg <- function(q, x) if (nchar(q) == 0) rep(FALSE, length(x)) else
+    tryCatch(grepl(q, x, ignore.case = TRUE, perl = TRUE), error = function(e) rep(FALSE, length(x)))
+  prot_hit <- sg(prot_query, df$PROTEIN)
+  pep_hit  <- (sg(pep_query, df$STRIPPED) | sg(pep_query, df$PEPTIDE)) & !prot_hit
+  ifelse(prot_hit, "Protein match", ifelse(pep_hit, "Peptide match", NA))
+}
+.dr_caption <- function(prot_query, pep_query)
+  paste(c(if (nchar(prot_query)) paste0("Protein regex: ", prot_query),
+          if (nchar(pep_query))  paste0("Peptide regex: ",  pep_query)), collapse = "    |    ")
+
+dynamic_range_static <- function(lst, data_col = "MAX_QUANTITY", ncol = 3,
+                                 prot_query = "", pep_query = "") {
+  prot_query <- if (is.null(prot_query)) "" else trimws(prot_query)
+  pep_query  <- if (is.null(pep_query))  "" else trimws(pep_query)
+  df <- dplyr::bind_rows(lapply(names(lst), function(s) {
+    r <- .dr_prep(lst[[s]], data_col); if (is.null(r)) return(NULL); r$Sample <- s; r }))
+  if (is.null(df) || !nrow(df)) return(ggplot() + theme_void())
+  df$hl <- .dr_hits(df, prot_query, pep_query)
+  hits  <- df[!is.na(df$hl), ]
+  cap   <- .dr_caption(prot_query, pep_query)
+  
+  p <- ggplot(df, aes(Rank, y)) +
+    geom_point(size = 0.4, alpha = 0.4, color = "steelblue") +
+    facet_wrap(~ Sample, ncol = ncol, scales = "free") +
+    labs(x = "Rank", y = paste0("log2(", data_col, ")"),
+         caption = if (nzchar(cap)) cap else NULL) +
+    theme_minimal() +
+    theme(plot.caption = element_text(hjust = 0, face = "italic", color = "grey30"))
+  if (nrow(hits))
+    p <- p + geom_point(data = hits, aes(color = hl), size = 1.4) +
+    scale_color_manual(values = c("Protein match" = "red", "Peptide match" = "#2ca02c"),
+                       name = "Highlight")
+  p
+}
+
+dynamic_range_combined_static <- function(df_list, data_col = "MAX_QUANTITY", color = "default",
+                                          prot_query = "", pep_query = "") {
+  prot_query <- if (is.null(prot_query)) "" else trimws(prot_query)
+  pep_query  <- if (is.null(pep_query))  "" else trimws(pep_query)
+  df <- dplyr::bind_rows(lapply(names(df_list), function(s) {
+    r <- .dr_prep(df_list[[s]], data_col); if (is.null(r)) return(NULL); r$Sample <- s; r }))
+  if (is.null(df) || !nrow(df)) return(ggplot() + theme_void())
+  df$hl  <- .dr_hits(df, prot_query, pep_query)
+  hits   <- df[!is.na(df$hl), ]
+  active <- nchar(prot_query) > 0 || nchar(pep_query) > 0
+  n      <- length(unique(df$Sample))
+  cap    <- .dr_caption(prot_query, pep_query)
+  
+  if (active) {
+    p <- ggplot(df, aes(Rank, y)) +
+      geom_point(size = 0.4, alpha = 0.35, color = "grey70") +
+      geom_point(data = hits, aes(color = hl), size = 1.6) +
+      scale_color_manual(values = c("Protein match" = "red", "Peptide match" = "#2ca02c"),
+                         name = "Highlight")
+  } else {
+    p <- ggplot(df, aes(Rank, y, color = Sample)) + geom_point(size = 0.4, alpha = 0.4)
+    if (color != "default") p <- p + scale_color_manual(values = viridis(n, option = color))
+  }
+  p + labs(x = "Rank", y = paste0("log2(", data_col, ")"), title = "Combined Dynamic Range",
+           caption = if (nzchar(cap)) cap else NULL) +
+    theme_minimal() +
+    theme(plot.caption = element_text(hjust = 0, face = "italic", color = "grey30"))
+}
+
 plot_scatter_mz_k0_plotly <- function(lst, color = "default", ncol = 3) {
   ok <- vapply(lst, function(df)
     !is.null(df) && nrow(df) > 0 && all(c("MZ", "K0") %in% colnames(df)), logical(1))
@@ -2771,8 +2889,14 @@ plot_correlation_heatmap_interactive <- function(cor_mat, color = "default",
   } else {
     dend <- switch(cluster_mode, both = "both", rows = "row",
                    columns = "column", none = "none", "both")
-    Rowv <- dend %in% c("both", "row"); Colv <- dend %in% c("both", "column")
-    # side stays in original order — heatmaply reorders it with the dendrogram
+    if (cluster_mode == "both") {
+      d    <- stats::as.dendrogram(fastcluster::hclust(stats::dist(cor_mat), method = "complete"))
+      Rowv <- d
+      Colv <- d
+    } else {
+      Rowv <- dend %in% c("both", "row")
+      Colv <- dend %in% c("both", "column")
+    }
   }
   
   heatmaply::heatmaply(
@@ -2785,6 +2909,62 @@ plot_correlation_heatmap_interactive <- function(cor_mat, color = "default",
     col_side_colors = side,
     showticklabels  = c(show_tick, show_tick),
     key.title       = label)
+}
+
+#This is only for the html report, since it doesnt have the interactivity of shiny.
+plot_heatmap_plotly <- function(mat, color = "default", log_transform = FALSE, transpose = FALSE) {
+  if (log_transform) mat <- log10(mat + 1)
+  if (transpose)     mat <- t(mat)
+  
+  clust_na0 <- function(x) { x2 <- x; x2[!is.finite(x2)] <- 0; dist(x2) }
+  bin_map <- NULL; n_orig <- ncol(mat)
+  
+  if (ncol(mat) > 1000L) {
+    mat     <- bin_heatmap_columns(mat, max_cols = 1000L)
+    bin_map <- attr(mat, "bin_map")
+  } else {
+    col_ord <- tryCatch(hclust(clust_na0(t(mat)), method = "complete")$order,
+                        error = function(e) seq_len(ncol(mat)))
+    mat <- mat[, col_ord, drop = FALSE]
+  }
+  row_ord <- tryCatch(hclust(clust_na0(mat), method = "complete")$order,
+                      error = function(e) seq_len(nrow(mat)))
+  mat <- mat[row_ord, , drop = FALSE]
+  
+  hover_mat <- matrix("", nrow = nrow(mat), ncol = ncol(mat))
+  for (j in seq_len(ncol(mat))) {
+    cn <- colnames(mat)[j]
+    if (!is.null(bin_map) && cn %in% names(bin_map)) {
+      peps  <- bin_map[[cn]]; n <- length(peps)
+      shown <- paste(head(peps, 30), collapse = "<br>")
+      extra <- if (n > 30) paste0("<br><i>+", n - 30, " more</i>") else ""
+      hover_mat[, j] <- paste0("<b>", n, " peptides in bin</b><br>", shown, extra)
+    } else {
+      hover_mat[, j] <- cn
+    }
+  }
+  
+  if (color == "default") {
+    cscale <- list(list(0, "lightyellow"), list(1, "red"))
+  } else {
+    vcols  <- viridis::viridis(10, option = color)
+    cscale <- lapply(seq_along(vcols) - 1, function(i) list(i / (length(vcols) - 1), vcols[i + 1]))
+  }
+  
+  show_ticks <- ncol(mat) <= 150
+  bin_note   <- if (!is.null(bin_map))
+    paste0("Binned: ", n_orig, "\u2192", ncol(mat),
+           " representative peptide bins. Hover columns for members.") else NULL
+  
+  plotly::plot_ly(x = colnames(mat), y = rownames(mat), z = mat, text = hover_mat,
+                  type = "heatmap", colorscale = cscale,
+                  hovertemplate = "%{text}<extra></extra>",
+                  colorbar = list(title = if (log_transform) "log10(val+1)" else "value")) %>%
+    plotly::layout(
+      title = list(text = bin_note, font = list(size = 10, color = "grey50")),
+      xaxis = list(title = "", showticklabels = show_ticks, tickfont = list(size = 8), tickangle = -45),
+      yaxis = list(title = "", tickfont = list(size = 8), autorange = "reversed"),
+      margin = list(l = 130, b = if (show_ticks) 120 else 30))
 }
 
 pca_scatter_plotly <- function(pca, labels, groups = NULL, color = "default",

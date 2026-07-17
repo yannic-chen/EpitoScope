@@ -383,7 +383,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
             group_comp_data = safe_reactive(group_comp_data),
             col_map = safe_reactive(measurement_col_map_r),
             annotation_table = if (is.data.frame(input_variable)) input_variable else NULL,
-            default_quantity_cols_r = safe_reactive(default_quantity_cols_r)
+            default_quantity_cols_r = safe_reactive(default_quantity_cols_r),
+            dynrange_prot_query = applied_search()$prot,
+            dynrange_pep_query  = applied_search()$pep
           ),
           envir = new.env(parent = globalenv())
         )
