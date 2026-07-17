@@ -741,28 +741,44 @@ incProgress(1/chunk_num, detail = "Pairwise Comparison Cluster...")
 plot_pairwise_quant_correlation_interactive(processed_list, color = color_palette, cluster = "both")
 ```
 
-## PCA plot
+## PCA {.tabset}
 
-```{r PCA_plot}
+```{r pca_compute, include=FALSE}
 incProgress(1/chunk_num, detail = "PCA...")
 peptides <- lapply(processed_list, function(df)
   df %>% dplyr::select(STRIPPED, MAX_QUANTITY) %>%
     dplyr::group_by(STRIPPED) %>%
     dplyr::summarise(MAX_QUANTITY = max(MAX_QUANTITY, na.rm = TRUE), .groups = "drop"))
 dfm <- Reduce(function(x, y) dplyr::full_join(x, y, by = "STRIPPED"), peptides)
-mat <- as.matrix(dfm[, -1]); colnames(mat) <- names(processed_list); rownames(mat) <- dfm$STRIPPED
-mat[is.na(mat)] <- 0
-mat <- mat[apply(mat, 1, function(r) stats::sd(r) > 0), , drop = FALSE]
-if (nrow(mat) >= 2 && ncol(mat) >= 3) {
-  pca <- prcomp(t(mat), scale. = TRUE)
-  htmltools::tagList(
-    pca_scatter_plotly(pca, labels = colnames(mat), groups = colnames(mat),
-                       color = color_palette, show_labels = TRUE, dim = "2d"),
-    plot_pca_variance(pca)
-  )
-} else {
-  cat("Not enough data/variance for PCA.")
-}
+pca_mat <- as.matrix(dfm[, -1])
+colnames(pca_mat) <- names(processed_list); rownames(pca_mat) <- dfm$STRIPPED
+pca_mat[is.na(pca_mat)] <- 0
+pca_mat <- pca_mat[apply(pca_mat, 1, function(r) stats::sd(r) > 0), , drop = FALSE]
+pca_obj <- if (nrow(pca_mat) >= 2 && ncol(pca_mat) >= 3) prcomp(t(pca_mat), scale. = TRUE) else NULL
+```
+
+### 2D
+
+```{r pca_2d}
+if (!is.null(pca_obj)) {
+  pca_scatter_plotly(pca_obj, labels = colnames(pca_mat), groups = colnames(pca_mat),
+                     color = color_palette, show_labels = TRUE, dim = "2d")
+} else cat("Not enough data/variance for PCA.")
+```
+
+### 3D
+
+```{r pca_3d}
+if (!is.null(pca_obj) && ncol(pca_mat) >= 4) {
+  pca_scatter_plotly(pca_obj, labels = colnames(pca_mat), groups = colnames(pca_mat),
+                     color = color_palette, show_labels = FALSE, dim = "3d")
+} else cat("3D view needs \u22654 samples.")
+```
+
+### Explained variance
+
+```{r pca_var}
+if (!is.null(pca_obj)) plot_pca_variance(pca_obj) else cat("n/a")
 ```
 
 # Groups {.tabset}

@@ -46,6 +46,7 @@ library(ggVennDiagram)
 library(plotly)
 library(ComplexUpset)
 library(ComplexHeatmap)
+library(ggnewscale) #this is to have a secondary colour fill legend in the static combined dynamic range plot for the html report.
 library(TSP) #required for heatmaply
 library(registry) #required for heatmaply
 library(ca) #required for heatmaply
@@ -2472,7 +2473,7 @@ dynamic_range_static <- function(lst, data_col = "MAX_QUANTITY", ncol = 3,
     theme_minimal() +
     theme(plot.caption = element_text(hjust = 0, face = "italic", color = "grey30"))
   if (nrow(hits))
-    p <- p + geom_point(data = hits, aes(color = hl), size = 1.4) +
+    p <- p + geom_point(data = hits, aes(color = hl), size = 2, shape = 15) +
     scale_color_manual(values = c("Protein match" = "red", "Peptide match" = "#2ca02c"),
                        name = "Highlight")
   p
@@ -2487,20 +2488,27 @@ dynamic_range_combined_static <- function(df_list, data_col = "MAX_QUANTITY", co
   if (is.null(df) || !nrow(df)) return(ggplot() + theme_void())
   df$hl  <- .dr_hits(df, prot_query, pep_query)
   hits   <- df[!is.na(df$hl), ]
-  active <- nchar(prot_query) > 0 || nchar(pep_query) > 0
   n      <- length(unique(df$Sample))
   cap    <- .dr_caption(prot_query, pep_query)
   
-  if (active) {
-    p <- ggplot(df, aes(Rank, y)) +
-      geom_point(size = 0.4, alpha = 0.35, color = "grey70") +
-      geom_point(data = hits, aes(color = hl), size = 1.6) +
+  sample_guide <- guide_legend(override.aes = list(size = 4, alpha = 1))   # big, opaque swatches
+  
+  p <- ggplot(df, aes(Rank, y)) +
+    geom_point(aes(color = Sample), size = 0.4, alpha = 0.4)
+  if (color != "default")
+    p <- p + scale_color_manual(values = viridis(n, option = color), name = "Sample",
+                                guide = sample_guide)
+  else
+    p <- p + scale_color_discrete(name = "Sample", guide = sample_guide)
+  
+  if (nrow(hits)) {
+    p <- p +
+      ggnewscale::new_scale_color() +
+      geom_point(data = hits, aes(color = hl), size = 2.2, shape = 15) +
       scale_color_manual(values = c("Protein match" = "red", "Peptide match" = "#2ca02c"),
                          name = "Highlight")
-  } else {
-    p <- ggplot(df, aes(Rank, y, color = Sample)) + geom_point(size = 0.4, alpha = 0.4)
-    if (color != "default") p <- p + scale_color_manual(values = viridis(n, option = color))
   }
+  
   p + labs(x = "Rank", y = paste0("log2(", data_col, ")"), title = "Combined Dynamic Range",
            caption = if (nzchar(cap)) cap else NULL) +
     theme_minimal() +
