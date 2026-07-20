@@ -51,6 +51,7 @@ library(TSP) #required for heatmaply
 library(registry) #required for heatmaply
 library(ca) #required for heatmaply
 library(heatmaply)
+library(visNetwork) #used for stringDB plot
 library(circlize)
 library(grid)
 library(patchwork) #This is only used for the 1/k0 vs m/z plot. Could remove this by changing the code.
@@ -3920,8 +3921,15 @@ parse_netmhc_output <- function(output_file) {
   entrez <- character(0)
   if (length(accs)) { m <- bmap(accs, "UNIPROT"); if (!is.null(m)) entrez <- c(entrez, m$ENTREZID) }
   if (length(bare)) { m <- bmap(bare, "SYMBOL");  if (!is.null(m)) entrez <- c(entrez, m$ENTREZID) }
-  if (length(entry_names) && use_api && curl::has_internet())
-    entrez <- c(entrez, .resolve_entry_names(entry_names)) 
+  if (length(entry_names) && use_api ) {
+    if(curl::has_internet()){
+      entrez <- c(entrez, .resolve_entry_names(entry_names)) 
+    } else {
+      shiny::showNotification(
+        "Protein Symbols need UniProt online resolution, but there is no internet connection.",
+        type = "error", duration = 4)
+    }
+  }
   
   unique(entrez)
 }
@@ -3976,67 +3984,50 @@ go_dotplot_plotly <- function(ego, show_n = 15, subtitle = NULL) {
       yaxis = list(title = "", automargin = TRUE), margin = list(l = 10))
 }
 
-run_string <- function(df) {
-  df <- df %>%
-    dplyr::filter(!is.na(log2FC)) %>%
-    dplyr::filter(Significance == "Significant") %>%
-    dplyr::select(PEPTIDE, Significance, PROTEIN)
+run_string <- function(df, score_threshold = 400, static = FALSE) {
+  df_sig <- df %>% dplyr::filter(!is.na(log2FC), Significance == "Significant")
+  ids <- df_sig$PROTEIN %>% strsplit("[;|]") %>% unlist() %>% trimws()
+  ids <- unique(ids[nzchar(ids) & !grepl("_CONTA", ids)])     # drop contaminants
+  if (length(ids) == 0) return(NULL)
   
-  uni_ids <- df$PROTEIN %>%
-    strsplit(";") %>%
-    unlist() %>%
-    trimws() %>%
-    sapply(function(prot) {
-      parts <- strsplit(prot, "\\|")[[1]]
-      if (length(parts) >= 3) parts[2] else parts[1]
-    }) %>%
-    unique()
+  url <- paste0("https://string-db.org/api/json/network?",
+                "identifiers=",
+                paste(vapply(ids, utils::URLencode, character(1), reserved = TRUE), collapse = "%0d"),
+                "&species=9606&required_score=", score_threshold)
+  res  <- tryCatch(httr::GET(url), error = function(e) NULL)
+  if (is.null(res) || httr::http_error(res)) return(NULL)
+  data <- tryCatch(jsonlite::fromJSON(httr::content(res, "text", encoding = "UTF-8")),
+                   error = function(e) NULL)
+  if (is.null(data) || length(data) == 0 ||
+      !all(c("preferredName_A", "preferredName_B", "score") %in% names(data))) return(NULL)
   
-  #Check for empty uni_ids
-  check <- safe_validate(!is.null(uni_ids) && nrow(as.data.frame(uni_ids)) > 0, "No significant IDs")
-  
-  url <- paste0(
-    "https://string-db.org/api/json/network?",
-    "identifiers=", paste(uni_ids, collapse = "%0d"),
-    "&species=", 9606 # human
-  )
-  
-  res <- GET(url)
-  
-  #Check HTTP response
-  check <- safe_validate(http_status(res)$category == "Success", paste0("STRING request failed (HTTP ", res$status_code, ")"))
-  if (!is.null(check)) return(check)
-  
-  # Try to parse JSON safely
-  data <- tryCatch(
-    {
-      fromJSON(content(res, "text", encoding = "UTF-8"))
-    },
-    error = function(e) {
-      safe_validate(FALSE, paste0("JSON parse error:\n", e$message))
-      NULL
-    }
-  )
-  
-  # Check that parsing returned something
-  check <- safe_validate(!is.null(data) && length(data) > 0,paste0("No STRING-DB result (HTTP ", res$status_code, ")"))
-  if (!is.null(check)) return(check)
-  
-  required_cols <- c("preferredName_A", "preferredName_B", "score")
-  if (!all(required_cols %in% colnames(data))) {
-    return(list(.skip = TRUE, message = "STRING-DB result missing required columns"))
+  if (static) {  # report path — ggraph image
+    g <- igraph::graph_from_data_frame(
+      data[, c("preferredName_A", "preferredName_B", "score")], directed = FALSE)
+    return(ggraph::ggraph(g, layout = "fr") +
+             ggraph::geom_edge_link(ggplot2::aes(width = score), alpha = 0.6) +
+             ggraph::geom_node_point(size = 5, color = "steelblue") +
+             ggraph::geom_node_text(ggplot2::aes(label = name), repel = TRUE) +
+             ggplot2::theme_void())
   }
   
-  g <- graph_from_data_frame(
-    data[, required_cols],
-    directed = FALSE
-  )
+  # app path — interactive visNetwork
+  nodes <- data.frame(id = unique(c(data$preferredName_A, data$preferredName_B)),
+                      stringsAsFactors = FALSE)
+  nodes$label <- nodes$id
+  edges <- data.frame(from = data$preferredName_A, to = data$preferredName_B,
+                      value = data$score, title = paste0("score: ", round(data$score, 3)),
+                      stringsAsFactors = FALSE)
   
-  ggraph(g, layout = "fr") +
-    geom_edge_link(aes(width = score), alpha = 0.8) +
-    geom_node_point(size = 5, color = "steelblue") +
-    geom_node_text(aes(label = name), repel = TRUE) +
-    theme_void()
+  visNetwork::visNetwork(nodes, edges) %>%
+    visNetwork::visIgraphLayout(layout = "layout_with_fr") %>%   # static positions, physics OFF
+    visNetwork::visNodes(shape = "dot", size = 14,
+                         color = list(background = "#8DA0CB", border = "#4C566A", highlight = "#FF7F0E"),
+                         font = list(size = 16)) %>%
+    visNetwork::visEdges(smooth = FALSE,
+                         color = list(color = "rgba(130,130,130,0.5)", highlight = "#FF7F0E")) %>%
+    visNetwork::visOptions(highlightNearest = list(enabled = TRUE, degree = 1, hover = TRUE),
+                           nodesIdSelection = TRUE)
 }
 
 

@@ -971,13 +971,8 @@ if (is.null(group_comp_stats) || length(group_comp_stats) == 0) {
     if (!curl::has_internet()) {
       cat("_No internet connection — STRING-DB network unavailable._\n\n")
     } else {
-      res <- run_string(df)
-      if (is.list(res) && isTRUE(res$.skip)) {
-        cat(res$message, "\n\n")
-      } else {
-        print(res)
-        cat("\n\n")
-      }
+      res <- run_string(df, static = TRUE)
+      if (is.null(res)) cat("_No STRING network available._\n\n") else { print(res); cat("\n\n") }
     }
   }
 }

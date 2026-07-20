@@ -1994,11 +1994,10 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
             column(6, h6("GO-term enrichment"), 
                    helpText("UniProt accession IDs (e.g. P04439) are first converted to genes. Remaining IDs are assumed to be protein IDs and converted via uniprot online request."),
                    plotlyOutput(paste0("go_term_", name))),
-            column(6, h6("STRING-DB network"), 
-                   helpText("Only UniProt accession IDs (e.g. P04439) are supported. Other formats will be skipped."),
-                   plotOutput(paste0("STRING_", name)))
-          )
-        )
+            column(6, h6("STRING-DB network"),
+                   helpText("Protein IDs are directly send to STRING DB to let their side resolve the names."),
+                   visNetwork::visNetworkOutput(paste0("STRING_", name), height = "500px"))
+        ))
       })
       
       # Generate the tabsetPanel from the list
@@ -2074,10 +2073,13 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         })
         
         ## ----STRING-DB----
-        output[[paste0("STRING_", plot_name)]] <- renderPlot({
+        output[[paste0("STRING_", plot_name)]] <- visNetwork::renderVisNetwork({
           shiny::validate(shiny::need(curl::has_internet(), "No Internet Connection."))
           shiny::validate(shiny::need(!is.null(df) && nrow(df) != 0, "No data available."))
-          run_string(df)
+          net <- run_string(df)
+          shiny::validate(shiny::need(!is.null(net),
+                                      "No STRING network (no significant hits, or none resolved by STRING)."))
+          net
         })
       })
     }
