@@ -1992,8 +1992,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
           ),
           fluidRow(
             column(6, h6("GO-term enrichment"), 
-                   helpText("Only UniProt accession IDs (e.g. P04439) are supported. Other formats will be skipped."),
-                   plotOutput(paste0("go_term_", name))),
+                   helpText("UniProt accession IDs (e.g. P04439) are first converted to genes. Remaining IDs are assumed to be protein IDs and converted via uniprot online request."),
+                   plotlyOutput(paste0("go_term_", name))),
             column(6, h6("STRING-DB network"), 
                    helpText("Only UniProt accession IDs (e.g. P04439) are supported. Other formats will be skipped."),
                    plotOutput(paste0("STRING_", name)))
@@ -2059,9 +2059,18 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         })
         
         ## ----GO term----
-        output[[paste0("go_term_", plot_name)]] <- renderPlot({
+        output[[paste0("go_term_", plot_name)]] <- renderPlotly({
           shiny::validate(shiny::need(!is.null(df) && nrow(df) != 0, "No data available."))
-          run_go_enrichment(df)
+          bg <- if (is.null(input$go_background)) "genome" else input$go_background
+          universe <- NULL; bg_note <- "whole genome"
+          if (bg == "detected") { universe <- detected_universe(); bg_note <- "detected proteins" }
+          else if (bg == "custom") {
+            cust <- if (!is.null(input$go_custom_ids) && nzchar(input$go_custom_ids))
+              unlist(strsplit(input$go_custom_ids, "[[:space:],;]+")) else NULL
+            if (length(cust)) { universe <- .protein_to_entrez(cust); bg_note <- "custom list" }
+          }
+          run_go_enrichment(df, universe = universe, bg_note = bg_note,
+                            ont = if (is.null(input$go_ont)) "BP" else input$go_ont)
         })
         
         ## ----STRING-DB----
@@ -2072,6 +2081,13 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         })
       })
     }
+  })
+  
+  detected_universe <- reactive({
+    lst <- processed_data_list(); req(length(lst) > 0)
+    all_prot <- unlist(lapply(lst, function(d) if ("PROTEIN" %in% names(d)) d$PROTEIN),
+                       use.names = FALSE)
+    .protein_to_entrez(unique(all_prot))
   })
   
   selected_peptide <- reactive({

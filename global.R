@@ -57,6 +57,7 @@ library(patchwork) #This is only used for the 1/k0 vs m/z plot. Could remove thi
 #These are exclusive for GO-term.
 library(clusterProfiler) #this one masks a lot of dplyr and other package functions
 library(org.Hs.eg.db)
+library(memoise) #this is for caching uniprot push requests when converting IDs
 #These are exclusive for STRING-DB
 library(httr)
 library(jsonlite)
@@ -3863,47 +3864,116 @@ parse_netmhc_output <- function(output_file) {
   res
 }
 
-run_go_enrichment <- function(df) {
-  df_sig <- df %>%
-    dplyr::filter(!is.na(log2FC), Significance == "Significant") %>%
-    dplyr::select(PEPTIDE, Significance, PROTEIN)
+# UniProt entry-name → Entrez via synchronous stream endpoint. REST API didnt work.
+.uniprot_ids_to_entrez <- function(entry_names, batch = 80) {
+  entry_names <- unique(entry_names[nzchar(entry_names)])
+  if (!length(entry_names)) return(character(0))
   
-  uni_ids <- df_sig$PROTEIN %>%
-    strsplit(";") %>%
-    unlist() %>%
-    trimws() %>%
-    sapply(function(prot) {
-      parts <- strsplit(prot, "\\|")[[1]]
-      if (length(parts) >= 3) parts[2] else parts[1]  # "sp|P04439|HLA_A" → "P04439"
-    }) %>%
-    unique()
+  chunks <- split(entry_names, ceiling(seq_along(entry_names) / batch))
+  urls <- vapply(chunks, function(ch) {
+    q <- paste0("(id:", ch, ")", collapse = " OR ")
+    paste0("https://rest.uniprot.org/uniprotkb/stream?query=",
+           utils::URLencode(q, reserved = TRUE), "&fields=xref_geneid&format=tsv")
+  }, character(1))
   
-  check <- safe_validate(!is.null(uni_ids) && nrow(as.data.frame(uni_ids)) > 0, "No significant IDs")
-  if (!is.null(check)) return(check)
+  pool <- curl::new_pool()
+  out  <- character(0)
+  for (u in urls) {
+    curl::curl_fetch_multi(u, pool = pool,
+                           done = function(res) {
+                             if (res$status_code != 200) { message("UniProt batch HTTP ", res$status_code); return() }
+                             tab <- tryCatch(utils::read.delim(text = rawToChar(res$content), stringsAsFactors = FALSE),
+                                             error = function(e) NULL)
+                             if (!is.null(tab) && ncol(tab) >= 1)
+                               out <<- c(out, unlist(strsplit(as.character(tab[[1]]), ";")))
+                           },
+                           fail = function(msg) message("UniProt batch failed: ", msg))
+  }
+  curl::multi_run(pool = pool)
+  unique(trimws(out[nzchar(out)]))
+}
+
+# memoised: same protein set → resolved once per session (cache key = sorted-unique set)
+.resolve_entry_names <- memoise::memoise(
+  function(ids) .uniprot_ids_to_entrez(sort(unique(ids))),
+  cache = memoise::cache_filesystem("uniprot_cache"))
+
+.protein_to_entrez <- function(protein_vec, use_api = TRUE) {
+  entries <- protein_vec %>% strsplit(";") %>% unlist() %>% trimws()
+  entries <- unique(entries[nzchar(entries)])
+  acc_pat <- "^([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})$"
   
-  gene_map <- tryCatch(
-    suppressWarnings(clusterProfiler::bitr(uni_ids, fromType = "UNIPROT", toType = "ENTREZID", OrgDb = org.Hs.eg.db)),
-    error = function(e) data.frame(UNIPROT = character(), ENTREZID = character())
-  )
+  accs <- entry_names <- bare <- character(0)
+  for (e in entries) {
+    parts <- trimws(strsplit(e, "\\|")[[1]]); parts <- parts[nzchar(parts)]
+    acc   <- parts[grepl(acc_pat, parts)]
+    if (length(acc)) { accs <- c(accs, acc[1]); next }              # 1) accession present → use it
+    en <- parts[grepl("_", parts)]
+    if (length(en)) { entry_names <- c(entry_names, en[1]); next }  # 2) entry name → UniProt API only
+    if (length(parts)) bare <- c(bare, parts[1])                    # 3) bare token → real gene symbol
+  }
   
-  check <- safe_validate(nrow(gene_map) > 0, "No valid UniProt→Entrez mapping")
-  if (!is.null(check)) return(check)
+  bmap <- function(x, from) tryCatch(
+    suppressWarnings(clusterProfiler::bitr(unique(x), from, "ENTREZID", org.Hs.eg.db)),
+    error = function(e) NULL)
+  
+  entrez <- character(0)
+  if (length(accs)) { m <- bmap(accs, "UNIPROT"); if (!is.null(m)) entrez <- c(entrez, m$ENTREZID) }
+  if (length(bare)) { m <- bmap(bare, "SYMBOL");  if (!is.null(m)) entrez <- c(entrez, m$ENTREZID) }
+  if (length(entry_names) && use_api && curl::has_internet())
+    entrez <- c(entrez, .resolve_entry_names(entry_names)) 
+  
+  unique(entrez)
+}
+
+run_go_enrichment <- function(df, universe = NULL, bg_note = "whole genome",
+                              ont = "BP", show_n = 15, static = FALSE) {
+  msg <- function(m) {
+    if (static) ggplot() + annotate("text", x = .5, y = .5, label = m, size = 4) + theme_void()
+    else plotly::plot_ly() %>%
+      plotly::add_trace(type = "scatter", mode = "markers",
+                        x = numeric(0), y = numeric(0), hoverinfo = "skip") %>%
+      plotly::layout(title = list(text = m, font = list(size = 12, color = "grey40")),
+                     xaxis = list(visible = FALSE), yaxis = list(visible = FALSE))
+  }
+  
+  fg <- .protein_to_entrez(df$PROTEIN[!is.na(df$log2FC) & df$Significance == "Significant"])
+  if (length(fg) == 0) return(msg("No significant proteins mapped to genes"))
   
   ego <- clusterProfiler::enrichGO(
-    gene          = gene_map$ENTREZID,
-    OrgDb         = org.Hs.eg.db,
-    keyType       = "ENTREZID",
-    ont           = "BP",
-    pAdjustMethod = "BH",
-    universe      = NULL,
-    readable      = TRUE
-  )
+    gene = fg, OrgDb = org.Hs.eg.db, keyType = "ENTREZID",
+    ont = ont, pAdjustMethod = "BH", universe = universe, readable = TRUE)
+  if (is.null(ego) || nrow(as.data.frame(ego)) == 0)
+    return(msg(paste0("No significant GO terms (background: ", bg_note, ")")))
   
-  check <- safe_validate(!is.null(ego) && nrow(as.data.frame(ego)) > 0, "No significant GO terms")
-  if (!is.null(check)) return(check)
+  sub <- paste0("GO:", ont, " \u2022 background: ", bg_note)
+  if (static) clusterProfiler::dotplot(ego, showCategory = show_n) + ggplot2::labs(subtitle = sub)
+  else        go_dotplot_plotly(ego, show_n, subtitle = sub)
+}
+
+go_dotplot_plotly <- function(ego, show_n = 15, subtitle = NULL) {
+  d <- as.data.frame(ego)
+  if (nrow(d) == 0) return(plotly::plotly_empty())
+  d <- d[order(d$p.adjust), , drop = FALSE]
+  d <- d[seq_len(min(show_n, nrow(d))), , drop = FALSE]
+  d$ratio  <- vapply(strsplit(d$GeneRatio, "/"),
+                     function(x) as.numeric(x[1]) / as.numeric(x[2]), numeric(1))
+  d$neglp  <- -log10(d$p.adjust)
+  d$msize  <- if (nrow(d) > 1) scales::rescale(d$Count, to = c(8, 24)) else 16
+  d$Description <- factor(d$Description, levels = rev(d$Description))  # smallest p at top
+  genes    <- ifelse(nchar(d$geneID) > 120, paste0(substr(d$geneID, 1, 120), "\u2026"), d$geneID)
+  hover <- paste0("<b>", as.character(d$Description), "</b><br>",
+                  "Adj. p: ", signif(d$p.adjust, 3), "<br>",
+                  "Count: ", d$Count, " (", d$GeneRatio, ")<br>Genes: ", genes)
   
-  suppressWarnings(barplot(ego, showCategory = 10))
-  
+  plotly::plot_ly(d, x = ~ratio, y = ~Description, type = "scatter", mode = "markers",
+                  marker = list(size = ~msize, color = ~neglp, colorscale = "Viridis",
+                                showscale = TRUE, colorbar = list(title = "-log10(adj p)")),
+                  text = hover, hovertemplate = "%{text}<extra></extra>") %>%
+    plotly::layout(
+      title = if (is.null(subtitle)) NULL else list(text = subtitle, font = list(size = 10, color = "grey50")),
+      xaxis = list(title = "Gene ratio"),
+      yaxis = list(title = "", automargin = TRUE), margin = list(l = 10))
 }
 
 run_string <- function(df) {

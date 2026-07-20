@@ -461,18 +461,29 @@ ui <- bs4DashPage(
                   numericInput("n_groups", "Number of groups (2-5):", 2, min = 2, max = 5),
                   uiOutput("group_assign_ui"),
                   actionButton("update_group_comp", "Update Groups"),
-                  h6("WIP: currently this checkbox doesnt do anything. Need to solve how to combine info same peptide with different peptidoforms"),
-                  checkboxInput(
-                    inputId = "use_peptidoforms",
-                    label   = tagList(
-                      "Compare at peptidoform level ",
-                      tags$small(
-                        style = "color: grey; font-weight: normal;",
-                        "(includes PTMs)"
-                      )
-                    ),
-                    value = FALSE  # default: compare stripped sequences
-                  )
+                  #h6("WIP: currently this checkbox doesnt do anything. Need to solve how to combine info same peptide with different peptidoforms"),
+                  #checkboxInput(inputId = "use_peptidoforms",label = tagList("Compare at peptidoform level ",tags$small(style = "color: grey; font-weight: normal;",
+                  #      "(includes PTMs)")),value = FALSE),
+                  radioButtons("go_background", "Enrichment background:",
+                               c("Whole genome" = "genome", "Detected proteins" = "detected", "Custom list" = "custom"),
+                               selected = "genome", inline = TRUE),
+                  conditionalPanel("input.go_background == 'custom'",
+                                   textAreaInput("go_custom_ids", "Custom background — UniProt IDs (space/comma/newline separated):",
+                                                 rows = 4, placeholder = "P04439\nP01889\n...")),
+                  
+                  # --- warning box: only visible for detected/custom ---
+                  conditionalPanel(
+                    condition = "input.go_background == 'detected' || input.go_background == 'custom'",
+                    div(class = "alert alert-warning", style = "margin-top:8px; padding:8px 12px;",
+                        icon("exclamation-triangle"),
+                        tags$b(" Online lookup required. "),
+                        "Protein symbols through UniProt web requests. The first run on a dataset can be slow \u2014. Results are cached afterward, so later ",
+                        "changes are fast.")
+                  ),
+                  
+                  selectInput("go_ont", "GO ontology:",
+                              c("Biological Process" = "BP", "Molecular Function" = "MF", "Cellular Component" = "CC"),
+                              selected = "BP")
           ),
           
           ### ---- Group Stuff ----

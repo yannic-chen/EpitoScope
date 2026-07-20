@@ -958,7 +958,7 @@ if (is.null(group_comp_stats) || length(group_comp_stats) == 0) {
 
     # GO term
     cat("\n\n#### GO-term enrichment\n\n")
-    res <- run_go_enrichment(df)
+    res <- run_go_enrichment(df, static = TRUE)
     if (is.list(res) && isTRUE(res$.skip)) {
       cat(res$message, "\n\n")
     } else {
