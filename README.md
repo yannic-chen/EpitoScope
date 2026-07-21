@@ -26,30 +26,30 @@ Task List
 - [X] MHC prediction supports all alleles that netMHCpan supports, but visualization only uses "HLA" prefix to find the necessary columns.
 - [ ] Support netMHCpan calling for linux and mac.
 - [ ] Add option of different binding prediction binder threshold (e.g. for HLA2)
-- [ ] Add more plots to binding prediction to better mimic MhcVizPip
-- [ ] Decide on how to download the binding Data.
+- [X] Add more plots to binding prediction to better mimic MhcVizPip
+- [X] Decide on how to download the binding Data.
 - [ ] GO-term more transparency on protein names used
 - [ ] Solve the usage of Peptide and Peptidoform usage in group analysis
-- [ ] STRING allow background
+- [X] ~STRING allow background~ STRING is only used for interaction which is not affected by background. Instead, background option is in GO-term analysis
 - [ ] Document each function
 - [ ] Convert to Package
 - [ ] Ability to remove specifc measurements from samples
-- [x] Add a status notification for the report generation.
+- [X] Add a status notification for the report generation.
 - [ ] Improve report download handler to be faster.
 - [ ] Add normalization methods options for group based analysis
 - [ ] More variable handling of reported decoys. DIA-NN now also reports decoy with the "rev_" prefix
 - [ ] Allow more species in the app. For example, HLA nomenclature is different for mouse.
-- [x] Annotation table condition applying colour to PCA plot
-- [x] Handle the reactive nature better to allow more filtering adjustments before plot update.
+- [X] Annotation table condition applying colour to PCA plot
+- [X] Handle the reactive nature better to allow more filtering adjustments before plot update.
 - [ ] Return netMHCpan results location, so user can save it up.
 - [ ] Allow the measurement decoupling from sample, so each measurement is its own sample or group the measuremuents by condition or replicate.
 
 ### Maybe?
 - [ ] Flexible Length Range Percentage plot for MHC2 and perhaps other species
 - [ ] Call GibbsCluster from WSL or mix MHCpred for allele preidtion. Otherwise pre-generated database would also be ok fine.
-- [ ] Calculate theoretical mass if m/z is not available, but mass and charge are
+- [X] Calculate theoretical mass if m/z is not available, but mass and charge are
 - [ ] UI for data loading
-- [ ] Have specific analysis for groups displayed in upset plot
+- [X] Have specific analysis for groups displayed in upset plot
 - [ ] Help user to install netMHCpan on their WSL
 - [ ] Helper function that can determine outlier replicates and remove it from the data if wanted.
 - [ ] Using TCGA database to identify cell type of origin
