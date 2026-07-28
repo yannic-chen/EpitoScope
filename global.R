@@ -974,6 +974,8 @@ normalize_df <- function(df) {
     columns_to_keep <- c("Spectrum", "Peptide", "Peptide.Sequence", "Modified.Peptide", "Modified.Sequence", "Charge", "Charges", "Retention", "Observed.Mass", "Observed.M.Z", 
                          "PeptideProphet.Probability", "Probability", "Intensity", "Ion.Mobility", "Protein", "Mapped.Proteins","Delta.Mass",
                          "Length", "Peptide.Length", "Assigned.Modifications") #Here include all Columns in peptide.tsv and psm.tsv that could be interesting
+
+    columns_to_keep <- c(columns_to_keep, unlist(column_schema$Fragpipe, use.names = FALSE))
     
     if(any(tolower(colnames(df)) == "peptide.sequence")) { #for combined_peptide.tsv, it follows a wide format similar to PEAKS. For Intensity, we use MaxLFQ.Intensity columns.
       columns_to_keep <- c(columns_to_keep, colnames(df)[grepl("maxlfq.intensity", tolower(colnames(df)))])
@@ -1057,6 +1059,8 @@ normalize_df <- function(df) {
   
   if(software == "DIANN_parquet") {
     columns_to_keep <- c("Run", "Modified.Sequence", "Stripped.Sequence", "Precursor.Charge", "Precursor.Mz", "Protein.Names", "RT", "IM", "Precursor.Quantity", "Q.Value")
+    
+    columns_to_keep <- c(columns_to_keep, unlist(column_schema$DIANN_parquet, use.names = FALSE))
     
     df <- df %>% dplyr::select(any_of(columns_to_keep))
     

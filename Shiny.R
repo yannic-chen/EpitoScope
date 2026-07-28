@@ -2555,7 +2555,7 @@ shinyApp(
   server = function(input, output, session) {
     server(input, output, session, 
            #input_variable = test_annotation,
-           input_variable = preloaded_data[1:5,],
+           input_variable = preloaded_data,
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 
