@@ -37,6 +37,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   netmhcpan_path <- "/mnt/c/Users/Yannic/netMHCpan-4.2/netMHCpan" # This is the absolute path in the WSL. Really want the system to read off .bashrc
   wsl_available <- reactiveVal(NULL)
   netmhcpan_available <- reactiveVal(NULL)
+  software_r <- reactiveVal(NULL)
   
   observe({
     if (startup_done()) return() #Since there is no reactive dependency, this observe only runs once anyway. But just in case.
@@ -146,7 +147,11 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         stop("input must be either a data.frame or a named list of data.frames.")
       }
       
+
       processed <- lapply(raw_list_r(), normalize_df)
+      software_r(setNames(vapply(processed, function(x) x$software %||% NA_character_, character(1)),
+                          names(processed)))
+      
       print(Sys.time() - start)
       
       #Add the PTM_Pseudo sequence to each dataframe in the list. We do it outside of normalize_df() function because it unifies the mod_map across all dataframes in the list
@@ -2517,6 +2522,117 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     )
   })
   
+  #---------------------SQL---------------------------------
+  ## ----------------save SQL-------------------------------
+  meta_table_rv <- reactiveVal(NULL)
+  
+  .meta_defaults <- function(annotation_df) {
+    colget <- function(nm) {
+      if (is.null(annotation_df)) return("")
+      i <- which(tolower(names(annotation_df)) == nm)
+      if (!length(i)) "" else paste(unique(annotation_df[[i[1]]]), collapse = "; ")
+    }
+    list(
+      submitted_by = { op <- colget("operator"); if (nzchar(op)) op
+      else tryCatch(unname(Sys.info()[["user"]]), error = function(e) "") },
+      instrument   = colget("instrument"),
+      conditions   = if (!is.null(annotation_df) && length(attr(annotation_df, "condition_cols")))
+        paste(attr(annotation_df, "condition_cols"), collapse = ", ") else ""
+    )
+  }
+  
+  observeEvent(input$save_to_db, {
+    ann <- if (annotation_provided()) annotation_df_r() else NULL
+    meta_table_rv(build_meta_table(processed_data_list(), default_quantity_cols_r(),
+                                   ann, measurement_col_map_r(), software_r()))
+    showModal(modalDialog(
+      title = "Save run to database", size = "xl",
+      textInput("meta_user", "Submitted by:",
+                value = tryCatch(unname(Sys.info()[["user"]]), error = function(e) "")),
+      textAreaInput("meta_description", "Run description / notes:", rows = 2),
+      tags$hr(),
+      tags$b("Per-measurement metadata — double-click a cell to edit:"),
+      rhandsontable::rHandsontableOutput("meta_edit_table"),
+      footer = tagList(modalButton("Cancel"),
+                       actionButton("confirm_save_db", "Save to database",
+                                    class = "btn-primary", icon = icon("database")))
+    ))
+  })
+  
+  output$meta_edit_table <- rhandsontable::renderRHandsontable({
+    req(meta_table_rv())
+    rhandsontable::rhandsontable(meta_table_rv(), rowHeaders = NULL, stretchH = "all") |>
+      rhandsontable::hot_col(c("Sample", "measurement"), readOnly = TRUE) |>   # keys: not editable
+      rhandsontable::hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE)
+  })
+  
+  db_refresh <- reactiveVal(0)
+  
+  # the modal's Save button does the actual write
+  observeEvent(input$confirm_save_db, {
+    removeModal()
+    edited <- if (is.null(input$meta_edit_table)) meta_table_rv()
+    else rhandsontable::hot_to_r(input$meta_edit_table)
+    id <- tryCatch(
+      save_analysis_to_db(lst = processed_data_list(), meta_table = edited,
+                          quantity_cols = default_quantity_cols_r(), col_map = measurement_col_map_r(),
+                          submitted_by = input$meta_user, description = input$meta_description),
+      error = function(e) { showNotification(paste("Save failed:", e$message), type = "error"); NULL })
+    if (!is.null(id)) {
+      showNotification(paste("Saved as", id), type = "message")
+      db_refresh(db_refresh() + 1)          # <- triggers the table
+    }
+  })
+  
+  output$saved_runs_table <- DT::renderDT({
+    db_refresh()                             # <- re-query on every successful save
+    DT::datatable(list_analyses(), rownames = FALSE, options = list(pageLength = 10))
+  })
+  
+
+  
+  ##--------------------query SQL-------------------
+  # picking a table pre-fills a SELECT
+  observeEvent(input$sql_table_pick, {
+    req(input$sql_table_pick)
+    updateTextAreaInput(session, "sql_query",
+                        value = paste0("SELECT * FROM ", input$sql_table_pick, " LIMIT 50;"))
+  })
+  
+  sql_result_rv <- reactiveVal(NULL)
+  observeEvent(input$sql_run, {
+    q <- trimws(input$sql_query)
+    # read-only guard: only allow SELECT / WITH / PRAGMA
+    if (!grepl("^(select|with|pragma)\\b", tolower(q))) {
+      showNotification("Only SELECT / WITH / PRAGMA queries are allowed here.", type = "error"); return()
+    }
+    res <- tryCatch({
+      con <- .db_con(); on.exit(DBI::dbDisconnect(con))
+      DBI::dbGetQuery(con, q)
+    }, error = function(e) { showNotification(paste("Query error:", conditionMessage(e)), type = "error"); NULL })
+    sql_result_rv(res)
+  })
+  
+  output$sql_result <- DT::renderDT({
+    req(sql_result_rv())
+    DT::datatable(sql_result_rv(), rownames = FALSE, filter = "top",
+                  options = list(pageLength = 25, scrollX = TRUE))
+  })
+  
+  ##--------------------browse SQL-------------------
+  observe({ db_refresh(); updateSelectInput(session, "browse_table", choices = db_tables()) })
+  
+  output$browse_result <- DT::renderDT({
+    req(input$browse_table)
+    con <- .db_con(); on.exit(DBI::dbDisconnect(con))
+    tbl <- DBI::dbQuoteIdentifier(con, input$browse_table)
+    n   <- DBI::dbGetQuery(con, sprintf("SELECT COUNT(*) n FROM %s", tbl))$n
+    df  <- DBI::dbGetQuery(con, sprintf("SELECT * FROM %s LIMIT 5000", tbl))
+    DT::datatable(df, filter = "top", rownames = FALSE,
+                  caption = if (n > 5000) sprintf("Showing first 5,000 of %s rows.", n) else NULL,
+                  options = list(pageLength = 25, scrollX = TRUE))
+  })
+  
   #---------------------Dev Console-------------------------
   console_history <- reactiveVal("")
   
@@ -2555,7 +2671,7 @@ shinyApp(
   server = function(input, output, session) {
     server(input, output, session, 
            #input_variable = test_annotation,
-           input_variable = preloaded_data,
+           input_variable = preloaded_data[1:4],
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 

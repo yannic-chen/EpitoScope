@@ -50,7 +50,7 @@ Task List
 - [X] Calculate theoretical mass if m/z is not available, but mass and charge are
 - [ ] UI for data loading
 - [X] Have specific analysis for groups displayed in upset plot
-- [ ] Help user to install netMHCpan on their WSL
+- [X] Help user to install netMHCpan on their WSL
 - [ ] Helper function that can determine outlier replicates and remove it from the data if wanted.
 - [ ] Using TCGA database to identify cell type of origin
 - [ ] Kinase activity
@@ -72,7 +72,7 @@ Task List
 - Allows loading from an annotation table
 - Different formats can be analysed in the same session, allowing comparisons between software.
 - real-time filtering
-- customized plots and tables
+- customized and interactive plots and tables
 - Binding prediction using netMHCpan through WSL (Windows subsystem for Linux)
 - Quantitative comparison
 - Grouped comparison
@@ -82,6 +82,7 @@ Task List
 - MS quality control plots
 - Lookup tables of the raw data
 - HTML report generation for easy sharing.
+- Collecting analysis into SQL database 
 
 ## Installation
 The following 3 scripts are mandatory to run the shiny App:
@@ -140,20 +141,33 @@ Then we install netMHCpan on the WSL.
   ```bash
   cd netMHCpan-4.2
   ```
-6. **[WIP - Skip this step, since R environemnt doesnt read .bashrc]** Add the netMHCpan directory to your PATH by editing the `.bashrc` file:
+6. Set the home environment as described by netMHCpan Readme.
+  ```bash
+  pwd 
+  ```
+  copy the path
+  ```bash
+  nano netMHCpan 
+  ```
+  replace the path after `setenv NHOME` with your path.
+7. **[WIP - Skip this step, since R environemnt doesnt read .bashrc]** Add the netMHCpan directory to your PATH by editing the `.bashrc` file:
   ```bash
   echo 'export PATH=$PATH:/path/to/netMHCpan-4.1' >> ~/.bashrc
   source ~/.bashrc
   ```
-7. Test the installation by running:
+8. Test the installation by running:
   ```bash
   netMHCpan -h
   ```
-8. If everything works, copy the absolute path where the netMHCpan is installed. You can get the path using:
+  of if you skipped the previous step, run the following code from within the netMHCpan folder:
+  ```bash
+  ./netMHCpan -h
+  ```
+9. If everything works, copy the absolute path where the netMHCpan is installed. You can get the path using:
   ```bash
   pwd
   ```
-9. Set the `netmcpan_path` in the Shiny.R script to the path you just copied:
+10. Set the `netmcpan_path` in the Shiny.R script to the path you just copied:
 ![alt text](assets/image-2.png)
 
 ## Usage

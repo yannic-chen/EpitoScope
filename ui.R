@@ -71,16 +71,15 @@ ui <- bs4DashPage(
       navbarTab(tabName = "binding_pred", text = "Binding"),
       navbarTab(tabName = "peptide_lookup", text = "Lookup"),
       navbarTab(
-        text = "ExtraMenu",
-        dropdownHeader("Dropdown header"),
+        text = "Consoles",
+        dropdownHeader("Advanced functions"),
         navbarTab(tabName = "dev_console", text = "Console"),
         dropdownDivider(),
         navbarTab(
-          text = "Sub menu",
-          dropdownHeader("Another header"),
-          navbarTab(tabName = "Tab4", text = "Tab 4"),
-          dropdownHeader("Yet another header"),
-          navbarTab(tabName = "Tab5", text = "Tab 5"),
+          text = "SQL",
+          navbarTab(tabName = "SQL_console", text = "save to SQL"),
+          navbarTab(tabName = "SQL_query",   text = "query SQL"),
+          navbarTab(tabName = "SQL_browser", text = "browse SQL"),
           navbarTab(
             text = "Sub sub menu",
             navbarTab(tabName = "Tab6", text = "Tab 6"),
@@ -634,6 +633,45 @@ ui <- bs4DashPage(
                   )
           )
         ),
+      ## ---- SQL ----
+      bs4TabItem(
+        tabName = "SQL_console",
+        bs4Card(title = "Save to database", width = 12,
+                actionButton("save_to_db", "Save results to database", icon = icon("database")),
+                tags$hr(),
+                h6("Saved runs"),
+                DT::DTOutput("saved_runs_table")
+        )
+      ),
+      
+      bs4TabItem(tabName = "SQL_query",
+                 bs4Card(title = "SQL help — click to expand", width = 12, collapsible = TRUE, collapsed = TRUE,
+                         tags$p("A query reads: ", tags$code("SELECT columns FROM table WHERE conditions"), "."),
+                         tags$b("Tables:"),
+                         tags$ul(
+                           tags$li(tags$code("analyses"), " — one row per saved run."),
+                           tags$li(tags$code("sample_metadata"), " — per-measurement info, long form (field_name / field_value)."),
+                           tags$li(tags$code("peptides"), " — the data: STRIPPED, PROTEIN, quantity, SCORE, RT, MZ, LENGTH…")),
+                         tags$b("Try these:"),
+                         tags$pre("SELECT * FROM analyses LIMIT 20;"),
+                         tags$pre("SELECT DISTINCT field_name FROM sample_metadata;")
+                 ),
+                 bs4Card(title = "Query", width = 12,
+                         textAreaInput("sql_query", NULL, rows = 4, width = "100%",
+                                       value = "SELECT * FROM analyses ORDER BY timestamp DESC LIMIT 50;"),
+                         actionButton("sql_run", "Run", icon = icon("play"), class = "btn-primary"),
+                         tags$hr(),
+                         DT::DTOutput("sql_result")
+                 )
+      ),
+      bs4TabItem(tabName = "SQL_browser",
+                 bs4Card(title = "Browse tables", width = 12,
+                         helpText("Pick a table to view its rows — filter and search the columns directly. ",
+                                  "For questions that combine tables, use ", tags$b("query SQL"), "."),
+                         selectInput("browse_table", "Table:", choices = NULL),
+                         DT::DTOutput("browse_result")
+                 )
+      ),
       
       ## ---- Dev Console ----
       bs4TabItem(

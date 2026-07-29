@@ -20,6 +20,8 @@
 #       }
 # Perhaps check our renv::init()?
 
+
+source("db.R")
 #These are for Shiny UI
 library(shiny)
 library(shinyBS)
@@ -1222,8 +1224,10 @@ normalize_df <- function(df) {
   
   #Now we can prepare the summary table since we have the columns to keep.
   original <- original %>% dplyr::mutate(coalesced = do.call(coalesce, across(-1))) %>% dplyr::select(1, coalesced) %>% dplyr::group_by(final_name) %>% dplyr::summarise(coalesced_list = list(coalesced), .groups = "drop")
-  
-  return(list(df = df %>% dplyr::select(any_of(unique(keep_cols))), table = original))
+
+  return(list(df       = df %>% dplyr::select(any_of(unique(keep_cols))),
+              table    = original,
+              software = software))
 }
 
 # @param lst      Named list of data.frames (active_data_list())
