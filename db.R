@@ -4,8 +4,8 @@ library(rhandsontable)
 
 # ---------save analysis--------------
 save_analysis_to_db <- function(lst, meta_table, quantity_cols, col_map = NULL,
-                                spectra_cols = NULL, software = "", submitted_by = "", description = "",
-                                path = EPITO_DB) {
+                                spectra_cols = NULL, data_info = NULL, software = "", 
+                                submitted_by = "", description = "", path = EPITO_DB) {
   con <- .db_con(path); on.exit(DBI::dbDisconnect(con))
   aid <- paste0("A_", format(Sys.time(), "%Y%m%d_%H%M%S"))
   
@@ -57,12 +57,14 @@ save_analysis_to_db <- function(lst, meta_table, quantity_cols, col_map = NULL,
     
     pep_rows <- list(); qty_rows <- list()
     for (s in names(lst)) {
-      d  <- lst[[s]]                                   # <-- 'd' lives here
+      d  <- lst[[s]]
       mc <- intersect(quantity_cols, names(d)); if (!length(mc)) next
+      sc <- intersect(spectra_cols,  names(d))          # <-- defines sc
+      measurement_cols <- unique(c(mc, sc))             # <-- defines measurement_cols
       n  <- nrow(d)
       ids <- pid + seq_len(n); pid <- pid + n
       
-      id_df <- d[, setdiff(names(d), measurement_cols), drop = FALSE]
+      id_df <- d[, setdiff(names(d), measurement_cols), drop = FALSE]   # uses it here
       id_df$peptide_id  <- ids
       id_df$analysis_id <- aid
       id_df$Sample      <- s
@@ -82,6 +84,8 @@ save_analysis_to_db <- function(lst, meta_table, quantity_cols, col_map = NULL,
     DBI::dbWriteTable(con, "sample_metadata", sample_metadata, append = TRUE)
     DBI::dbAppendTable(con, "peptides",   peptides)
     DBI::dbAppendTable(con, "quantities", quantities)
+    cmap <- build_column_map_long(aid, data_info)
+    if (!is.null(cmap)) DBI::dbWriteTable(con, "column_map", cmap, append = TRUE)
     
     DBI::dbCommit(con)
   }, error = function(e) { DBI::dbRollback(con); stop(e) })
@@ -121,6 +125,27 @@ ensure_peptide_tables <- function(con) {
   DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS quantities (
       peptide_id INTEGER, measurement TEXT, quantity REAL )")
   DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_qty_pid ON quantities(peptide_id)")
+}
+
+# flatten data_info_r() (merged_info) -> long rows for storage
+build_column_map_long <- function(analysis_id, data_info) {
+  if (is.null(data_info) || !nrow(data_info)) return(NULL)
+  sample_cols <- setdiff(names(data_info), "final_name")
+  rows <- list()
+  for (i in seq_len(nrow(data_info))) {
+    fn <- as.character(data_info$final_name[i])
+    for (sc in sample_cols) {
+      vals <- data_info[[sc]][[i]]          # list-cell -> character vector of original names
+      vals <- vals[!is.na(vals)]
+      for (v in vals)
+        rows[[length(rows) + 1]] <- data.frame(
+          analysis_id = analysis_id, Sample = sc,
+          final_name = fn, original_name = as.character(v),
+          stringsAsFactors = FALSE)
+    }
+  }
+  if (!length(rows)) return(NULL)
+  do.call(rbind, rows)
 }
 
 # ---- Harmonize vocabulary ----
@@ -322,6 +347,9 @@ load_analysis_from_db <- function(aid, path = EPITO_DB) {
   meta <- DBI::dbGetQuery(con, "SELECT * FROM sample_metadata WHERE analysis_id = ?",
                           params = list(aid))
   
+  cmap <- if ("column_map" %in% DBI::dbListTables(con))
+    DBI::dbGetQuery(con, "SELECT * FROM column_map WHERE analysis_id = ?", params = list(aid)) else NULL
+  
   # widen on the UNIQUE peptide_id -> no list-columns
   qty_wide <- tidyr::pivot_wider(qty, id_cols = peptide_id,
                                  names_from = "measurement", values_from = "quantity")
@@ -354,7 +382,8 @@ load_analysis_from_db <- function(aid, path = EPITO_DB) {
   software_map <- setNames(sw$field_value, sw$Sample)
   
   list(data = data_list, col_map = col_map, software = software_map,
-       meta = meta, annotation = reconstruct_annotation(meta))
+       meta = meta, annotation = reconstruct_annotation(meta),
+       data_info = reconstruct_data_info(cmap))
 }
 
 reconstruct_annotation <- function(meta) {
@@ -370,12 +399,15 @@ reconstruct_annotation <- function(meta) {
   wide
 }
 
-build_reload_data_info <- function(data_list) {
-  std <- c("STRIPPED","PEPTIDE","PROTEIN","LENGTH","MASS","MZ","RT","K0",
-           "PPM","SCORE","CHARGE","PTM","PTM_Pseudo")
-  info <- tibble::tibble(final_name = "QUANTITY")
-  for (s in names(data_list)) {
-    info[[s]] <- list(setdiff(names(data_list[[s]]), std))  # measurement cols for this sample
+# rebuild merged_info (final_name + one list-column per sample) from the long table
+reconstruct_data_info <- function(cmap) {
+  if (is.null(cmap) || !nrow(cmap)) return(NULL)
+  samples <- unique(cmap$Sample)
+  finals  <- unique(cmap$final_name)
+  di <- data.frame(final_name = finals, stringsAsFactors = FALSE)
+  for (s in samples) {
+    di[[s]] <- lapply(finals, function(fn)
+      cmap$original_name[cmap$Sample == s & cmap$final_name == fn])
   }
-  info
+  di
 }

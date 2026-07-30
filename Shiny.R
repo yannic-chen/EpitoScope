@@ -452,12 +452,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   ## ---------Annotation Table----------------
   output$annotation_table <- DT::renderDT({
-    if(!annotation_provided()){
-      updatebs4Card(id = "annotation_card", session = session, action = "remove")
-      shiny::validate(shiny::need(FALSE, "No annotation table provided."))
-    }
-    
-    ann <- input_variable
+    ann <- annotation_df_r()
+    shiny::validate(shiny::need(is.data.frame(ann), "No annotation table provided."))
     
     DT::datatable(
       ann,
@@ -2622,7 +2618,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     id <- tryCatch(
       save_analysis_to_db(lst = data_list_r(), meta_table = edited,
                           quantity_cols = default_quantity_cols_r(), col_map = measurement_col_map_r(),
-                          spectra_cols = spectra_cols, submitted_by = input$meta_user, description = input$meta_description),
+                          spectra_cols = spectra_cols, data_info = data_info_r(), submitted_by = input$meta_user, description = input$meta_description),
       error = function(e) { showNotification(paste("Save failed:", e$message), type = "error"); NULL })
     if (!is.null(id)) {
       showNotification(paste("Saved as", id), type = "message")
@@ -2681,12 +2677,14 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     loaded <- load_analysis_from_db(aid)
     dfs <- loaded$data
+    di <- loaded$data_info
+    dmm <- loaded$data_mod_map
     
     # core data reactiveVals
     raw_list_r(dfs)                              # note: normalized data, not original raw format
     data_list_r(dfs)
-    data_info_r(build_reload_data_info(dfs))
-    data_mod_map(NULL)
+    data_info_r(di)
+    data_mod_map(dmm)
     software_r(loaded$software)
     
     # annotation / grouping — route through the SAME validator as an upload
@@ -2788,8 +2786,8 @@ shinyApp(
   ui = ui,
   server = function(input, output, session) {
     server(input, output, session, 
-           input_variable = test_annotation,
-           #input_variable = preloaded_data[1:5],
+           #input_variable = test_annotation,
+           input_variable = preloaded_data[6:10],
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 
