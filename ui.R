@@ -639,8 +639,23 @@ ui <- bs4DashPage(
         bs4Card(title = "Save to database", width = 12,
                 actionButton("save_to_db", "Save results to database", icon = icon("database")),
                 tags$hr(),
+                tags$style(HTML("
+                      .handsontable thead th .colHeader {
+                        white-space: normal;
+                        word-break: break-word;
+                        line-height: 1.15;
+                        display: inline-block;
+                        width: 100%;
+                      }
+                      .handsontable thead th {
+                        white-space: normal;
+                        vertical-align: middle;
+                        height: auto;
+                      }
+                    ")),
                 h6("Saved runs"),
-                DT::DTOutput("saved_runs_table")
+                DT::DTOutput("saved_runs_table"),
+                actionButton("load_from_db", "Load selected analysis", icon = icon("upload"))
         )
       ),
       

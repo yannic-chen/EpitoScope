@@ -2,55 +2,252 @@ library(DBI)
 library(RSQLite)
 library(rhandsontable)
 
-EPITO_DB <- "epitoscope_results.sqlite"   # lives next to the app; swap for a server DSN later
-
-.db_con <- function(path = EPITO_DB) DBI::dbConnect(RSQLite::SQLite(), path)
-
 # ---------save analysis--------------
 save_analysis_to_db <- function(lst, meta_table, quantity_cols, col_map = NULL,
-                                software = "", submitted_by = "", description = "",
+                                spectra_cols = NULL, software = "", submitted_by = "", description = "",
                                 path = EPITO_DB) {
   con <- .db_con(path); on.exit(DBI::dbDisconnect(con))
   aid <- paste0("A_", format(Sys.time(), "%Y%m%d_%H%M%S"))
   
-  ## 1) analyses
+  ##---- analysis row ----
   analyses <- data.frame(analysis_id = aid, timestamp = as.character(Sys.time()),
                          submitted_by = submitted_by, description = description,
-                         n_samples = length(lst), stringsAsFactors = FALSE)   # no `software` column here
+                         n_samples = length(lst), stringsAsFactors = FALSE)
   
-  ## map annotation measurement -> data column, so peptides & metadata share one key
-  meas2col <- if (!is.null(col_map))
-    vapply(col_map, `[[`, character(1), "col") else NULL   # names = measurement, values = data col
+  meas2col <- if (!is.null(col_map)) vapply(col_map, `[[`, character(1), "col") else NULL
   
-  ## 2) sample_metadata (long) — keyed on the data column so it joins peptides
+  ##---- metadata (long) ----
   mt <- meta_table
-  mt$data_col <- if (!is.null(meas2col)) meas2col[mt$measurement] else mt$measurement
-  idc <- intersect(c("Sample","measurement","data_col"), names(mt))
+  mt$data_col <- if (!is.null(meas2col) && "measurement" %in% names(mt))
+    meas2col[mt$measurement] else mt$measurement
+  idc <- intersect(c("Sample", "measurement", "data_col"), names(mt))
   sample_metadata <- tidyr::pivot_longer(mt, cols = setdiff(names(mt), idc),
                                          names_to = "field_name", values_to = "field_value")
-  sample_metadata <- data.frame(analysis_id = aid,
-                                Sample      = as.character(sample_metadata$Sample),
-                                measurement = as.character(sample_metadata$data_col),          # join key = data column
-                                field_name  = sample_metadata$field_name,
-                                field_value = as.character(sample_metadata$field_value), stringsAsFactors = FALSE)
+  sample_metadata <- data.frame(
+    analysis_id = aid,
+    Sample      = as.character(sample_metadata$Sample),
+    measurement = as.character(sample_metadata$data_col),
+    field_name  = as.character(sample_metadata$field_name),
+    field_value = as.character(sample_metadata$field_value),
+    stringsAsFactors = FALSE)
+  keep <- !is.na(sample_metadata$field_value) & nzchar(trimws(sample_metadata$field_value))
+  sample_metadata <- sample_metadata[keep, , drop = FALSE]
   
-  ## 3) peptides — pivot measurement columns to long; measurement = data column name
-  pep <- c("STRIPPED","PEPTIDE","PROTEIN","LENGTH","MASS","MZ","RT","K0","PPM","SCORE","CHARGE","PTM")
-  peptides <- dplyr::bind_rows(lapply(names(lst), function(s) {
-    d  <- lst[[s]]; mc <- intersect(quantity_cols, names(d)); if (!length(mc)) return(NULL)
-    tidyr::pivot_longer(d[, c(intersect(pep, names(d)), mc), drop = FALSE],
-                        cols = dplyr::all_of(mc), names_to = "measurement", values_to = "quantity") |>
-      dplyr::mutate(analysis_id = aid, Sample = s)
-  }))
+  ##---- normalized raw data (identity + quantities, normalized schema) ----
+  pep_keys <- setdiff(unique(unlist(lapply(column_schema, names))), c("QUANTITY", "SPECTRA"))
   
-  DBI::dbWriteTable(con, "analyses",        analyses,        append = TRUE)
-  DBI::dbWriteTable(con, "sample_metadata", sample_metadata, append = TRUE)
-  DBI::dbWriteTable(con, "peptides",        peptides,        append = TRUE)
+  DBI::dbBegin(con)
+  tryCatch({
+    ensure_condition_terms(con)
+    ensure_peptide_tables(con)
+    
+    # canonicalize vocab metadata values in place
+    vrow <- vapply(sample_metadata$field_name, is_vocab_field, logical(1))
+    if (any(vrow)) {
+      sample_metadata$field_value[vrow] <- mapply(
+        function(f, v) canonicalize_condition(con, f, v),
+        sample_metadata$field_name[vrow], sample_metadata$field_value[vrow],
+        USE.NAMES = FALSE)
+    }
+    
+    # integer peptide_id, unique across analyses
+    start_id <- if ("peptides" %in% DBI::dbListTables(con))
+      DBI::dbGetQuery(con, "SELECT COALESCE(MAX(peptide_id),0) AS m FROM peptides")$m else 0
+    pid <- as.integer(start_id)
+    
+    pep_rows <- list(); qty_rows <- list()
+    for (s in names(lst)) {
+      d  <- lst[[s]]                                   # <-- 'd' lives here
+      mc <- intersect(quantity_cols, names(d)); if (!length(mc)) next
+      n  <- nrow(d)
+      ids <- pid + seq_len(n); pid <- pid + n
+      
+      id_df <- d[, setdiff(names(d), measurement_cols), drop = FALSE]
+      id_df$peptide_id  <- ids
+      id_df$analysis_id <- aid
+      id_df$Sample      <- s
+      pep_rows[[s]] <- id_df
+      
+      q <- d[, mc, drop = FALSE]; q$peptide_id <- ids
+      qty_rows[[s]] <- tidyr::pivot_longer(q, dplyr::all_of(mc),
+                                           names_to = "measurement", values_to = "quantity")
+    }
+    peptides   <- dplyr::bind_rows(pep_rows)
+    quantities <- dplyr::bind_rows(qty_rows)
+    quantities <- quantities[!is.na(quantities$quantity), , drop = FALSE]
+    
+    add_missing_columns(con, "peptides", peptides)     # auto-widen for new columns
+    
+    DBI::dbWriteTable(con, "analyses",        analyses,        append = TRUE)
+    DBI::dbWriteTable(con, "sample_metadata", sample_metadata, append = TRUE)
+    DBI::dbAppendTable(con, "peptides",   peptides)
+    DBI::dbAppendTable(con, "quantities", quantities)
+    
+    DBI::dbCommit(con)
+  }, error = function(e) { DBI::dbRollback(con); stop(e) })
+  
   aid
+}
+
+sql_affinity <- function(x) {
+  if (is.integer(x)) "INTEGER" else if (is.numeric(x)) "REAL" else "TEXT"
+}
+
+# add any df column the table doesn't have yet (old rows get NULL)
+add_missing_columns <- function(con, table, df) {
+  existing <- DBI::dbListFields(con, table)
+  for (nm in setdiff(names(df), existing)) {
+    DBI::dbExecute(con, sprintf('ALTER TABLE "%s" ADD COLUMN "%s" %s',
+                                table, nm, sql_affinity(df[[nm]])))
+  }
+}
+
+# base tables — the identity column set is DERIVED from column_schema, so
+# extending column_schema automatically extends fresh databases.
+ensure_peptide_tables <- function(con) {
+  pep_keys  <- setdiff(unique(unlist(lapply(column_schema, names))),
+                       c("QUANTITY", "SPECTRA"))          # per-peptide identity/spectral cols
+  int_keys  <- c("LENGTH", "CHARGE")
+  real_keys <- c("MASS", "MZ", "RT", "K0", "PPM", "SCORE")
+  col_ddl <- vapply(pep_keys, function(k) {
+    ty <- if (k %in% int_keys) "INTEGER" else if (k %in% real_keys) "REAL" else "TEXT"
+    sprintf('"%s" %s', k, ty)
+  }, character(1))
+  
+  DBI::dbExecute(con, sprintf('
+    CREATE TABLE IF NOT EXISTS peptides (
+      peptide_id INTEGER PRIMARY KEY,
+      analysis_id TEXT, Sample TEXT, %s )', paste(col_ddl, collapse = ", ")))
+  DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS quantities (
+      peptide_id INTEGER, measurement TEXT, quantity REAL )")
+  DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_qty_pid ON quantities(peptide_id)")
+}
+
+# ---- Harmonize vocabulary ----
+
+# Which meta columns get controlled dropdowns. condition_* (from annotation)
+# always qualifies; the rest are the fixed categorical BASE fields.
+VOCAB_FIELDS <- c("instrument", "biological source", "cell line", "condition", "species", "reference database")
+
+is_vocab_field <- function(name) {
+  name %in% VOCAB_FIELDS || grepl("^condition", name, ignore.case = TRUE)
+}
+
+# normalize a value to a match key: trim, collapse whitespace, lowercase
+.norm_term <- function(x) {
+  x <- trimws(as.character(x))
+  x <- gsub("\\s+", " ", x)
+  tolower(x)
+}
+
+# `%||%` guard in case it isn't already defined app-wide
+`%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || (length(a) == 1 && is.na(a))) b else a
+
+ensure_condition_terms <- function(con) {
+  DBI::dbExecute(con, "
+    CREATE TABLE IF NOT EXISTS condition_terms (
+      term_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+      field_name  TEXT NOT NULL,
+      value       TEXT NOT NULL,           -- canonical display form
+      value_norm  TEXT NOT NULL,           -- match key
+      n_uses      INTEGER NOT NULL DEFAULT 0,
+      first_seen  TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(field_name, value_norm)
+    )")
+  invisible(TRUE)
+}
+
+# distinct known values for a field, most-used first — feeds the dropdown
+condition_term_source <- function(field_name, con = NULL) {
+  own <- is.null(con); if (own) { con <- .db_con(); on.exit(DBI::dbDisconnect(con)) }
+  ensure_condition_terms(con)
+  DBI::dbGetQuery(con,
+                  "SELECT value FROM condition_terms WHERE field_name = ? ORDER BY n_uses DESC, value",
+                  params = list(field_name))$value
+}
+
+# canonicalize one value; register it if new. Returns canonical spelling.
+canonicalize_condition <- function(con, field_name, raw) {
+  vn <- .norm_term(raw)
+  if (is.na(vn) || vn == "") return(NA_character_)
+  hit <- DBI::dbGetQuery(con,
+                         "SELECT term_id, value FROM condition_terms WHERE field_name=? AND value_norm=?",
+                         params = list(field_name, vn))
+  if (nrow(hit)) {
+    DBI::dbExecute(con, "UPDATE condition_terms SET n_uses = n_uses + 1 WHERE term_id = ?",
+                   params = list(hit$term_id[1]))
+    return(hit$value[1])                       # reuse the existing spelling
+  }
+  DBI::dbExecute(con,
+                 "INSERT INTO condition_terms(field_name, value, value_norm, n_uses) VALUES(?,?,?,1)",
+                 params = list(field_name, trimws(as.character(raw)), vn))
+  trimws(as.character(raw))
+}
+
+# load a seed file once (idempotent); seeded terms start at n_uses = 0
+seed_condition_terms <- function(con, seed_path = "condition_seed.csv") {
+  ensure_condition_terms(con)
+  if (!file.exists(seed_path)) return(invisible(FALSE))
+  seed <- utils::read.csv(seed_path, stringsAsFactors = FALSE)
+  for (i in seq_len(nrow(seed))) {
+    vn <- .norm_term(seed$value[i])
+    ex <- DBI::dbGetQuery(con,
+                          "SELECT 1 FROM condition_terms WHERE field_name=? AND value_norm=?",
+                          params = list(seed$field_name[i], vn))
+    if (!nrow(ex))
+      DBI::dbExecute(con,
+                     "INSERT INTO condition_terms(field_name, value, value_norm, n_uses) VALUES(?,?,?,0)",
+                     params = list(seed$field_name[i], trimws(seed$value[i]), vn))
+  }
+  invisible(TRUE)
+}
+
+## ---- low-information detector ------
+
+# TRUE for values that carry no meaning on their own (yes/no, single chars,
+# bare numbers, na/nd/etc.). Empty/NA is NOT flagged — that's "missing", not "junk".
+.lowinfo <- function(v) {
+  s <- trimws(tolower(as.character(v)))
+  present <- !is.na(s) & nzchar(s)
+  junk <- grepl("^(yes|no|y|n|true|false|t|f|na|n/?a|n\\.?d\\.?|none|null|x|\\?|\\+|-|[0-9]+(\\.[0-9]+)?)$", s)
+  present & (junk | nchar(s) == 1)
+}
+
+# scan a meta table for flagged condition-ish cells
+scan_lowinfo_conditions <- function(meta_table) {
+  cols <- names(meta_table)[vapply(names(meta_table), is_vocab_field, logical(1))]
+  cols <- setdiff(cols, "instrument")
+  sample_col <- if ("name" %in% names(meta_table)) "name" else "Sample"
+  out <- list()
+  for (cc in cols) {
+    for (i in which(.lowinfo(meta_table[[cc]]))) {
+      out[[length(out) + 1]] <- data.frame(
+        row = i, sample = as.character(meta_table[[sample_col]][i]),
+        field = cc, value = as.character(meta_table[[cc]][i]),
+        stringsAsFactors = FALSE)
+    }
+  }
+  if (!length(out))
+    return(data.frame(row = integer(), sample = character(),
+                      field = character(), value = character()))
+  do.call(rbind, out)
+}
+
+## ---- flattened preview (your comma-list, on demand, never stored) -------
+
+condition_preview <- function(analysis_id, con = NULL) {
+  own <- is.null(con); if (own) { con <- .db_con(); on.exit(DBI::dbDisconnect(con)) }
+  DBI::dbGetQuery(con, "
+    SELECT Sample,
+           GROUP_CONCAT(field_name || '=' || field_value, ', ') AS conditions
+    FROM sample_metadata
+    WHERE analysis_id = ? AND field_name LIKE 'condition%'
+    GROUP BY Sample", params = list(analysis_id))
 }
 
 build_meta_table <- function(lst, quantity_cols, annotation_df, col_map, software_map) {
   has_ann <- !is.null(annotation_df) && isTRUE(attr(annotation_df, "has_measurement")) && !is.null(col_map)
+  
   if (has_ann) {
     ann <- annotation_df
     cond_cols <- attr(annotation_df, "condition_cols"); if (is.null(cond_cols)) cond_cols <- character(0)
@@ -64,13 +261,25 @@ build_meta_table <- function(lst, quantity_cols, annotation_df, col_map, softwar
       data.frame(Sample = s, measurement = mc, stringsAsFactors = FALSE)
     }))
   }
-  # always-present editable columns, pre-filled
-  tbl$software   <- unname(software_map[tbl$Sample])   # per-sample software
-  tbl$instrument <- ""
+  
+  # software from detection — always available
+  tbl$software <- unname(software_map[tbl$Sample])
+  
+  # guarantee the baseline columns exist (empty if not already provided)
+  base <- BASE_META_FIELDS
+  if (any(grepl("^condition", names(tbl), ignore.case = TRUE)))
+    base <- setdiff(base, "condition")            # annotation already supplies condition_* cols
+  for (f in base) if (!f %in% names(tbl)) tbl[[f]] <- ""
+  
+  # keys first, then software, then the rest
+  key <- c("Sample", "measurement", "software")
+  tbl <- tbl[, c(key, setdiff(names(tbl), key)), drop = FALSE]
   tbl[] <- lapply(tbl, as.character)
   tbl
 }
 
+
+# ------- check data ----
 list_analyses <- function(path = EPITO_DB) {
   if (!file.exists(path)) return(data.frame())
   con <- .db_con(path); on.exit(DBI::dbDisconnect(con))
@@ -97,4 +306,76 @@ db_schema <- function(path = EPITO_DB) {
   con <- .db_con(path); on.exit(DBI::dbDisconnect(con))
   tabs <- DBI::dbListTables(con)
   setNames(lapply(tabs, function(t) DBI::dbListFields(con, t)), tabs)   # table -> columns
+}
+
+
+# ---------load from database--------------
+load_analysis_from_db <- function(aid, path = EPITO_DB) {
+  con <- .db_con(path); on.exit(DBI::dbDisconnect(con))
+  
+  pep  <- DBI::dbGetQuery(con, "SELECT * FROM peptides WHERE analysis_id = ?", params = list(aid))
+  if (!nrow(pep)) stop("No peptide data found for ", aid)
+  qty  <- DBI::dbGetQuery(con,
+                          "SELECT q.peptide_id, q.measurement, q.quantity
+       FROM quantities q JOIN peptides p USING(peptide_id)
+      WHERE p.analysis_id = ?", params = list(aid))
+  meta <- DBI::dbGetQuery(con, "SELECT * FROM sample_metadata WHERE analysis_id = ?",
+                          params = list(aid))
+  
+  # widen on the UNIQUE peptide_id -> no list-columns
+  qty_wide <- tidyr::pivot_wider(qty, id_cols = peptide_id,
+                                 names_from = "measurement", values_from = "quantity")
+  wide <- dplyr::left_join(pep, qty_wide, by = "peptide_id")
+  
+  # per-sample PLAIN data.frames (match what normalize_df produces), drop bookkeeping cols
+  drop <- c("peptide_id", "analysis_id", "Sample")
+  meas <- unique(qty$measurement)      # add this line if you don't already have it above
+  
+  data_list <- lapply(split(wide, wide$Sample), function(d) {
+    d <- as.data.frame(d[, setdiff(names(d), drop), drop = FALSE], stringsAsFactors = FALSE)
+    
+    # drop foreign (all-NA) measurement columns leaked in by the global widen
+    this_meas <- intersect(meas, names(d))
+    keep_meas <- this_meas[vapply(d[this_meas], function(col) any(!is.na(col)), logical(1))]
+    d <- d[, c(setdiff(names(d), this_meas), keep_meas), drop = FALSE]
+    
+    # MAX_QUANTITY: comes from storage now; derive only if an older save lacks it
+    if (!"MAX_QUANTITY" %in% names(d)) {
+      d$MAX_QUANTITY <- if (length(keep_meas))
+        apply(d[, keep_meas, drop = FALSE], 1,
+              function(x) if (all(is.na(x))) NA_real_ else max(x, na.rm = TRUE))
+      else NA_real_
+    }
+    d
+  })
+  
+  col_map <- setNames(lapply(meas, function(m) list(name = m, col = m)), meas)
+  sw <- meta[meta$field_name == "software", c("Sample", "field_value")]
+  software_map <- setNames(sw$field_value, sw$Sample)
+  
+  list(data = data_list, col_map = col_map, software = software_map,
+       meta = meta, annotation = reconstruct_annotation(meta))
+}
+
+reconstruct_annotation <- function(meta) {
+  if (!nrow(meta)) return(NULL)
+  wide <- tidyr::pivot_wider(
+    meta[, c("Sample", "measurement", "field_name", "field_value")],
+    names_from = "field_name", values_from = "field_value")
+  wide <- as.data.frame(wide, stringsAsFactors = FALSE)
+  names(wide)[names(wide) == "Sample"] <- "name"
+
+  if (!"source" %in% names(wide))
+    wide$source <- if ("measurement" %in% names(wide)) wide$measurement else wide$name
+  wide
+}
+
+build_reload_data_info <- function(data_list) {
+  std <- c("STRIPPED","PEPTIDE","PROTEIN","LENGTH","MASS","MZ","RT","K0",
+           "PPM","SCORE","CHARGE","PTM","PTM_Pseudo")
+  info <- tibble::tibble(final_name = "QUANTITY")
+  for (s in names(data_list)) {
+    info[[s]] <- list(setdiff(names(data_list[[s]]), std))  # measurement cols for this sample
+  }
+  info
 }

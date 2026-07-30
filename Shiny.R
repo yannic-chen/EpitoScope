@@ -29,6 +29,20 @@ options(shiny.maxRequestSize = 5*1024^3) #Increase upload limit (in bytes) if ne
 options(width=10000) #This allows for text to not be text-wrapped.
 ht_opt$message <- FALSE
 
+EPITO_DB <- "epitoscope_results.sqlite"   # lives next to the app; swap for a server DSN later
+
+# metadata fields that should ALWAYS be offered (edit to taste)
+BASE_META_FIELDS <- c("instrument", "biological source", "cell line","condition",
+                      "biological replicate", "technical replicate", "species", "reference database","notes")
+
+.db_con <- function(path = EPITO_DB) DBI::dbConnect(RSQLite::SQLite(), path)
+
+local({
+  con <- .db_con(); on.exit(DBI::dbDisconnect(con))
+  ensure_condition_terms(con)
+  seed_condition_terms(con, "condition_seed.csv")
+})
+
 server <- function(input, output, session, input_variable, generate_pseudo_sequence = FALSE, custom_schema = NULL, custom_signature = NULL, replace_schema = FALSE) {
 #------------------State Check---------------------
   ## State container
@@ -293,8 +307,10 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   ## Active data (selected samples)
   active_data_list <- reactive({
-    req(data_list_r(), input$selected_samples)
-    data_list_r()[input$selected_samples]
+    req(data_list_r())
+    sel <- intersect(input$selected_samples, names(data_list_r()))
+    req(length(sel) > 0)                 # intersect guard against transient race for loading from SQL database.
+    data_list_r()[sel]
   })
   
 #-------------------Data Transformation tab-----------------------
@@ -2542,8 +2558,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   }
   
   observeEvent(input$save_to_db, {
+    lst <- data_list_r() 
     ann <- if (annotation_provided()) annotation_df_r() else NULL
-    meta_table_rv(build_meta_table(processed_data_list(), default_quantity_cols_r(),
+    meta_table_rv(build_meta_table(lst, default_quantity_cols_r(),
                                    ann, measurement_col_map_r(), software_r()))
     showModal(modalDialog(
       title = "Save run to database", size = "xl",
@@ -2555,15 +2572,40 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       rhandsontable::rHandsontableOutput("meta_edit_table"),
       footer = tagList(modalButton("Cancel"),
                        actionButton("confirm_save_db", "Save to database",
-                                    class = "btn-primary", icon = icon("database")))
+                                    class = "btn-primary", icon = icon("database"))),
+      uiOutput("lowinfo_warn")
     ))
   })
   
+  # px width for a column: wide enough for its longest single word (so wrapping
+  # breaks cleanly on spaces) and its content, within sane bounds.
+  .col_px <- function(nm, data = NULL, char_px = 8, pad = 26, min_px = 50, max_px = 240) {
+    longest_word <- max(nchar(strsplit(nm, "\\s+")[[1]]), 0)          # header, per-word
+    content_w    <- if (!is.null(data))
+      suppressWarnings(max(nchar(as.character(data)), 0, na.rm = TRUE)) else 0
+    w <- max(longest_word, min(content_w, 24)) * char_px + pad
+    min(max(w, min_px), max_px)
+  }
+  
   output$meta_edit_table <- rhandsontable::renderRHandsontable({
-    req(meta_table_rv())
-    rhandsontable::rhandsontable(meta_table_rv(), rowHeaders = NULL, stretchH = "all") |>
-      rhandsontable::hot_col(c("Sample", "measurement"), readOnly = TRUE) |>   # keys: not editable
+    mt <- meta_table_rv(); req(mt)
+    con <- .db_con(); on.exit(DBI::dbDisconnect(con))
+    
+    widths <- vapply(names(mt), function(cc) .col_px(cc, mt[[cc]]), numeric(1))
+    
+    ht <- rhandsontable::rhandsontable(mt, rowHeaders = NULL, height = 340,
+                                       colWidths = unname(widths)) %>%
       rhandsontable::hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE)
+    
+    for (cc in names(mt)) {
+      if (is_vocab_field(cc)) {
+        ht <- rhandsontable::hot_col(
+          ht, col = cc, type = "dropdown",
+          source = condition_term_source(cc, con),
+          allowInvalid = TRUE, strict = FALSE)
+      }
+    }
+    ht
   })
   
   db_refresh <- reactiveVal(0)
@@ -2573,10 +2615,14 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     removeModal()
     edited <- if (is.null(input$meta_edit_table)) meta_table_rv()
     else rhandsontable::hot_to_r(input$meta_edit_table)
+    spectra_cols <- data_info_r() %>%
+      dplyr::filter(final_name == "SPECTRA") %>%
+      dplyr::select(-final_name) %>%
+      unlist(recursive = TRUE, use.names = FALSE)
     id <- tryCatch(
-      save_analysis_to_db(lst = processed_data_list(), meta_table = edited,
+      save_analysis_to_db(lst = data_list_r(), meta_table = edited,
                           quantity_cols = default_quantity_cols_r(), col_map = measurement_col_map_r(),
-                          submitted_by = input$meta_user, description = input$meta_description),
+                          spectra_cols = spectra_cols, submitted_by = input$meta_user, description = input$meta_description),
       error = function(e) { showNotification(paste("Save failed:", e$message), type = "error"); NULL })
     if (!is.null(id)) {
       showNotification(paste("Saved as", id), type = "message")
@@ -2584,12 +2630,84 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     }
   })
   
+  analyses_tbl <- reactive({ db_refresh(); list_analyses() })
+  
   output$saved_runs_table <- DT::renderDT({
-    db_refresh()                             # <- re-query on every successful save
-    DT::datatable(list_analyses(), rownames = FALSE, options = list(pageLength = 10))
+    DT::datatable(analyses_tbl(), rownames = FALSE, options = list(pageLength = 10), selection = "single")
   })
   
-
+  output$meta_edit_table <- rhandsontable::renderRHandsontable({
+    mt <- meta_table_rv(); req(mt)
+    con <- .db_con(); on.exit(DBI::dbDisconnect(con))
+    
+    ht <- rhandsontable::rhandsontable(mt, rowHeaders = NULL, height = 340) %>%
+      rhandsontable::hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE)
+    
+    for (cc in names(mt)) {
+      if (is_vocab_field(cc)) {
+        ht <- rhandsontable::hot_col(
+          ht, col = cc, type = "dropdown",
+          source = condition_term_source(cc, con),
+          allowInvalid = TRUE, strict = FALSE)   # permissive: new terms allowed & auto-register on save
+      }
+    }
+    ht
+  })
+  
+  output$lowinfo_warn <- renderUI({
+    mt <- tryCatch(rhandsontable::hot_to_r(input$meta_edit_table),
+                   error = function(e) meta_table_rv())
+    req(mt)
+    fl <- scan_lowinfo_conditions(mt)
+    if (!nrow(fl)) return(NULL)
+    items <- sprintf("<li><b>%s</b> &rarr; <code>%s = %s</code></li>",
+                     fl$sample, fl$field, fl$value)
+    HTML(paste0(
+      "<div style='color:#8a5000;border:1px solid #e0b080;background:#fff8ee;",
+      "padding:10px;border-radius:6px;margin-top:10px'>",
+      "&#9888; These conditions look uninformative on their own &mdash; ",
+      "will others know what it means?<ul style='margin:6px 0'>",
+      paste(items, collapse = ""), "</ul>",
+      "Prefer a descriptive state (e.g. <code>Tumor</code> / <code>Normal</code>) ",
+      "over <code>yes</code> / <code>no</code>. You can still save as-is.",
+      "</div>"))
+  })
+  
+  ##-------------------load SQL------------------
+  observeEvent(input$load_from_db, {
+    sel <- input$saved_runs_table_rows_selected
+    req(length(sel) == 1)
+    aid <- analyses_tbl()$analysis_id[sel]
+    
+    loaded <- load_analysis_from_db(aid)
+    dfs <- loaded$data
+    
+    # core data reactiveVals
+    raw_list_r(dfs)                              # note: normalized data, not original raw format
+    data_list_r(dfs)
+    data_info_r(build_reload_data_info(dfs))
+    data_mod_map(NULL)
+    software_r(loaded$software)
+    
+    # annotation / grouping — route through the SAME validator as an upload
+    ann <- if (!is.null(loaded$annotation))
+      tryCatch(check_annotation_table(loaded$annotation), error = function(e) {
+        showNotification(paste("Annotation rebuild skipped:", conditionMessage(e)),
+                         type = "warning"); NULL
+      }) else NULL
+    
+    if (!is.null(ann)) {
+      annotation_df_r(ann)
+      annotation_provided(TRUE)
+      measurement_col_map_r(build_measurement_col_map(dfs, ann))
+    } else {
+      annotation_provided(FALSE)
+      measurement_col_map_r(NULL)
+    }
+    
+    condition_groups_r(list())                   # clear any groups from the prior session
+    showNotification(sprintf("Loaded %s (%d samples)", aid, length(dfs)), type = "message")
+  })
   
   ##--------------------query SQL-------------------
   # picking a table pre-fills a SELECT
@@ -2670,8 +2788,8 @@ shinyApp(
   ui = ui,
   server = function(input, output, session) {
     server(input, output, session, 
-           #input_variable = test_annotation,
-           input_variable = preloaded_data,
+           input_variable = test_annotation,
+           #input_variable = preloaded_data[1:5],
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 
