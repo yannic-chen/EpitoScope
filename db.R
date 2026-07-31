@@ -25,6 +25,7 @@ save_analysis_to_db <- function(lst, meta_table, quantity_cols, col_map = NULL,
   con <- .db_con(path); on.exit(DBI::dbDisconnect(con))
   aid <- paste0("A_", format(Sys.time(), "%Y%m%d_%H%M%S"))
   fp <- analysis_fingerprint(lst, quantity_cols, spectra_cols) #compute hash
+  saveRDS(lst, paste0("dump_", aid, ".rds"))
 
   ##---- analysis row ----
   analyses <- data.frame(analysis_id = aid, timestamp = as.character(Sys.time()),
@@ -107,7 +108,6 @@ save_analysis_to_db <- function(lst, meta_table, quantity_cols, col_map = NULL,
     }
     peptides   <- dplyr::bind_rows(pep_rows)
     quantities <- dplyr::bind_rows(qty_rows)
-    quantities <- quantities[!is.na(quantities$quantity), , drop = FALSE]
     
     add_missing_columns(con, "peptides", peptides)     # auto-widen for new columns
     
@@ -422,33 +422,32 @@ load_analysis_from_db <- function(aid, path = EPITO_DB) {
   mm <- if ("mod_map" %in% DBI::dbListTables(con))
     DBI::dbGetQuery(con, "SELECT token, symbol FROM mod_map WHERE analysis_id = ?", params = list(aid)) else NULL
   
-  # widen on the UNIQUE peptide_id -> no list-columns
-  qty_wide <- tidyr::pivot_wider(qty, id_cols = peptide_id,
-                                 names_from = "measurement", values_from = "quantity")
-  wide <- dplyr::left_join(pep, qty_wide, by = "peptide_id")
+  # peptides is a shared wide table; keep only the columns this analysis actually used
+  analysis_finals <- if (!is.null(cmap) && nrow(cmap)) unique(cmap$final_name) else character(0)
+  book      <- c("peptide_id", "analysis_id", "Sample")
+  keep_cols <- names(pep)[
+    names(pep) %in% book            |
+      names(pep) %in% analysis_finals |
+      vapply(pep, function(col) any(!is.na(col)), logical(1))
+  ]
+  pep <- pep[, keep_cols, drop = FALSE]
   
-  # per-sample PLAIN data.frames (match what normalize_df produces), drop bookkeeping cols
-  drop <- c("peptide_id", "analysis_id", "Sample")
-  meas <- unique(qty$measurement)      # add this line if you don't already have it above
+  drop_book <- c("peptide_id", "analysis_id", "Sample")
+  samples   <- unique(pep$Sample)
   
-  data_list <- lapply(split(wide, wide$Sample), function(d) {
-    d <- as.data.frame(d[, setdiff(names(d), drop), drop = FALSE], stringsAsFactors = FALSE)
-    
-    # drop foreign (all-NA) measurement columns leaked in by the global widen
-    this_meas <- intersect(meas, names(d))
-    keep_meas <- this_meas[vapply(d[this_meas], function(col) any(!is.na(col)), logical(1))]
-    d <- d[, c(setdiff(names(d), this_meas), keep_meas), drop = FALSE]
-    
-    # MAX_QUANTITY: comes from storage now; derive only if an older save lacks it
-    if (!"MAX_QUANTITY" %in% names(d)) {
-      d$MAX_QUANTITY <- if (length(keep_meas))
-        apply(d[, keep_meas, drop = FALSE], 1,
-              function(x) if (all(is.na(x))) NA_real_ else max(x, na.rm = TRUE))
-      else NA_real_
-    }
-    d
+  data_list <- lapply(samples, function(s) {
+    id_s <- pep[pep$Sample == s, , drop = FALSE]
+    q_s  <- qty[qty$peptide_id %in% id_s$peptide_id, , drop = FALSE]
+    d <- if (nrow(q_s)) {
+      qw <- tidyr::pivot_wider(q_s, id_cols = peptide_id,
+                               names_from = "measurement", values_from = "quantity")
+      dplyr::left_join(id_s, qw, by = "peptide_id")
+    } else id_s
+    as.data.frame(d[, setdiff(names(d), drop_book), drop = FALSE], stringsAsFactors = FALSE)
   })
+  names(data_list) <- samples
   
+  meas    <- unique(qty$measurement)
   col_map <- setNames(lapply(meas, function(m) list(name = m, col = m)), meas)
   sw <- meta[meta$field_name == "software", c("Sample", "field_value")]
   software_map <- setNames(sw$field_value, sw$Sample)
