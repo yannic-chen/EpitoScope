@@ -2,17 +2,34 @@ library(DBI)
 library(RSQLite)
 library(rhandsontable)
 
+# metadata fields that should ALWAYS be offered (edit to taste)
+BASE_META_FIELDS <- c("instrument", "biological source", "cell line","condition",
+                      "biological replicate", "technical replicate", "species", "reference database","notes")
+
+if (!exists("EPITO_DB")) EPITO_DB <- "epitoscope_results.sqlite"
+
+
+.db_con <- function(path = EPITO_DB) DBI::dbConnect(RSQLite::SQLite(), path)
+
+local({
+  con <- .db_con(); on.exit(DBI::dbDisconnect(con))
+  ensure_condition_terms(con)
+  seed_condition_terms(con, "condition_seed.csv")
+})
 # ---------save analysis--------------
 save_analysis_to_db <- function(lst, meta_table, quantity_cols, col_map = NULL,
-                                spectra_cols = NULL, data_info = NULL, software = "", 
-                                submitted_by = "", description = "", path = EPITO_DB) {
+                                spectra_cols = NULL, data_info = NULL, mod_map = NULL,
+                                software = "", submitted_by = "", description = "",
+                                allow_duplicate = FALSE, path = EPITO_DB) {
+  
   con <- .db_con(path); on.exit(DBI::dbDisconnect(con))
   aid <- paste0("A_", format(Sys.time(), "%Y%m%d_%H%M%S"))
-  
+  fp <- analysis_fingerprint(lst, quantity_cols, spectra_cols) #compute hash
+
   ##---- analysis row ----
   analyses <- data.frame(analysis_id = aid, timestamp = as.character(Sys.time()),
                          submitted_by = submitted_by, description = description,
-                         n_samples = length(lst), stringsAsFactors = FALSE)
+                         n_samples = length(lst), content_hash = fp, stringsAsFactors = FALSE)
   
   meas2col <- if (!is.null(col_map)) vapply(col_map, `[[`, character(1), "col") else NULL
   
@@ -32,6 +49,20 @@ save_analysis_to_db <- function(lst, meta_table, quantity_cols, col_map = NULL,
     stringsAsFactors = FALSE)
   keep <- !is.na(sample_metadata$field_value) & nzchar(trimws(sample_metadata$field_value))
   sample_metadata <- sample_metadata[keep, , drop = FALSE]
+  
+  ##---- check duplicate ----
+  if (!allow_duplicate &&
+      "analyses" %in% DBI::dbListTables(con) &&
+      "content_hash" %in% DBI::dbListFields(con, "analyses")) {
+    dup <- DBI::dbGetQuery(con,
+                           "SELECT analysis_id, timestamp FROM analyses WHERE content_hash = ? LIMIT 1",
+                           params = list(fp))
+    if (nrow(dup))
+      stop(structure(
+        class = c("epito_duplicate", "error", "condition"),
+        list(message = paste0("Identical to ", dup$analysis_id[1], " (saved ", dup$timestamp[1], ")"),
+             call = NULL, duplicate_of = dup$analysis_id[1], timestamp = dup$timestamp[1])))
+  }
   
   ##---- normalized raw data (identity + quantities, normalized schema) ----
   pep_keys <- setdiff(unique(unlist(lapply(column_schema, names))), c("QUANTITY", "SPECTRA"))
@@ -80,16 +111,19 @@ save_analysis_to_db <- function(lst, meta_table, quantity_cols, col_map = NULL,
     
     add_missing_columns(con, "peptides", peptides)     # auto-widen for new columns
     
+    if ("analyses" %in% DBI::dbListTables(con)) add_missing_columns(con, "analyses", analyses)
     DBI::dbWriteTable(con, "analyses",        analyses,        append = TRUE)
     DBI::dbWriteTable(con, "sample_metadata", sample_metadata, append = TRUE)
     DBI::dbAppendTable(con, "peptides",   peptides)
     DBI::dbAppendTable(con, "quantities", quantities)
     cmap <- build_column_map_long(aid, data_info)
     if (!is.null(cmap)) DBI::dbWriteTable(con, "column_map", cmap, append = TRUE)
+    mm <- build_mod_map_long(aid, mod_map)
+    if (!is.null(mm)) DBI::dbWriteTable(con, "mod_map", mm, append = TRUE) 
     
     DBI::dbCommit(con)
   }, error = function(e) { DBI::dbRollback(con); stop(e) })
-  
+
   aid
 }
 
@@ -104,6 +138,17 @@ add_missing_columns <- function(con, table, df) {
     DBI::dbExecute(con, sprintf('ALTER TABLE "%s" ADD COLUMN "%s" %s',
                                 table, nm, sql_affinity(df[[nm]])))
   }
+}
+
+build_mod_map_long <- function(analysis_id, mod_map) {
+  if (is.null(mod_map) || length(mod_map) == 0 ||
+      (length(mod_map) == 1 && is.na(mod_map))) return(NULL)
+  data.frame(analysis_id = analysis_id, token = names(mod_map),
+             symbol = unname(as.character(mod_map)), stringsAsFactors = FALSE)
+}
+reconstruct_mod_map <- function(mm) {
+  if (is.null(mm) || !nrow(mm)) return(NULL)
+  setNames(mm$symbol, mm$token)
 }
 
 # base tables — the identity column set is DERIVED from column_schema, so
@@ -146,6 +191,31 @@ build_column_map_long <- function(analysis_id, data_info) {
   }
   if (!length(rows)) return(NULL)
   do.call(rbind, rows)
+}
+
+# Generate hash to "remember" saved analysis to avoid duplicates
+# THe hash is made of column names, row count, per column NA, distinct count, and sum-of-squares
+analysis_fingerprint <- function(lst, quantity_cols, spectra_cols = NULL) {
+  parts <- vapply(sort(names(lst)), function(s) {
+    d  <- lst[[s]]
+    sc <- intersect(spectra_cols, names(d))
+    d  <- d[, sort(setdiff(names(d), sc)), drop = FALSE]
+    
+    col_sig <- lapply(d, function(col) {
+      miss  <- sum(is.na(col) | (is.character(col) & col %in% ""))
+      nuniq <- length(unique(col))
+      if (is.numeric(col)) {
+        v <- col[!is.na(col)]
+        list(miss = miss, nuniq = nuniq,
+             sumsq = sum(v * v))
+      } else {
+        list(miss = miss, nuniq = nuniq)
+      }
+    })
+    digest::digest(list(cols = names(d), nrow = nrow(d), col_sig = col_sig),
+                   algo = "xxhash64")
+  }, character(1))
+  digest::digest(parts, algo = "xxhash64")
 }
 
 # ---- Harmonize vocabulary ----
@@ -349,6 +419,8 @@ load_analysis_from_db <- function(aid, path = EPITO_DB) {
   
   cmap <- if ("column_map" %in% DBI::dbListTables(con))
     DBI::dbGetQuery(con, "SELECT * FROM column_map WHERE analysis_id = ?", params = list(aid)) else NULL
+  mm <- if ("mod_map" %in% DBI::dbListTables(con))
+    DBI::dbGetQuery(con, "SELECT token, symbol FROM mod_map WHERE analysis_id = ?", params = list(aid)) else NULL
   
   # widen on the UNIQUE peptide_id -> no list-columns
   qty_wide <- tidyr::pivot_wider(qty, id_cols = peptide_id,
@@ -383,7 +455,8 @@ load_analysis_from_db <- function(aid, path = EPITO_DB) {
   
   list(data = data_list, col_map = col_map, software = software_map,
        meta = meta, annotation = reconstruct_annotation(meta),
-       data_info = reconstruct_data_info(cmap))
+       data_info = reconstruct_data_info(cmap),
+       data_mod_map = reconstruct_mod_map(mm))
 }
 
 reconstruct_annotation <- function(meta) {

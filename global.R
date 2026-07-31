@@ -74,15 +74,6 @@ if (requireNamespace("fastcluster", quietly = TRUE)) {
   hclust_fn <- stats::hclust
 }
 
-#Suppress warnings from everywhere, including plot_ly
-tryCatch(
-  globalCallingHandlers(warning = function(w) {
-    if (grepl("group_hm", conditionMessage(w), fixed = TRUE))
-      invokeRestart("muffleWarning")
-  }),
-  error = function(e) invisible(NULL)   # e.g. during knitr/report render — handlers already on stack
-)
-
 #-----------Column extraction------------
 # Here we initiate all the possible column names important for us from all different input formats
 # QUANTITY and SPECTRA values are treated as column name string to be searchs, since one column exists for each measurement in the sample.

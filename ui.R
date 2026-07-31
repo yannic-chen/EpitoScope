@@ -77,9 +77,9 @@ ui <- bs4DashPage(
         dropdownDivider(),
         navbarTab(
           text = "SQL",
-          navbarTab(tabName = "SQL_console", text = "save to SQL"),
-          navbarTab(tabName = "SQL_query",   text = "query SQL"),
-          navbarTab(tabName = "SQL_browser", text = "browse SQL"),
+          navbarTab(tabName = "SQL_console", text = "Save/Load"),
+          navbarTab(tabName = "SQL_query",   text = "Query SQL"),
+          navbarTab(tabName = "SQL_browser", text = "Browse SQL"),
           navbarTab(
             text = "Sub sub menu",
             navbarTab(tabName = "Tab6", text = "Tab 6"),
@@ -637,6 +637,7 @@ ui <- bs4DashPage(
       bs4TabItem(
         tabName = "SQL_console",
         bs4Card(title = "Save to database", width = 12,
+                h6("The normalized raw data is saved, without any filtering."),
                 actionButton("save_to_db", "Save results to database", icon = icon("database")),
                 tags$hr(),
                 tags$style(HTML("

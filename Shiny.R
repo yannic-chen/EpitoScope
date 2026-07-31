@@ -29,20 +29,6 @@ options(shiny.maxRequestSize = 5*1024^3) #Increase upload limit (in bytes) if ne
 options(width=10000) #This allows for text to not be text-wrapped.
 ht_opt$message <- FALSE
 
-EPITO_DB <- "epitoscope_results.sqlite"   # lives next to the app; swap for a server DSN later
-
-# metadata fields that should ALWAYS be offered (edit to taste)
-BASE_META_FIELDS <- c("instrument", "biological source", "cell line","condition",
-                      "biological replicate", "technical replicate", "species", "reference database","notes")
-
-.db_con <- function(path = EPITO_DB) DBI::dbConnect(RSQLite::SQLite(), path)
-
-local({
-  con <- .db_con(); on.exit(DBI::dbDisconnect(con))
-  ensure_condition_terms(con)
-  seed_condition_terms(con, "condition_seed.csv")
-})
-
 server <- function(input, output, session, input_variable, generate_pseudo_sequence = FALSE, custom_schema = NULL, custom_signature = NULL, replace_schema = FALSE) {
 #------------------State Check---------------------
   ## State container
@@ -1734,22 +1720,26 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   expand_counter_r <- reactiveVal(0L)
   
   
-  observeEvent(plotly::event_data("plotly_relayout", source = "group_hm"), {
-    ed <- plotly::event_data("plotly_relayout", source = "group_hm")
-    if (!is.null(ed[["xaxis.range[0]"]])) {
-      zoom_info_r(c(as.numeric(ed[["xaxis.range[0]"]]),
-                    as.numeric(ed[["xaxis.range[1]"]])))
-    } else if (isTRUE(ed[["xaxis.autorange"]])) {
-      zoom_info_r(NULL)
-      # Only treat as user double-click if it happened >1s after a programmatic render
-      age <- as.numeric(Sys.time()) - isolate(last_programmatic_t_r())
-      if (age > 1 && isolate(heatmap_mode_r()) == "expanded") {
-        last_programmatic_t_r(as.numeric(Sys.time()))
-        heatmap_mode_r("binned")
-        expanded_peps_r(NULL)
+  observeEvent({
+    req(length(condition_groups_r()) > 0)
+    plotly::event_data("plotly_relayout", source = "group_hm")
+    }, {
+      ed <- plotly::event_data("plotly_relayout", source = "group_hm")
+      if (!is.null(ed[["xaxis.range[0]"]])) {
+        zoom_info_r(c(as.numeric(ed[["xaxis.range[0]"]]),
+                      as.numeric(ed[["xaxis.range[1]"]])))
+      } else if (isTRUE(ed[["xaxis.autorange"]])) {
+        zoom_info_r(NULL)
+        # Only treat as user double-click if it happened >1s after a programmatic render
+        age <- as.numeric(Sys.time()) - isolate(last_programmatic_t_r())
+        if (age > 1 && isolate(heatmap_mode_r()) == "expanded") {
+          last_programmatic_t_r(as.numeric(Sys.time()))
+          heatmap_mode_r("binned")
+          expanded_peps_r(NULL)
+        }
       }
-    }
-  }, ignoreNULL = TRUE)
+    }, ignoreNULL = TRUE)
+
 
   zoom_debounced_r <- shiny::debounce(zoom_info_r, 500)
   
@@ -2608,7 +2598,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   # the modal's Save button does the actual write
   observeEvent(input$confirm_save_db, {
-    removeModal()
     edited <- if (is.null(input$meta_edit_table)) meta_table_rv()
     else rhandsontable::hot_to_r(input$meta_edit_table)
     spectra_cols <- data_info_r() %>%
@@ -2618,12 +2607,38 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     id <- tryCatch(
       save_analysis_to_db(lst = data_list_r(), meta_table = edited,
                           quantity_cols = default_quantity_cols_r(), col_map = measurement_col_map_r(),
-                          spectra_cols = spectra_cols, data_info = data_info_r(), submitted_by = input$meta_user, description = input$meta_description),
+                          spectra_cols = spectra_cols, data_info = data_info_r(), mod_map = data_mod_map(),
+                          submitted_by = input$meta_user, description = input$meta_description),
+      epito_duplicate = function(e) {
+        showModal(modalDialog(
+          title = "Possible duplicate",
+          paste0("This analysis is ", conditionMessage(e),
+                 ". Save it anyway as a new entry?"),
+          footer = tagList(
+            modalButton("Cancel"),
+            actionButton("save_dup_anyway", "Save anyway", class = "btn-warning")
+          )))
+        NULL
+      },
       error = function(e) { showNotification(paste("Save failed:", e$message), type = "error"); NULL })
     if (!is.null(id)) {
+      removeModal()
       showNotification(paste("Saved as", id), type = "message")
-      db_refresh(db_refresh() + 1)          # <- triggers the table
+      db_refresh(db_refresh() + 1)
     }
+  })
+  
+  observeEvent(input$save_dup_anyway, {
+    removeModal()
+    edited <- rhandsontable::hot_to_r(input$meta_edit_table)
+    spectra_cols <- data_info_r() %>% dplyr::filter(final_name == "SPECTRA") %>%
+      dplyr::select(-final_name) %>% unlist(recursive = TRUE, use.names = FALSE)
+    id <- save_analysis_to_db(lst = data_list_r(), meta_table = edited,
+                              quantity_cols = default_quantity_cols_r(), col_map = measurement_col_map_r(),
+                              spectra_cols = spectra_cols, data_info = data_info_r(), mod_map = data_mod_map(),
+                              submitted_by = input$meta_user, description = input$meta_description,
+                              allow_duplicate = TRUE)
+    if (!is.null(id)) { showNotification(paste("Saved as", id), type = "message"); db_refresh(db_refresh() + 1) }
   })
   
   analyses_tbl <- reactive({ db_refresh(); list_analyses() })
@@ -2787,7 +2802,8 @@ shinyApp(
   server = function(input, output, session) {
     server(input, output, session, 
            #input_variable = test_annotation,
-           input_variable = preloaded_data[6:10],
+           #input_variable = data_list2,
+           input_variable = preloaded_data[1:5],
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 
