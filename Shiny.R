@@ -2348,13 +2348,15 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
     
     df <- peptide_wide_all()
-    
+    set_order   <- unique(df$Set) 
     allele_cols <- grep("^HLA", colnames(df), value = TRUE)
     
-    df %>%
+    res <- df %>%
       dplyr::group_by(Set, STRIPPED) %>%
-      dplyr::summarise(dplyr::across(all_of(allele_cols), ~ if(all(is.na(.x))) {NA_real_} else min(.x, na.rm = TRUE)),
-                       .groups = "drop")
+      dplyr::summarise(dplyr::across(all_of(allele_cols),
+                                     ~ if (all(is.na(.x))) NA_real_ else min(.x, na.rm = TRUE)), .groups = "drop")
+    res$Set <- factor(res$Set, levels = set_order)
+    res
   })
   
   binder_summary_all <- reactive({

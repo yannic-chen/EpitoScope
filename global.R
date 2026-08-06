@@ -1450,8 +1450,8 @@ prepare_measurement_matrix <- function(lst, quantity_cols) {
   peptides_all <- unique(unlist(lapply(lst, function(df) df$PEPTIDE)))
   
   col_names <- unlist(lapply(names(lst), function(nm) {
-    cols <- dplyr::intersect(quantity_cols, colnames(lst[[nm]]))
-    paste0(nm, " | ", cols)
+    cols <- quantity_cols[quantity_cols %in% colnames(lst[[nm]])]
+    if (length(cols)) paste0(nm, " | ", cols) else NULL
   }))
   
   pep_mat <- matrix(NA_real_,
@@ -1521,6 +1521,8 @@ plot_unique_counts <- function(lst, column, y_label, transform_fn = identity, co
   }))
   
   if (is.null(stats) || nrow(stats) == 0) return(NULL)
+  
+  stats$Sample <- factor(stats$Sample, levels = unique(stats$Sample))
   
   fill_colors <- if (color == "default") NULL else viridis(nrow(stats), option = color)
   
@@ -1595,6 +1597,8 @@ plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, 
         theme_void()
     )
   }
+  
+  combined$Sample <- factor(combined$Sample, levels = unique(combined$Sample))
   
   # Convert to factor and optionally reverse levels
   if (rev_levels) {
@@ -1762,7 +1766,8 @@ plot_violin <- function(lst, column, x_label = "Sample", y_label = NULL, title =
   }
   
   p %>% plotly::layout(
-    xaxis = list(title = x_label, tickangle = -45),
+    xaxis = list(title = x_label, tickangle = -45,
+                 categoryorder = "array", categoryarray = names(lst)),
     yaxis = list(title = y_label, range = y_range),
     showlegend = FALSE
   )
@@ -1818,6 +1823,8 @@ plot_length_distribution <- function(lst, color = "default") {
   
   samples <- unique(count_df$Sample)
   n <- length(samples)
+  
+  samples <- intersect(names(lst), unique(count_df$Sample))
   
   fig <- plot_ly()
   
@@ -1932,6 +1939,8 @@ plot_length_range_per_measurement <- function(lst, quantity_cols, lo = 8, hi = 1
   }))
   
   if (is.null(stats) || nrow(stats) == 0) return(NULL)
+  
+  stats$Sample <- factor(stats$Sample, levels = unique(stats$Sample)) 
   
   has_range <- any(!is.na(stats$Min) & stats$Min != stats$Max)
   fill_colors <- if (color == "default") NULL else viridis(nrow(stats), option = color)
@@ -3062,6 +3071,14 @@ plot_binders_plotly <- function(df, color = "default", percent = TRUE, alleles =
 }
 
 # --- per allele: stacked bars, one subplot panel per sample ---
+# plotly subplots 1st and last plots are alittle larger than the middle ones, thus we adjust it.
+subplot_heights <- function(n, end_scale = 0.85) {
+  if (n <= 1) return(1)
+  w <- rep(1, n)
+  w[c(1, n)] <- end_scale
+  w / sum(w)
+}
+
 plot_binders_per_allele_plotly <- function(df, color = "default", percent = TRUE,
                                            alleles = NULL,
                                            facet_by = c("sample", "allele")) {
@@ -3084,18 +3101,22 @@ plot_binders_per_allele_plotly <- function(df, color = "default", percent = TRUE
     dplyr::mutate(percent = if (sum(n) > 0) 100 * n / sum(n) else 0) %>%
     dplyr::ungroup()
   
+  long$Allele <- factor(long$Allele, levels = allele_cols)
+  
   # facet variable vs. y-axis category
   if (facet_by == "sample") { facet_col <- "Set";    cat_col <- "Allele" }
   else                      { facet_col <- "Allele"; cat_col <- "Set"    }
   
-  facets <- sort(unique(long[[facet_col]]))
+  facets <- levels(droplevels(long[[facet_col]])) 
   figs <- lapply(seq_along(facets), function(i)
     build_binder_stack(long[long[[facet_col]] == facets[i], , drop = FALSE],
                        catcol = cat_col, percent = percent, orientation = "h",
                        show_legend = (i == 1), title = facets[i]))
+  facets_ <<- facets
+  figs_ <<- figs
   
-  plotly::subplot(figs, nrows = length(figs), shareX = TRUE,
-                  titleY = FALSE, margin = 0.03)
+  plotly::subplot(figs_, nrows = length(figs_), shareX = TRUE, titleY = FALSE,
+                  heights = subplot_heights(length(figs_)))
 }
 
 ## --- shared: build one stacked-bar figure from a class-count data.frame ---
@@ -3128,7 +3149,10 @@ build_binder_stack <- function(d, catcol, percent = TRUE, show_legend = TRUE,
     }
   }
   
-  ax_cat <- list(title = "", tickangle = if (horiz) 0 else -45)
+  cat_order <- if (is.factor(d[[catcol]])) levels(droplevels(d[[catcol]])) else unique(d[[catcol]])
+  ax_cat <- list(title = "", tickangle = if (horiz) 0 else -45,
+                 categoryorder = "array", categoryarray = cat_order)
+  
   ax_val <- list(title = vtitle)
   p %>% plotly::layout(
     barmode = "stack",
