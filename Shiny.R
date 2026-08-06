@@ -41,32 +41,31 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   observe({
     if (startup_done()) return() #Since there is no reactive dependency, this observe only runs once anyway. But just in case.
-    #### --- WSL CHECK ---
-    wsl_ok <- tryCatch({
-      res <- system2("wsl", "--status", stdout = TRUE, stderr = TRUE)
-      !is.null(res)
-    }, error = function(e) FALSE)
-    wsl_available(wsl_ok)
-    message(paste0("WSL available: ", wsl_ok))
     
-    #### --- netMHCpan CHECK (only if WSL exists) ---
-    netmhcpan_ok <- FALSE
-    if (wsl_ok) {
-      netmhcpan_ok <- tryCatch({
-        # Use -o (ignore output) and check exit status
-        status <- system2(
-          "wsl",
-          c("test", "-x", shQuote(netmhcpan_path)),
-          stdout = FALSE,
-          stderr = FALSE
-        )
-        status == 0   # TRUE if executable exists
-      }, error = function(e) FALSE)
+    os <- Sys.info()[["sysname"]] 
+    
+    if (os == "Windows") {
+      #### --- WSL CHECK ---
+      wsl_ok <- tryCatch(!is.null(system2("wsl", "--status", stdout = TRUE, stderr = TRUE)),
+                         error = function(e) FALSE)
+      wsl_available(wsl_ok)
+      netmhcpan_use_wsl <<- TRUE
+      message("WSL available: ", wsl_ok)
+      
+      #### --- netMHCpan CHECK (via WSL) ---
+      netmhcpan_ok <- if (wsl_ok) tryCatch(
+        system2("wsl", c("test", "-x", shQuote(netmhcpan_path)), stdout = FALSE, stderr = FALSE) == 0,
+        error = function(e) FALSE) else FALSE
+    } else {
+      #### --- Linux / macOS: native, no WSL ---
+      wsl_available(NA)
+      netmhcpan_use_wsl <<- FALSE
+      netmhcpan_ok <- nzchar(Sys.which(netmhcpan_path)) ||
+        file.access(netmhcpan_path, mode = 1L) == 0
     }
     
     netmhcpan_available(netmhcpan_ok)
-    message(paste0("NetMHCpan available: ", netmhcpan_ok))
-    
+    message("Platform: ", os, " | netMHCpan available: ", netmhcpan_ok)
     startup_done(TRUE)
   })
   
@@ -2802,8 +2801,8 @@ shinyApp(
   server = function(input, output, session) {
     server(input, output, session, 
            #input_variable = test_annotation,
-           #input_variable = data_list2,
-           input_variable = preloaded_data[1:5],
+           input_variable = data_list2,
+           #input_variable = preloaded_data,
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 

@@ -11,11 +11,6 @@ if (!exists("EPITO_DB")) EPITO_DB <- "epitoscope_results.sqlite"
 
 .db_con <- function(path = EPITO_DB) DBI::dbConnect(RSQLite::SQLite(), path)
 
-local({
-  con <- .db_con(); on.exit(DBI::dbDisconnect(con))
-  ensure_condition_terms(con)
-  seed_condition_terms(con, "condition_seed.csv")
-})
 # ---------save analysis--------------
 save_analysis_to_db <- function(lst, meta_table, quantity_cols, col_map = NULL,
                                 spectra_cols = NULL, data_info = NULL, mod_map = NULL,
@@ -25,7 +20,6 @@ save_analysis_to_db <- function(lst, meta_table, quantity_cols, col_map = NULL,
   con <- .db_con(path); on.exit(DBI::dbDisconnect(con))
   aid <- paste0("A_", format(Sys.time(), "%Y%m%d_%H%M%S"))
   fp <- analysis_fingerprint(lst, quantity_cols, spectra_cols) #compute hash
-  saveRDS(lst, paste0("dump_", aid, ".rds"))
 
   ##---- analysis row ----
   analyses <- data.frame(analysis_id = aid, timestamp = as.character(Sys.time()),
@@ -483,3 +477,11 @@ reconstruct_data_info <- function(cmap) {
   }
   di
 }
+
+#----------source order problem-------------
+
+local({
+  con <- .db_con(); on.exit(DBI::dbDisconnect(con))
+  ensure_condition_terms(con)
+  seed_condition_terms(con, "condition_seed.csv")
+})

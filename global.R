@@ -3832,6 +3832,28 @@ run_netmhcpan <- function(peptides, allele, netmhcpan_path) {
   )
   status <- system2("wsl", c("bash", "--login", "-c", shQuote(cmd)), stdout = NULL)
   
+  if (isTRUE(netmhcpan_use_wsl)) {                 # <- reads the flag the observe set
+    peptide_p <- trimws(system2("wsl", c("wslpath","-a",shQuote(peptide_file)), stdout = TRUE))
+    out_p     <- trimws(system2("wsl", c("wslpath","-a",shQuote(output_file)),  stdout = TRUE))
+    cmd <- paste(
+      shQuote(netmhcpan_path), 
+      "-p", shQuote(peptide_p), 
+      "-a", shQuote(allele),
+      "-l 8,9,10,11", 
+      "-xls -xlsfile", 
+      shQuote(out_p))
+    status <- system2("wsl", c("bash", "--login", "-c", shQuote(cmd)), stdout = NULL)
+  } else {
+    status <- system2(netmhcpan_path,
+                      c("-p", peptide_file, 
+                        "-a", allele,
+                        "-l 8,9,10,11", 
+                        "-xls -xlsfile", 
+                        output_file), stdout = NULL)
+  }
+  
+  
+  
   if (status != 0)
     stop("netMHCpan exited with status ", status,
          ". Check that the path is correct and the executable exists: ", netmhcpan_path)
