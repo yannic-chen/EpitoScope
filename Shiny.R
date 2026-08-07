@@ -95,6 +95,22 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     ""
   })
   
+#------------------MHC setting---------------------  
+  binder_thresholds <- reactive({
+    s <- input$strong_cut; w <- input$weak_cut
+    list(strong = if (is.null(s) || is.na(s)) 0.5 else s,
+         weak   = if (is.null(w) || is.na(w)) 2   else w)
+  })
+  
+  observeEvent(input$mhc_class, {
+    req(input$mhc_class %in% c("I", "II"))
+    thr <- if (input$mhc_class == "II") c(2, 10) else c(0.5, 2)
+    updateNumericInput(session, "strong_cut", value = thr[1])
+    updateNumericInput(session, "weak_cut",   value = thr[2])
+    len <- if (input$mhc_class == "II") c(13, 25) else c(8, 11)
+    updateSliderInput(session, "length_pct_range", value = len)
+  }, ignoreInit = TRUE)
+  
 #------------------Data management-----------------
   ## Reactive dataset container
   raw_list_r <- reactiveVal(NULL) #this is the list of raw data
@@ -549,18 +565,21 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$length_range_percentage <- renderPlot({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "LENGTH", na_policy = "any")
+    rng <- if (is.null(input$mhc_length_range)) c(8, 13) else input$mhc_length_range
     lst <- lapply(lst, function(df) {
-      df$correct_range <- df$LENGTH >= 8 & df$LENGTH <= 13
+      df$correct_range <- df$LENGTH >= rng[1] & df$LENGTH <= rng[2]
       df
     })
-    plot_stacked_bar(lst, column = "correct_range", fill_label = "8-13mer", percentage = TRUE, color = input$color_palette)
+    plot_stacked_bar(lst, column = "correct_range", fill_label = paste0(rng[1],"-",rng[2],"mer"), percentage = TRUE, color = input$color_palette)
   })
   
   output$length_range_percentage_meas <- renderPlot({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "LENGTH", na_policy = "any")
     shiny::validate(shiny::need(length(default_quantity_cols_r()) > 0, "No QUANTITY columns found."))
-    plot_length_range_per_measurement(lst, default_quantity_cols_r(), color = input$color_palette)
+    rng <- if (is.null(input$mhc_length_range)) c(8, 13) else input$mhc_length_range
+    plot_length_range_per_measurement(lst, default_quantity_cols_r(), color = input$color_palette,
+                                      lo = rng[1], hi = rng[2])
   })
   
   ## ---- Other numeric columns on per measurement basis ----
@@ -2301,6 +2320,16 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     prediction_cache(cache)
   })
   
+  observeEvent(list(input$strong_cut, input$weak_cut), {
+    s <- input$strong_cut; w <- input$weak_cut
+    sel <- if      (isTRUE(s == 0.5 && w == 2))  "I"
+    else if (isTRUE(s == 2   && w == 10)) "II"
+    else    character(0)                       # custom -> no radio ticked
+    cur <- if (length(input$mhc_class)) input$mhc_class else character(0)
+    if (!identical(cur, sel))
+      updateRadioButtons(session, "mhc_class", selected = sel)
+  }, ignoreInit = TRUE)
+  
   output$allele_viz_selector_ui <- renderUI({
     df <- peptide_wide_unique()
     req(!is.null(df), ncol(df) > 1)
@@ -2370,7 +2399,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
     req(!is.null(peptide_wide_unique()))
-    compute_binder_summary(peptide_wide_unique(), alleles = input$allele_viz_select)
+    compute_binder_summary(peptide_wide_unique(), alleles = input$allele_viz_select, 
+                           strong = binder_thresholds()$strong, weak = binder_thresholds()$weak)
   })
   
   output$binding_summary <- DT::renderDT({
@@ -2413,12 +2443,13 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     if (view == "per_allele") {
       grp <- if (is.null(input$binding_group)) "sample" else input$binding_group
-      plot_binders_per_allele_plotly(peptide_wide_unique(), color = input$color_palette,
-                                     percent = percent, alleles = input$allele_viz_select,
-                                     facet_by = grp)
+      plot_binders_per_allele_plotly(peptide_wide_unique(), color = input$color_palette, percent = percent, 
+                                     alleles = input$allele_viz_select, facet_by = grp, 
+                                     strong = binder_thresholds()$strong, weak = binder_thresholds()$weak)
     } else {
       plot_binders_plotly(peptide_wide_unique(), color = input$color_palette,
-                          percent = percent, alleles = input$allele_viz_select)
+                          percent = percent, alleles = input$allele_viz_select,
+                          strong = binder_thresholds()$strong, weak = binder_thresholds()$weak)
     }
   })
   

@@ -73,18 +73,14 @@ ui <- bs4DashPage(
       navbarTab(
         text = "Consoles",
         dropdownHeader("Advanced functions"),
+        navbarTab(tabName = "advanced_settings", text = "Settings"),
         navbarTab(tabName = "dev_console", text = "Console"),
         dropdownDivider(),
         navbarTab(
           text = "SQL",
           navbarTab(tabName = "SQL_console", text = "Save/Load"),
           navbarTab(tabName = "SQL_query",   text = "Query SQL"),
-          navbarTab(tabName = "SQL_browser", text = "Browse SQL"),
-          navbarTab(
-            text = "Sub sub menu",
-            navbarTab(tabName = "Tab6", text = "Tab 6"),
-            navbarTab(tabName = "Tab7", text = "Tab 7")
-            )
+          navbarTab(tabName = "SQL_browser", text = "Browse SQL")
           )
         )
       )
@@ -194,6 +190,8 @@ ui <- bs4DashPage(
           
           ### ---- Length Range Percentage ----
           bs4Card(title = "Length Range Percentage", width = 12, maximizable = TRUE,
+                  sliderInput("mhc_length_range", "length window:", min = 5, max = 30,
+                              value = c(8, 13), step = 1),
                   tabsetPanel(
                     tabPanel("Per Sample",
                              plotOutput("length_range_percentage")
@@ -563,10 +561,6 @@ ui <- bs4DashPage(
       bs4TabItem(
         tabName = "binding_pred",  # must match menuItem
         fluidRow(
-          h6("Ensure correct format of the netMHCpan data. THis is now important with the implementation of netMHCpan call."),
-          h6("For the sake of filesize, Rank_EL has been limited to 2 decimal places and number have a ceiling of 9.99."),
-          h6("When 9.99 -> '', one allele adds around 48MB data (12MB per length)"),
-          
           ### ---- Call netMHCpan from windows subsystem for linux ----
           bs4Card(title = "run netMHCpan", width = 12, maximizable = TRUE,
                   selectizeInput(
@@ -578,7 +572,9 @@ ui <- bs4DashPage(
                     options  = list(placeholder = "Type to search alleles...")
                   ),
                   actionButton("run_netmhc", "Run netMHCpan"),
-                  textOutput("netmhc_status")
+                  textOutput("netmhc_status"),
+                  radioButtons("mhc_class", "Default thresholds:", c("MHC-I" = "I", "MHC-II" = "II"), selected = "I", inline = TRUE),
+                  h6("For custom cutoffs, go to Console \u2192 Settings.")
           ),
           
           ### ---- Allele selection ----
@@ -705,7 +701,24 @@ ui <- bs4DashPage(
                   verbatimTextOutput("console_output")
           )
         )
+      ),
+      
+      ## ---- Advanced settings ----
+      bs4TabItem(
+        tabName = "advanced_settings",
+        fluidRow(
+          bs4Card(title = "Binding thresholds", width = 6,
+                  numericInput("strong_cut", "Strong binder  %Rank \u2264", value = 0.5, min = 0, step = 0.1),
+                  numericInput("weak_cut",   "Weak binder  %Rank \u2264",   value = 2.0, min = 0, step = 0.1)
+          ),
+          bs4Card(title = "netMHCpan location", width = 6,
+                  textInput("netmhc_path_input", "netMHCpan path", value = ""),
+                  actionButton("netmhc_recheck", "Check", class = "btn-sm"),
+                  textOutput("netmhc_path_status")
+          )
+        )
       )
+      
       )
     )
   )

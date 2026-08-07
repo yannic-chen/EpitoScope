@@ -3046,7 +3046,7 @@ plot_pca_variance <- function(pca, max_pc = 10) {
 }
 
 # --- best across alleles: one bar per sample (min rank) ---
-plot_binders_plotly <- function(df, color = "default", percent = TRUE, alleles = NULL) {
+plot_binders_plotly <- function(df, color = "default", percent = TRUE, alleles = NULL, strong = 0.5, weak = 2) {
   allele_cols <- grep("^HLA", colnames(df), value = TRUE)
   if (!is.null(alleles) && length(alleles) > 0) allele_cols <- intersect(allele_cols, alleles)
   shiny::validate(shiny::need(length(allele_cols) > 0, "No alleles selected."))
@@ -3055,8 +3055,8 @@ plot_binders_plotly <- function(df, color = "default", percent = TRUE, alleles =
   d <- data.frame(Set = df$Set, min = minrank) %>%
     dplyr::mutate(class = dplyr::case_when(
       !is.finite(min) ~ "NA",          # all alleles unpredicted -> NA (see note)
-      min <= 0.5      ~ "Strong",
-      min <= 2        ~ "Weak",
+      min <= strong  ~ "Strong",
+      min <= weak    ~ "Weak",
       TRUE            ~ "Non-binder")) %>%
     dplyr::count(Set, class, name = "n") %>%
     dplyr::group_by(Set) %>% dplyr::mutate(percent = 100 * n / sum(n)) %>% dplyr::ungroup()
@@ -3073,9 +3073,8 @@ subplot_heights <- function(n, end_scale = 0.85) {
   w / sum(w)
 }
 
-plot_binders_per_allele_plotly <- function(df, color = "default", percent = TRUE,
-                                           alleles = NULL,
-                                           facet_by = c("sample", "allele")) {
+plot_binders_per_allele_plotly <- function(df, color = "default", percent = TRUE, alleles = NULL,
+                                           facet_by = c("sample", "allele"), strong = 0.5, weak = 2) {
   facet_by <- match.arg(facet_by)
   allele_cols <- grep("^HLA", colnames(df), value = TRUE)
   if (!is.null(alleles) && length(alleles) > 0) allele_cols <- intersect(allele_cols, alleles)
@@ -3086,8 +3085,8 @@ plot_binders_per_allele_plotly <- function(df, color = "default", percent = TRUE
                         names_to = "Allele", values_to = "Rank") %>%
     dplyr::mutate(class = dplyr::case_when(
       is.na(Rank) ~ "NA",
-      Rank <= 0.5 ~ "Strong",
-      Rank <= 2   ~ "Weak",
+      Rank <= strong ~ "Strong",
+      Rank <= weak   ~ "Weak",
       TRUE        ~ "Non-binder")) %>%
     dplyr::count(Set, Allele, class, name = "n") %>%
     tidyr::complete(Set, Allele, class, fill = list(n = 0)) %>%
@@ -3405,7 +3404,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
 
 
 #binding prediction summary
-compute_binder_summary <- function(df, alleles = NULL) {
+compute_binder_summary <- function(df, alleles = NULL, strong = 0.5, weak = 2) {
   allele_cols <- grep("^HLA", colnames(df), value = TRUE)
   if (!is.null(alleles) && length(alleles) > 0){
     allele_cols <- intersect(allele_cols, alleles)
@@ -3416,8 +3415,8 @@ compute_binder_summary <- function(df, alleles = NULL) {
     dplyr::mutate(
       Class = dplyr::case_when(
         is.na(Rank) ~ "Missing",
-        Rank <= 0.5 ~ "Strong",
-        Rank <= 2   ~ "Weak",
+        Rank <= strong ~ "Strong",
+        Rank <= weak   ~ "Weak",
         TRUE        ~ "Non"
       ),
       Class = factor(Class, levels = c("Strong", "Weak", "Non", "Missing"))
