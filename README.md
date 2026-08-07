@@ -13,8 +13,8 @@ Task List
 - [X] Overhaul the HTML report and update the report generation function.
 - [X] Make Sequence motif (stretches too much for only 1 sample) and measurement specific heatmap plots format better.
 - [ ] clearly separate, and if needed add option, between peptide and peptidoform plots.
-- [ ] Solve the automatic ordering of categorical data by ggplot.
-- [ ] Prevent filtering criteria reset when selecting/deselecting samples. Likewise the groups for the grouped analysis.
+- [X] Solve the automatic ordering of categorical data by ggplot.
+- [X] Prevent filtering criteria reset when selecting/deselecting samples. Likewise the groups for the grouped analysis.
 - [X] Change functions to pkg::fun() style (i.e. dplyr::mutate()). This avoids future function masking.
 - [X] ~Decouple data calculations and plotting function, so that when changing window size only the plotting function is rerun and not the whole calculation~. Switch to plotly, which automates this
 - [X] Have a better way to separate PROTEIN names for different input formats.
@@ -24,7 +24,7 @@ Task List
 - [ ] Make the precomputed data more efficient. Parquet for reading and merge the different length together, by using the first # letters for each max_length peptide as the #mer peptide.
 - [X] Limit HLA allele for binding prediction, so the plots and stats only incorporate relevant HLA and not everything.
 - [X] MHC prediction supports all alleles that netMHCpan supports, but visualization only uses "HLA" prefix to find the necessary columns.
-- [ ] Support netMHCpan calling for linux and mac.
+- [X] Support netMHCpan calling for linux and mac.
 - [ ] Add option of different binding prediction binder threshold (e.g. for HLA2)
 - [X] Add more plots to binding prediction to better mimic MhcVizPip
 - [X] Decide on how to download the binding Data.

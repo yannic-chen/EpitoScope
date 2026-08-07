@@ -1270,21 +1270,16 @@ apply_filters <- function(lst, filters) {
 # @param label      Display label (can be tagList with icon)
 # @param step       Slider step (default NULL = continuous)
 # @return           sliderInput widget or a styled error div
-make_range_slider_ui <- function(lst, col, input_id, label, step = NULL, digits = NULL) {
+make_range_slider_ui <- function(lst, col, input_id, label, step = NULL, digits = NULL, current = NULL) {
   if (is.null(lst) || !any(sapply(lst, function(df) col %in% colnames(df)))) {
-    return(tags$div(
-      style = "color: #b30000; font-style: italic;",
-      paste0("No ", col, " column in data.")
-    ))
+    return(tags$div(style = "color: #b30000; font-style: italic;",
+                    paste0("No ", col, " column in data.")))
   }
   
   min_val <- min(sapply(lst, function(df) if (col %in% names(df)) min(df[[col]], na.rm = TRUE) else Inf),  na.rm = TRUE)
   max_val <- max(sapply(lst, function(df) if (col %in% names(df)) max(df[[col]], na.rm = TRUE) else -Inf), na.rm = TRUE)
   
-  # Guard against degenerate range (e.g. single unique value)
-  if (!is.finite(min_val) || !is.finite(max_val) || min_val == max_val) {
-    max_val <- min_val + 1
-  }
+  if (!is.finite(min_val) || !is.finite(max_val) || min_val == max_val) max_val <- min_val + 1
   
   if (!is.null(digits)) {
     min_val <- floor(min_val * 10^digits) / 10^digits
@@ -1292,11 +1287,10 @@ make_range_slider_ui <- function(lst, col, input_id, label, step = NULL, digits 
     if (is.null(step)) step <- 10^(-digits)
   }
   
-  sliderInput(input_id, label,
-              min   = min_val,
-              max   = max_val,
-              value = c(min_val, max_val),
-              step  = step)
+  # preserve the user's current selection across re-renders, clamped to the new range
+  val <- if (length(current) == 2) pmin(pmax(current, min_val), max_val) else c(min_val, max_val)
+  
+  sliderInput(input_id, label, min = min_val, max = max_val, value = val, step = step)
 }
 
 #This is for creating a matrix used for the group-based peptide heatmap

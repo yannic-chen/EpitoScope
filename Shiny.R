@@ -302,7 +302,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   # Add delayed reaction
   filter_inputs <- reactive({
     list(
-      samples               = input$selected_samples,
       length_range          = input$length_range,
       quantity_range        = input$quantity_range,
       score_range           = input$score_range,
@@ -340,12 +339,12 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     apply_filters(lst, filters)
   })
   
-  output$length_slider_ui   <- renderUI({ make_range_slider_ui(active_data_list(), "LENGTH",       "length_range",   tagList(icon("ruler-horizontal"), "Filter by Length:"),   step = 1) })
-  output$quantity_slider_ui <- renderUI({ make_range_slider_ui(active_data_list(), "MAX_QUANTITY", "quantity_range", "Filter by Max Quantity:",                                step = 1) })
-  output$score_slider_ui    <- renderUI({ make_range_slider_ui(active_data_list(), "SCORE",        "score_range",    "Filter by Score:") })
-  output$charge_slider_ui   <- renderUI({ make_range_slider_ui(active_data_list(), "CHARGE",       "charge_range",   "Filter by Charge:",                                     step = 1) })
-  output$mass_slider_ui     <- renderUI({ make_range_slider_ui(active_data_list(), "MASS",         "mass_range",     "Filter by Mass:",                                       digits = 2) })
-  output$RT_slider_ui       <- renderUI({ make_range_slider_ui(active_data_list(), "RT",           "RT_range",       "Filter by RT:",                                         digits = 2) })
+  output$length_slider_ui   <- renderUI({ make_range_slider_ui(data_list_r(), "LENGTH",       "length_range",   tagList(icon("ruler-horizontal"), "Filter by Length:"),   step = 1, current = isolate(input$length_range)) })
+  output$quantity_slider_ui <- renderUI({ make_range_slider_ui(data_list_r(), "MAX_QUANTITY", "quantity_range", "Filter by Max Quantity:",                                step = 1, current = isolate(input$quantity_range)) })
+  output$score_slider_ui    <- renderUI({ make_range_slider_ui(data_list_r(), "SCORE",        "score_range",    "Filter by Score:", current = isolate(input$score_range)) })
+  output$charge_slider_ui   <- renderUI({ make_range_slider_ui(data_list_r(), "CHARGE",       "charge_range",   "Filter by Charge:",                                     step = 1, current = isolate(input$charge_range)) })
+  output$mass_slider_ui     <- renderUI({ make_range_slider_ui(data_list_r(), "MASS",         "mass_range",     "Filter by Mass:",                                       digits = 2, current = isolate(input$mass_range)) })
+  output$RT_slider_ui       <- renderUI({ make_range_slider_ui(data_list_r(), "RT",           "RT_range",       "Filter by RT:",                                         digits = 2, current = isolate(input$RT_range)) })
   
   
   observeEvent(input$generate_report, {
@@ -1299,12 +1298,20 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   #Manually select samples to group
   output$manual_group_selector_ui <- renderUI({
     req(names(active_data_list()))
-    n <- input$n_groups
+    n       <- input$n_groups
+    samples <- names(active_data_list())
+    
     tagList(lapply(seq_len(n), function(i) {
+      prev_name <- isolate(input[[paste0("group_name_", i)]])
+      prev_sel  <- isolate(input[[paste0("group_", i)]])
+      
       tagList(
-        textInput(paste0("group_name_", i), paste("Group", i, "name"), paste("Group", i)),
+        textInput(paste0("group_name_", i), paste("Group", i, "name"),
+                  value = if (is.null(prev_name) || !nzchar(prev_name)) paste("Group", i) else prev_name),
         selectInput(paste0("group_", i), paste("Select samples for Group", i),
-                    choices = names(active_data_list()), multiple = TRUE),
+                    choices  = samples,
+                    selected = intersect(prev_sel, samples),
+                    multiple = TRUE),
         tags$hr()
       )
     }))
