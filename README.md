@@ -19,13 +19,13 @@ Task List
 - [X] ~Decouple data calculations and plotting function, so that when changing window size only the plotting function is rerun and not the whole calculation~. Switch to plotly, which automates this
 - [X] Have a better way to separate PROTEIN names for different input formats.
 - [ ] How to do NA handling for PCA plot. Sometimes user-input data is biologically too different for imputation.
-- [ ] Unify PTM nomenclature between output. Translate mass difference to PTM.
+- [X] Unify PTM nomenclature between output. Translate mass difference to PTM.
 - [ ] Double check netmHCpan precomputed data, if it indeed analysed all possible peptides.
 - [ ] Make the precomputed data more efficient. Parquet for reading and merge the different length together, by using the first # letters for each max_length peptide as the #mer peptide.
 - [X] Limit HLA allele for binding prediction, so the plots and stats only incorporate relevant HLA and not everything.
 - [X] MHC prediction supports all alleles that netMHCpan supports, but visualization only uses "HLA" prefix to find the necessary columns.
 - [X] Support netMHCpan calling for linux and mac.
-- [ ] Add option of different binding prediction binder threshold (e.g. for HLA2)
+- [X] Add option of different binding prediction binder threshold (e.g. for HLA2)
 - [X] Add more plots to binding prediction to better mimic MhcVizPip
 - [X] Decide on how to download the binding Data.
 - [ ] GO-term more transparency on protein names used
@@ -45,7 +45,7 @@ Task List
 - [ ] Allow the measurement decoupling from sample, so each measurement is its own sample or group the measuremuents by condition or replicate.
 
 ### Maybe?
-- [ ] Flexible Length Range Percentage plot for MHC2 and perhaps other species
+- [X] Flexible Length Range Percentage plot for MHC2 and perhaps other species
 - [ ] Call GibbsCluster from WSL or mix MHCpred for allele preidtion. Otherwise pre-generated database would also be ok fine.
 - [X] Calculate theoretical mass if m/z is not available, but mass and charge are
 - [ ] UI for data loading

@@ -1,0 +1,19 @@
+field_name,value
+condition,Tumor
+condition,Normal
+condition,Healthy
+condition,Control
+tissue,Lung
+tissue,Liver
+tissue,Skin
+tissue,Blood
+tissue,Brain
+cell_line,HeLa
+cell_line,K562
+cell_line,A375
+cell_line,JY
+instrument,timsTOF Pro
+instrument,timsTOF SCP
+instrument,Orbitrap Fusion Lumos
+instrument,Orbitrap Exploris 480
+instrument,Orbitrap Astral

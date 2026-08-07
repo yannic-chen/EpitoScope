@@ -1,0 +1,14 @@
+name,mass,unimod,residue
+Carbamidomethyl,57.021464,4,C
+Oxidation,15.994915,35,M
+Acetyl,42.010565,1,
+Phospho,79.966331,21,
+Deamidated,0.984016,7,
+Methyl,14.015650,34,
+Dimethyl,28.031300,36,
+Trimethyl,42.046950,37,
+GlyGly,114.042927,121,K
+Gln->pyro-Glu,-17.026549,28,Q
+Glu->pyro-Glu,-18.010565,27,E
+Formyl,27.994915,122,
+Amidated,-0.984016,2,

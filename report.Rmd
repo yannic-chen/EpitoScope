@@ -25,6 +25,8 @@ params:
   cluster_mode_ea:     "sample"
   binder_summary_all:  NULL
   binder_unique:       NULL
+  binder_strong:       0.5
+  binder_weak:         2
   group_list:          NULL
   group_comp_data:     NULL
   annotation_table:    NULL
@@ -257,6 +259,8 @@ cluster_mode_ea <- params$cluster_mode_ea
 color_palette   <- params$color_palette
 binder_summary_all <- params$binder_summary_all
 binder_unique   <- params$binder_unique
+binder_strong      <- params$binder_strong
+binder_weak        <- params$binder_weak
 group_list      <- params$group_list
 group_comp_stats <- params$group_comp_data
 min_presence_fraction <- params$filters$min_presence_fraction
@@ -334,7 +338,9 @@ filter_df <- do.call(rbind, Filter(Negate(is.null), list(
   make_row("Charge range",   f$charge_range),
   make_row("Mass range",     f$mass_range),
   make_row("RT range",       f$RT_range),
-  make_row("min_presence_fraction",       f$min_presence_fraction)
+  make_row("min_presence_fraction",       f$min_presence_fraction),
+  make_row("Strong binder %Rank \u2264", params$binder_strong),
+  make_row("Weak binder %Rank \u2264",   params$binder_weak)
 )))
 
 knitr::kable(filter_df, row.names = FALSE)
@@ -1056,9 +1062,6 @@ if (is.null(ptm_mod_map) || length(ptm_mod_map) == 0 || all(is.na(ptm_mod_map)))
 ```
 
 # Binding {.tabset}
-
-WIP: For speed sake, binder data is directly obtained rather than recalculated. As such, it needs to reactively update for the updated data to make it to this report.
-
 ## Binding Summary
 
 ```{r Binding_summary}
@@ -1079,7 +1082,7 @@ if (!is.null(binder_summary_all)) {
 ```{r Binding_barchart_abs}
 incProgress(1/chunk_num, detail = "Binding Barchart Absolute...")
 if (!is.null(binder_unique)) {
-  plot_binders_plotly(binder_unique, color = color_palette, percent = FALSE)
+  plot_binders_plotly(binder_unique, color = color_palette, percent = FALSE, strong = binder_strong, weak = binder_weak)
 } else { cat("no binding data") }
 ```
 
@@ -1088,7 +1091,7 @@ if (!is.null(binder_unique)) {
 ```{r Binding_barchart_perc}
 incProgress(1/chunk_num, detail = "Binding Barchart Percent...")
 if (!is.null(binder_unique)) {
-  plot_binders_plotly(binder_unique, color = color_palette, percent = TRUE)
+  plot_binders_plotly(binder_unique, color = color_palette, percent = TRUE, strong = binder_strong, weak = binder_weak)
 } else { cat("no binding data") }
 ```
 

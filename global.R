@@ -74,6 +74,25 @@ if (requireNamespace("fastcluster", quietly = TRUE)) {
   hclust_fn <- stats::hclust
 }
 
+.PTM_FALLBACK <- data.frame(
+  name   = c("Carbamidomethyl","Oxidation","Acetyl","Phospho","Deamidated"),
+  mass   = c(57.021464, 15.994915, 42.010565, 79.966331, 0.984016),
+  unimod = c(4, 35, 1, 21, 7),
+  residue = c("C","M","","",""),
+  stringsAsFactors = FALSE)
+
+load_ptm_ref <- function(path = "ptm_reference.csv") {
+  if (!file.exists(path)) return(.PTM_FALLBACK)
+  ref <- tryCatch(utils::read.csv(path, stringsAsFactors = FALSE), error = function(e) NULL)
+  if (is.null(ref) || !all(c("name","mass") %in% names(ref))) return(.PTM_FALLBACK)
+  ref$mass   <- suppressWarnings(as.numeric(ref$mass))
+  if (!"unimod"  %in% names(ref)) ref$unimod  <- NA_integer_
+  if (!"residue" %in% names(ref)) ref$residue <- ""
+  ref[!is.na(ref$mass), , drop = FALSE]           # drop rows with unparseable mass
+}
+
+PTM_REF <- load_ptm_ref()
+
 #-----------Column extraction------------
 # Here we initiate all the possible column names important for us from all different input formats
 # QUANTITY and SPECTRA values are treated as column name string to be searchs, since one column exists for each measurement in the sample.
@@ -246,6 +265,81 @@ safe_draw <- function(ht, ...) {
   )
 }
 
+.mod_mass <- function(token) {
+  m <- regmatches(token, regexpr("[-+]?[0-9]+\\.?[0-9]*", token))
+  if (!length(m)) return(NA_real_)
+  as.numeric(m)
+}
+.mod_unimod <- function(token) {
+  m <- regmatches(token, regexpr("(?<=UniMod:)[0-9]+", token, perl = TRUE))
+  if (!length(m)) return(NA_integer_) else as.integer(m)
+}
+.mod_residue <- function(token) {
+  r <- regmatches(token, regexpr("[A-Za-z]", token))
+  if (length(r)) r[1] else ""
+}
+canonicalize_mod <- function(token, ref = PTM_REF, tol = 0.005) {
+  uid <- .mod_unimod(token)
+  if (!is.na(uid)) {
+    h <- which(ref$unimod == uid)
+    if (length(h)) return(ref$name[h[1]])
+    return(paste0("UniMod:", uid))          # <- unknown UniMod: preserve the ID, do NOT parse as mass
+  } 
+  mass <- .mod_mass(token); if (is.na(mass)) return(token)
+  res  <- .mod_residue(token)
+  cand <- which(abs(ref$mass - mass) <= tol)
+  
+  if (!length(cand))       return(sprintf("%+.4f", mass))
+  if (length(cand) == 1)   return(ref$name[cand])
+  # isobaric: disambiguate by residue; if still ambiguous, keep the mass (don't guess)
+  rm <- cand[nzchar(ref$residue[cand]) & ref$residue[cand] == res]
+  if (length(rm)) ref$name[rm[1]] else sprintf("%+.4f", mass)
+}
+
+normalize_peptidoform <- function(seq, ref = PTM_REF) {
+  if (is.na(seq) || !nzchar(seq)) return(seq)
+  out <- character(0); rest <- seq
+  take <- function(p) { r <- regmatches(rest, regexpr(p, rest)); if (length(r)) r else "" }
+  while (nchar(rest) > 0) {
+    # N-term mass:  n[42.0106]A
+    if (nzchar(m <- take("^n\\[[-0-9.]+\\][A-Z]"))) {
+      res <- substr(m, nchar(m), nchar(m))
+      out <- c(out, paste0("n(", canonicalize_mod(sub("[A-Z]$","",m), ref), ")", res))
+      rest <- substr(rest, nchar(m)+1, nchar(rest)); next }
+    # N-term UniMod prefix:  (UniMod:1)A
+    if (nzchar(m <- take("^\\(UniMod:[0-9]+\\)[A-Z]"))) {
+      res <- substr(m, nchar(m), nchar(m))
+      out <- c(out, paste0("n(", canonicalize_mod(sub("[A-Z]$","",m), ref), ")", res))
+      rest <- substr(rest, nchar(m)+1, nchar(rest)); next }
+    # residue + mass bracket:  M[15.9949]
+    if (nzchar(m <- take("^[A-Z]\\[[-0-9.]+\\]"))) {
+      out <- c(out, paste0(substr(m,1,1), "(", canonicalize_mod(m, ref), ")"))
+      rest <- substr(rest, nchar(m)+1, nchar(rest)); next }
+    # residue + (+mass):  M(+15.9949)
+    if (nzchar(m <- take("^[A-Z]\\(\\+?[-0-9.]+\\)"))) {
+      out <- c(out, paste0(substr(m,1,1), "(", canonicalize_mod(m, ref), ")"))
+      rest <- substr(rest, nchar(m)+1, nchar(rest)); next }
+    # residue + UniMod:  M(UniMod:35)
+    if (nzchar(m <- take("^[A-Z]\\(UniMod:[0-9]+\\)"))) {
+      out <- c(out, paste0(substr(m,1,1), "(", canonicalize_mod(m, ref), ")"))
+      rest <- substr(rest, nchar(m)+1, nchar(rest)); next }
+    # already-canonical named form (LAST, so it doesn't swallow UniMod):  M(Oxidation)
+    if (nzchar(m <- take("^[A-Z]\\([A-Za-z][^)]*\\)"))) {
+      out <- c(out, m); rest <- substr(rest, nchar(m)+1, nchar(rest)); next }
+    # plain residue
+    out <- c(out, substr(rest, 1, 1)); rest <- substr(rest, 2, nchar(rest))
+  }
+  paste0(out, collapse = "")
+}
+
+ptm_summary <- function(seq) {
+  if (is.na(seq) || !nzchar(seq)) return(NA_character_)
+  m <- regmatches(seq, gregexpr("\\(([^)]*)\\)", seq))[[1]]
+  if (!length(m)) return(NA_character_)
+  nm <- gsub("[()]", "", m)
+  paste(sort(unique(nm)), collapse = ";")
+}
+
 remove_ptms <- function(x) {
   gsub("\\(.*?\\)|\\[.*?\\]|\\{.*?\\}", "", x)
 }
@@ -283,36 +377,32 @@ convert_with_mod_map <- function(sequences, mod_map) {
 
 extract_mod_tokens <- function(sequences) {
   tokens <- character(0)
-  
   for (seq in sequences) {
     rest <- seq
     while (nchar(rest) > 0) {
       
+      # canonical named form (post-normalization):  M(Oxidation), C(Carbamidomethyl), E(Glu->pyro-Glu)
+      if (grepl("^[A-Z]\\([A-Za-z][^)]*\\)", rest)) {
+        token <- regmatches(rest, regexpr("^[A-Z]\\([A-Za-z][^)]*\\)", rest))
+        tokens <- c(tokens, token); rest <- substr(rest, nchar(token) + 1, nchar(rest)); next
+      }
+      # (keep the raw mass patterns too, so it still works on un-normalized input)
       if (grepl("^n\\[[0-9.]+\\][A-Z]", rest)) {
         token <- regmatches(rest, regexpr("^n\\[[0-9.]+\\][A-Z]", rest))
-        tokens <- c(tokens, token)
-        rest <- substr(rest, nchar(token) + 1, nchar(rest))
-        next
+        tokens <- c(tokens, token); rest <- substr(rest, nchar(token)+1, nchar(rest)); next
       }
-      
       if (grepl("^[A-Z]\\[[0-9.]+\\]", rest)) {
         token <- regmatches(rest, regexpr("^[A-Z]\\[[0-9.]+\\]", rest))
-        tokens <- c(tokens, token)
-        rest <- substr(rest, nchar(token) + 1, nchar(rest))
-        next
+        tokens <- c(tokens, token); rest <- substr(rest, nchar(token)+1, nchar(rest)); next
       }
-      
       if (grepl("^[A-Z]\\(\\+[0-9.]+\\)", rest)) {
         token <- regmatches(rest, regexpr("^[A-Z]\\(\\+[0-9.]+\\)", rest))
-        tokens <- c(tokens, token)
-        rest <- substr(rest, nchar(token) + 1, nchar(rest))
-        next
+        tokens <- c(tokens, token); rest <- substr(rest, nchar(token)+1, nchar(rest)); next
       }
       
       rest <- substr(rest, 2, nchar(rest))
     }
   }
-  
   unique(tokens)
 }
 
@@ -1105,7 +1195,12 @@ normalize_df <- function(df) {
     df$PEPTIDE <- df$STRIPPED
     message("Peptidoform column missing: STRIPPED → PEPTIDE")
     original <- rbind(original, data.frame(final_name = "PEPTIDE", original_name = "[= STRIPPED]", stringsAsFactors = FALSE))
-    }
+  } else {
+    uniq <- unique(df$PEPTIDE)
+    df$PEPTIDE  <- unname(setNames(vapply(uniq, normalize_peptidoform, character(1)), uniq)[df$PEPTIDE])
+    uniqN <- unique(df$PEPTIDE)
+    df$PTM <- unname(setNames(vapply(uniqN, ptm_summary, character(1)), uniqN)[df$PEPTIDE]) #always generate, even if exists. This keeps our normalized format.
+  }
   #LENGTH
   if (!"LENGTH" %in% colnames(df)) {
     df$LENGTH <- nchar(df$STRIPPED)
@@ -1211,7 +1306,7 @@ normalize_df <- function(df) {
     dplyr::filter(!is.na(original_name)) %>%
     dplyr::filter(purrr::map_lgl(final_name, ~ is.character(.x) && length(.x) == 1)) %>% #This removes entries where the original column names are a list of strings. These are added separately.
     dplyr::pull(final_name)
-  keep_cols <- c(keep_cols, colnames(df)[sample], colnames(df)[spec], "STRIPPED", "MAX_QUANTITY")
+  keep_cols <- c(keep_cols, colnames(df)[sample], colnames(df)[spec], "STRIPPED", "MAX_QUANTITY", "PTM")
   
   #Now we can prepare the summary table since we have the columns to keep.
   original <- original %>% dplyr::mutate(coalesced = do.call(coalesce, across(-1))) %>% dplyr::select(1, coalesced) %>% dplyr::group_by(final_name) %>% dplyr::summarise(coalesced_list = list(coalesced), .groups = "drop")

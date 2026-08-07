@@ -400,6 +400,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
             upset_n_intersect = input$upset_n_intersect,
             binder_summary_all = safe_reactive(binder_summary_all),
             binder_unique = safe_reactive(peptide_wide_unique),
+            binder_strong = binder_thresholds()$strong,
+            binder_weak   = binder_thresholds()$weak,
             group_list = safe_reactive(group_list),
             group_comp_data = safe_reactive(group_comp_data),
             col_map = safe_reactive(measurement_col_map_r),
