@@ -1,5 +1,4 @@
 *.txt
-*.csv
 *.RData
 *.RDataTmp
 *.Rhistory
@@ -13,3 +12,15 @@ uniprot_cache
 Rplot001.jpg
 epitoscope_results.sqlite
 .RDataTmp1
+report.Rmd
+11mer_netMHCpan4.2_human_20586_2023-6-29_minimal.csv
+11mer_netMHCpan4.2_human_20586_2023-6-29.csv
+10mer_netMHCpan4.2_human_20586_2023-6-29.csv
+10mer_netMHCpan4.2_human_20586_2023-6-29_minimal.csv
+8mer_netMHCpan4.2_human_20586_2023-6-29.csv
+8mer_netMHCpan4.2_human_20586_2023-6-29_minimal.csv
+9mer_netMHCpan4.2_human_20586_2023-6-29_minimal.csv
+9mer_netMHCpan4.2_human_20586_2023-6-29.csv
+test_annotation.csv
+test_annotation3.csv
+test_annotation2.csv
