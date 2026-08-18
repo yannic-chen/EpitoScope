@@ -415,6 +415,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
             upset_min_size    = input$upset_min_size,
             upset_min_degree  = input$upset_min_degree,
             upset_n_intersect = input$upset_n_intersect,
+            mhc_length_range = input$mhc_length_range,
             binder_summary_all = safe_reactive(binder_summary_all),
             binder_unique = safe_reactive(peptide_wide_unique),
             binder_strong = binder_thresholds()$strong,

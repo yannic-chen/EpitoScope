@@ -34,6 +34,7 @@ params:
   upset_min_size:    2
   upset_min_degree:  1
   upset_n_intersect: 40
+  mhc_length_range: [8, 13]
   default_quantity_cols_r: NULL
   dynrange_prot_query: ""
   dynrange_pep_query: ""
@@ -270,6 +271,7 @@ col_map <- params$col_map
 upset_min_size    <- params$upset_min_size
 upset_min_degree  <- params$upset_min_degree
 upset_n_intersect <- params$upset_n_intersect
+mhc_length_range <- params$mhc_length_range
 default_quantity_cols_r <- params$default_quantity_cols_r
 
 motif_plot_length <- 7:13 # should be the same as in Shiny.R
@@ -445,11 +447,12 @@ plot_length_distribution(processed_list, color = color_palette)
 
 ```{r Length_dist_sample}
 incProgress(1/chunk_num, detail = "Peptide length distribution per sample...")
+rng <- mhc_length_range
     lst <- lapply(processed_list, function(df) {
-      df$correct_range <- df$LENGTH >= 8 & df$LENGTH <= 13
+      df$correct_range <- df$LENGTH >= rng[1] & df$LENGTH <= rng[2]
       df
     })
-plot_stacked_bar(lst, column = "correct_range", fill_label = "8-13mer", percentage = TRUE, color = color_palette)
+plot_stacked_bar(lst, column = "correct_range", fill_label = paste0(rng[1],"-",rng[2],"mer"), percentage = TRUE, color = color_palette, rev_levels = FALSE)
 ```
 
 ### Per Measurement
@@ -606,13 +609,22 @@ dynamic_range_static(processed_list, data_col = "MAX_QUANTITY", ncol = 3,
                      pep_query  = params$dynrange_pep_query)
 ```
 
-### Combined
+### Combined {.tabset}
 
-```{r dynrange_combined}
-incProgress(1/chunk_num, detail = "Dynamic Range Combined...")
+#### Absolute
+```{r dynrange_combined_Absolute}
+incProgress(1/chunk_num, detail = "Dynamic Range Combined (Absolute)...")
 dynamic_range_combined_static(processed_list, data_col = "MAX_QUANTITY", color = color_palette,
                               prot_query = params$dynrange_prot_query,
                               pep_query  = params$dynrange_pep_query)
+```
+
+#### Relative
+```{r dynrange_combined_Relative}
+incProgress(1/chunk_num, detail = "Dynamic Range Combined (Relative)...")
+dynamic_range_combined_static(processed_list, data_col = "MAX_QUANTITY", color = color_palette,
+                              prot_query = params$dynrange_prot_query,
+                              pep_query  = params$dynrange_pep_query, relative = TRUE)
 ```
 
 ## 1/k0 vs m/z
@@ -823,10 +835,10 @@ if (!is.null(group_list) && length(group_list) > 0) {
 }
 ```
 
-## Group based Venn Diagram
+## Group based Euler Diagram
 
 ```{r Group_Venn}
-incProgress(1/chunk_num, detail = "Group Venn Diagram...")
+incProgress(1/chunk_num, detail = "Group Euler Diagram...")
 if (!is.null(group_list)) {
   lst <- processed_list
   groups <- group_list
@@ -868,7 +880,7 @@ if (!is.null(group_list)) {
     ])
   }) |> setNames(names(groups))
 
-  group_venn_plotting(group_peptide_sets, color = color_palette)
+  group_euler_plot(group_peptide_sets, color = color_palette)
 } else {
   cat("no Groups defined")
 }
@@ -1104,9 +1116,12 @@ incProgress(1/chunk_num, detail = "Per-allele (sample, absolute)...")
 if (!is.null(binder_unique)) {
   n_all  <- length(grep("^HLA", colnames(binder_unique), value = TRUE))
   n_samp <- length(unique(binder_unique$Set))
-  plot_binders_per_allele_plotly(binder_unique, color = color_palette,
+  h      <- n_samp * max(140, n_all * 30 + 70)
+  p <- plot_binders_per_allele_plotly(binder_unique, color = color_palette,
                                  percent = FALSE, facet_by = "sample") %>%
     plotly::layout(height = n_samp * max(140, n_all * 30 + 70))
+  p$height <- h
+  p
 } else { cat("no binding data") }
 ```
 
@@ -1117,9 +1132,13 @@ incProgress(1/chunk_num, detail = "Per-allele (sample, percentage)...")
 if (!is.null(binder_unique)) {
   n_all  <- length(grep("^HLA", colnames(binder_unique), value = TRUE))
   n_samp <- length(unique(binder_unique$Set))
-  plot_binders_per_allele_plotly(binder_unique, color = color_palette,
+  h      <- n_samp * max(140, n_all * 30 + 70)
+  p <- plot_binders_per_allele_plotly(binder_unique, color = color_palette,
                                  percent = TRUE, facet_by = "sample") %>%
     plotly::layout(height = n_samp * max(140, n_all * 30 + 70))
+  
+  p$height <- h
+  p
 } else { cat("no binding data") }
 ```
 
@@ -1130,9 +1149,12 @@ incProgress(1/chunk_num, detail = "Per-allele (allele, absolute)...")
 if (!is.null(binder_unique)) {
   n_all  <- length(grep("^HLA", colnames(binder_unique), value = TRUE))
   n_samp <- length(unique(binder_unique$Set))
-  plot_binders_per_allele_plotly(binder_unique, color = color_palette,
+  h      <- n_samp * max(140, n_all * 30 + 70)
+  p <- plot_binders_per_allele_plotly(binder_unique, color = color_palette,
                                  percent = FALSE, facet_by = "allele") %>%
     plotly::layout(height = n_all * max(140, n_samp * 30 + 70))
+  p$height <- h
+  p
 } else { cat("no binding data") }
 ```
 
@@ -1143,9 +1165,12 @@ incProgress(1/chunk_num, detail = "Per-allele (allele, percentage)...")
 if (!is.null(binder_unique)) {
   n_all  <- length(grep("^HLA", colnames(binder_unique), value = TRUE))
   n_samp <- length(unique(binder_unique$Set))
-  plot_binders_per_allele_plotly(binder_unique, color = color_palette,
+  h      <- n_samp * max(140, n_all * 30 + 70)
+  p <- plot_binders_per_allele_plotly(binder_unique, color = color_palette,
                                  percent = TRUE, facet_by = "allele") %>%
     plotly::layout(height = n_all * max(140, n_samp * 30 + 70))
+  p$height <- h
+  p
 } else { cat("no binding data") }
 ```
 

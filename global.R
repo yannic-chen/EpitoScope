@@ -2602,12 +2602,24 @@ dynamic_range_static <- function(lst, data_col = "MAX_QUANTITY", ncol = 3,
 }
 
 dynamic_range_combined_static <- function(df_list, data_col = "MAX_QUANTITY", color = "default",
-                                          prot_query = "", pep_query = "") {
+                                          prot_query = "", pep_query = "", relative = FALSE) {
   prot_query <- if (is.null(prot_query)) "" else trimws(prot_query)
   pep_query  <- if (is.null(pep_query))  "" else trimws(pep_query)
   df <- dplyr::bind_rows(lapply(names(df_list), function(s) {
     r <- .dr_prep(df_list[[s]], data_col); if (is.null(r)) return(NULL); r$Sample <- s; r }))
   if (is.null(df) || !nrow(df)) return(ggplot() + theme_void())
+  
+  if (relative) { 
+    df <- df %>% 
+      dplyr::group_by(Sample) %>% 
+      dplyr::mutate( X = Rank / max(Rank) * 100 ) %>% 
+      dplyr::ungroup() 
+    x_label <- "Relative Rank (%)" 
+  } else { 
+        df$X <- df$Rank 
+        x_label <- "Rank" 
+        }
+  
   df$hl  <- .dr_hits(df, prot_query, pep_query)
   hits   <- df[!is.na(df$hl), ]
   n      <- length(unique(df$Sample))
@@ -2615,7 +2627,7 @@ dynamic_range_combined_static <- function(df_list, data_col = "MAX_QUANTITY", co
   
   sample_guide <- guide_legend(override.aes = list(size = 4, alpha = 1))   # big, opaque swatches
   
-  p <- ggplot(df, aes(Rank, y)) +
+  p <- ggplot(df, aes(X, y)) +
     geom_point(aes(color = Sample), size = 0.4, alpha = 0.4)
   if (color != "default")
     p <- p + scale_color_manual(values = viridis(n, option = color), name = "Sample",
@@ -2631,7 +2643,7 @@ dynamic_range_combined_static <- function(df_list, data_col = "MAX_QUANTITY", co
                          name = "Highlight")
   }
   
-  p + labs(x = "Rank", y = paste0("log2(", data_col, ")"), title = "Combined Dynamic Range",
+  p + labs(x = x_label, y = paste0("log2(", data_col, ")"), title = "Combined Dynamic Range",
            caption = if (nzchar(cap)) cap else NULL) +
     theme_minimal() +
     theme(plot.caption = element_text(hjust = 0, face = "italic", color = "grey30"))
