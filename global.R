@@ -52,6 +52,7 @@ library(ggnewscale) #this is to have a secondary colour fill legend in the stati
 library(TSP) #required for heatmaply
 library(registry) #required for heatmaply
 library(ca) #required for heatmaply
+library(eulerr)
 library(heatmaply)
 library(visNetwork) #used for stringDB plot
 library(circlize)
@@ -263,6 +264,27 @@ safe_draw <- function(ht, ...) {
       shiny::validate(shiny::need(FALSE, conditionMessage(e)))
     }
   )
+}
+
+scale_font <- function(p, size = 13, base = 13, label_rate = 0.5) {
+  if (is.null(p)) return(p)
+  
+  if (inherits(p, "ggplot")) {
+    p <- p + ggplot2::theme(text = ggplot2::element_text(size = size))
+    f <- 1 + (size / base - 1) * label_rate # scaling factor for geom_text. It scales half the amount as label.
+    for (i in seq_along(p$layers)) {
+      g <- class(p$layers[[i]]$geom)[1]
+      if (grepl("Text|Label", g)) {
+        cur <- p$layers[[i]]$aes_params$size
+        if (is.null(cur)) cur <- 3.88 
+        p$layers[[i]]$aes_params$size <- cur * f
+      }
+    }
+    return(p)
+  }
+  
+  if (inherits(p, "plotly")) return(p %>% plotly::layout(font = list(size = size)))
+  p
 }
 
 .mod_mass <- function(token) {
@@ -1742,7 +1764,7 @@ plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, 
   return(p)
 }
 
-plot_density <- function(lst, column, transform = NULL, x_label = NULL, alpha = 0.3, color = "default") {
+plot_density <- function(lst, column, transform = NULL, x_label = NULL, alpha = 0.3, color = "default", show_rug = FALSE) {
   if (is.null(x_label)) x_label <- column
   n          <- length(lst)
   plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
@@ -1776,15 +1798,15 @@ plot_density <- function(lst, column, transform = NULL, x_label = NULL, alpha = 
         line = list(color = cols[[sname]], width = 2),
         legendgroup = sname, showlegend = TRUE,
         hovertemplate = paste0("<b>", sname, "</b>: %{y:.4g}<extra></extra>")
-      ) %>%
-      plotly::add_trace(
-        x = d$vals, y = rep(rug_ys[[sname]], length(d$vals)),
-        type = "scatter", mode = "markers", name = sname,
-        marker = list(symbol = "line-ns-open", size = 8,
-                      color = cols[[sname]], opacity = 0.5),
-        legendgroup = sname, showlegend = FALSE,
-        hoverinfo = "none"
       )
+  }
+  
+  if (show_rug) {
+    p <- p %>% plotly::add_trace(
+      x = d$vals, y = rep(rug_ys[[sname]], length(d$vals)),
+      type = "scattergl", mode = "markers", name = sname,     # scattergl, not scatter
+      marker = list(symbol = "line-ns-open", size = 8, color = cols[[sname]], opacity = 0.5),
+      legendgroup = sname, showlegend = FALSE, hoverinfo = "none")
   }
   
   p %>% plotly::layout(
@@ -2096,7 +2118,7 @@ extract_legend <- function(p) {
 
 plot_charge_per_measurement <- function(lst, quantity_cols, column = "CHARGE",
                                         fill_label = "Charge", percentage = FALSE,
-                                        color = "default") {
+                                        color = "default", base_size = 13) {
   rows <- list()
   for (sname in names(lst)) {
     df        <- lst[[sname]]
@@ -2169,11 +2191,11 @@ plot_charge_per_measurement <- function(lst, quantity_cols, column = "CHARGE",
     if (length(meas_cols) == 0) next
     positions <- which(meas_order %in% meas_cols) - 1L  # 0-based for plotly
     annotations[[length(annotations) + 1]] <- list(
-      x = mean(positions), y = -0.18,
+      x = mean(positions), y = 1.03,
       xref = "x", yref = "paper",
       text = paste0("<b>", sname, "</b>"),
       showarrow = FALSE, xanchor = "center",
-      font = list(size = 11)
+      font = list(size = base_size)
     )
     if (i > 1) {
       shapes[[length(shapes) + 1]] <- list(
@@ -2188,10 +2210,11 @@ plot_charge_per_measurement <- function(lst, quantity_cols, column = "CHARGE",
   
   p %>% plotly::layout(
     barmode = "stack",
-    xaxis   = list(title = "", tickangle = -45, tickfont = list(size = 8)),
+    font    = list(size = base_size),
+    xaxis   = list(title = "", tickangle = -45, tickfont = list(size = base_size * 0.7)),
     yaxis   = list(title = if (percentage) "Percentage (%)" else "Count"),
     legend  = list(title = list(text = fill_label)),
-    margin  = list(b = 100),
+    margin  = list(b = 100, t = 20),
     annotations = annotations,
     shapes      = shapes
   )
@@ -2405,7 +2428,7 @@ plot_rt_histogram_range <- function(df, sample_name, quantity_cols, color = "ste
 }
 
 #This is for subplotting dynamic range to a single plot so it only counts as a single context.
-dynamic_range_subplot <- function(lst, data_col = "MAX_QUANTITY", ncol = 3) {
+dynamic_range_subplot <- function(lst, data_col = "MAX_QUANTITY", ncol = 3, base_size = 13) {
   samples <- names(lst)[vapply(lst, function(df)
     nrow(df) >= 10 && data_col %in% colnames(df), logical(1))]
   
@@ -2453,7 +2476,7 @@ dynamic_range_subplot <- function(lst, data_col = "MAX_QUANTITY", ncol = 3) {
   plotly::subplot(figs, nrows = nrows, shareX = FALSE, shareY = FALSE,
                   titleX = FALSE, titleY = FALSE,
                   heights = rep(1 / nrows, nrows)) %>%
-    plotly::layout(hovermode = "closest", hoverdistance = 30)
+    plotly::layout(font = list(size = base_size), hovermode = "closest", hoverdistance = 30)
 }
 
 dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", color = "default", rank_mode = "absolute") {
@@ -2614,7 +2637,7 @@ dynamic_range_combined_static <- function(df_list, data_col = "MAX_QUANTITY", co
     theme(plot.caption = element_text(hjust = 0, face = "italic", color = "grey30"))
 }
 
-plot_scatter_mz_k0_plotly <- function(lst, color = "default", ncol = 3) {
+plot_scatter_mz_k0_plotly <- function(lst, color = "default", ncol = 3, base_size = 13) {
   ok <- vapply(lst, function(df)
     !is.null(df) && nrow(df) > 0 && all(c("MZ", "K0") %in% colnames(df)), logical(1))
   samples <- names(lst)[ok]
@@ -2646,21 +2669,22 @@ plot_scatter_mz_k0_plotly <- function(lst, color = "default", ncol = 3) {
         hoverinfo = "skip")                                        # no per-dot info
     }
     p %>% plotly::layout(annotations = list(list(
-      text = samples[si], x = 0.5, y = 1.03, xref = "paper", yref = "paper",
+      text = samples[si], x = 0.5, y = 1, xref = "paper", yref = "paper",
       xanchor = "center", yanchor = "bottom", showarrow = FALSE, font = list(size = 11))))
   })
   
   fig <- plotly::subplot(figs, nrows = ceiling(length(figs) / ncol),
                          shareX = FALSE, shareY = FALSE,       # aligned axes + fewer ticks to draw
-                         titleX = FALSE, titleY = FALSE, margin = 0.03)
+                         titleX = FALSE, titleY = FALSE,
+                         margin = c(0.02, 0.02, 0.06, 0.06))
   # shared axis labels
   fig$x$layout$annotations <- c(fig$x$layout$annotations, list(
     list(text = "m/z",  x = 0.5,  y = -0.04, xref = "paper", yref = "paper",
          xanchor = "center", yanchor = "top",    showarrow = FALSE),
     list(text = "1/K0", x = -0.04, y = 0.5,  xref = "paper", yref = "paper",
          xanchor = "right",  yanchor = "middle", textangle = -90, showarrow = FALSE)))
-  fig %>% plotly::layout(legend = list(title = list(text = "Charge")),
-                         margin = list(l = 50, b = 45))
+  fig %>% plotly::layout(font = list(size = base_size), legend = list(title = list(text = "Charge")),
+                         margin = list(l = 50, b = 45, t = 40))
 }
 
 plot_completeness <- function(lst, spectra_cols, percent = FALSE, title = "Data Completeness",color = "default") {
@@ -2724,7 +2748,8 @@ plot_completeness <- function(lst, spectra_cols, percent = FALSE, title = "Data 
   return(p)
 }
 
-plot_upset <- function(data_list, min_size = 2, min_size_is_percent = TRUE, title = "Upset Plot", stripped = TRUE, min_degree = 1, n_intersections = 40) {
+plot_upset <- function(data_list, min_size = 2, min_size_is_percent = TRUE, title = "Upset Plot", 
+                       stripped = TRUE, min_degree = 1, n_intersections = 40, base_size = 13) {
   
   # Extract peptides per dataset
   l <- purrr::imap(data_list, function(df, name) {
@@ -2764,8 +2789,15 @@ plot_upset <- function(data_list, min_size = 2, min_size_is_percent = TRUE, titl
     min_degree            = min_degree,
     n_intersections       = n_intersections,
     width_ratio           = 0.1,
-    sort_intersections_by = "cardinality"
-  ) + ggtitle(title))
+    sort_intersections_by = "cardinality",
+    base_annotations = list(
+      'Intersection size' = ComplexUpset::intersection_size(
+        text = list(size = base_size / 3.5))
+    ),
+    themes = ComplexUpset::upset_default_themes(
+      text = ggplot2::element_text(size = base_size)) 
+  ) + ggplot2::ggtitle(title) +
+    ggplot2::theme(plot.title = ggplot2::element_text(size = base_size)))
   
   return(p)
 }
@@ -3075,7 +3107,7 @@ plot_heatmap_plotly <- function(mat, color = "default", log_transform = FALSE, t
 }
 
 pca_scatter_plotly <- function(pca, labels, groups = NULL, color = "default",
-                               show_labels = TRUE, dim = "2d") {
+                               show_labels = TRUE, dim = "2d",base_size = 13) {
   imp <- summary(pca)$importance[2, ] * 100
   npc <- ncol(pca$x)
   use3d <- (dim == "3d") && npc >= 3
@@ -3097,7 +3129,8 @@ pca_scatter_plotly <- function(pca, labels, groups = NULL, color = "default",
   for (g in glev) {
     dg <- d[d$Group == g, , drop = FALSE]
     common <- list(data = dg, name = g, mode = mode, text = ~Label,
-                   textposition = "top center", textfont = list(size = 9),
+                   textposition = "top center",
+                   textfont = list(size = base_size),
                    customdata = ~Group,
                    hovertemplate = "<b>%{text}</b><br>Group: %{customdata}<extra></extra>")
     if (use3d) {
@@ -3528,28 +3561,34 @@ compute_binder_summary <- function(df, alleles = NULL, strong = 0.5, weak = 2) {
     )
 }
 
-group_venn_plotting <- function(sets, color = "default") {
-  n_groups <- length(sets)
+group_euler_plot <- function(sets, color = "default") {
   
-  p <- ggVennDiagram::ggVennDiagram(
-    sets,
-    label_alpha = 0
-  ) +
-    ggplot2::theme_void()  +
-    ggplot2::theme(
-      legend.position = "none",
-      plot.margin = margin(10,10,10,10)
-    )
+  fit <- eulerr::euler(sets)
   
   if (color != "default") {
-    p <- p + ggplot2::scale_fill_viridis_c(
+    fills <- viridisLite::viridis(
+      length(sets),
       option = color
-    )  
+    )
   } else {
-    p <- p + scale_fill_distiller(palette = "RdBu")
+    fills <- RColorBrewer::brewer.pal(
+      max(3, length(sets)),
+      "RdBu"
+    )[seq_along(sets)]
   }
   
-  return(p)
+  plot(
+    fit,
+    labels = TRUE,
+    quantities = TRUE,
+    fills = list(
+      fill = fills,
+      alpha = 0.5
+    ),
+    edges = list(
+      alpha = 1
+    )
+  )
 }
 
 group_volcano_plot <- function(df,sel,plot_name) {
@@ -3607,8 +3646,8 @@ group_volcano_plot <- function(df,sel,plot_name) {
     ) %>%
     layout(
       title = paste0("volcano plot: ",plot_name),
-      xaxis = list(title = "log2 Fold Change"),
-      yaxis = list(title = "-log10 p-value"),
+      xaxis = list(title = "log2 Fold Change", automargin = TRUE),
+      yaxis = list(title = "-log10 p-value", automargin = TRUE),
       shapes = list(
         # fold change vertical lines
         list(type = "line", x0 = -1, x1 = -1, y0 = 0, y1 = safe_max_neglogp,
@@ -3619,7 +3658,8 @@ group_volcano_plot <- function(df,sel,plot_name) {
         list(type = "line", x0 = safe_min_fc, x1 = safe_max_fc,
              y0 = 1.3, y1 = 1.3,
              line = list(dash = "dash", color = "grey"))
-      )
+      ),
+      margin = list(t = 40)
     )
 }
 
@@ -3639,8 +3679,8 @@ group_p_histogram <- function(df,plot_name) {
   ) %>%
     layout(
       title = paste("P-value distribution:", plot_name),
-      xaxis = list(title = "Adjusted p-value", range = c(0, 1)),
-      yaxis = list(title = "Count", type = "log"),
+      xaxis = list(title = "Adjusted p-value", range = c(0, 1), automargin = TRUE),
+      yaxis = list(title = "Count", type = "log", automargin = TRUE),
       shapes = list(
         list(
           type = "line",
@@ -3651,6 +3691,7 @@ group_p_histogram <- function(df,plot_name) {
           line = list(color = "red", dash = "dash")
         )
       ),
+      margin = list(t = 40),
       annotations = list(
         list(
           x = 0.05, y = 1,
@@ -3712,14 +3753,15 @@ group_MA_plot <- function(df,sel,plot_name) {
     ) %>%
     layout(
       title = paste("MA plot:", plot_name),
-      xaxis = list(title = "Mean abundance (A)"),
-      yaxis = list(title = "log2 Fold Change (M)"),
+      xaxis = list(title = "Mean abundance (A)", automargin = TRUE),
+      yaxis = list(title = "log2 Fold Change (M)", automargin = TRUE),
       shapes = list(
         list(type = "line", x0 = min(df$A, na.rm = TRUE),
              x1 = max(df$A, na.rm = TRUE),
              y0 = 0, y1 = 0,
              line = list(dash = "dash", color = "grey"))
-      )
+      ),
+      margin = list(t = 40)
     )
 }
 
@@ -3767,11 +3809,10 @@ group_rank_FC <- function(df,plot_name,sel) {
       key = ~PEPTIDE,
       hoverinfo = "text+x+y"
     ) %>%
-    
     layout(
       title = paste("Ranked fold change:", plot_name),
-      xaxis = list(title = "Rank (based on Fold Change)"),
-      yaxis = list(title = "log2 Fold Change"),
+      xaxis = list(title = "Rank (based on Fold Change)", automargin = TRUE),
+      yaxis = list(title = "log2 Fold Change", automargin = TRUE),
       shapes = list(
         list(
           type = "line",
@@ -3781,7 +3822,8 @@ group_rank_FC <- function(df,plot_name,sel) {
           y1 = 0,
           line = list(dash = "dash", color = "grey")
         )
-      )
+      ),
+      margin = list(t = 40)
     )
 }
 

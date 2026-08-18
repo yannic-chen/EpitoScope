@@ -111,6 +111,23 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     updateSliderInput(session, "length_pct_range", value = len)
   }, ignoreInit = TRUE)
   
+#---------------Visual setting-----------------
+  plot_font_d <- debounce(reactive(if (is.null(input$plot_font)) 13 else input$plot_font), 400)
+  
+  plotly_plot_ids <- c(
+    "Pairwise_shared_peptide_matrix","binding_plot","charge_plot_meas","dynrange_combined",
+    "dynrange_grid","group_peptide_heatmap_interactive","length_plot","mass_plot","mass_plot2",
+    "mass_plot_meas","measurement_heatmap","mz_plot","mz_plot2","mz_plot_meas",
+    "pairwise_peptide_quant_correlation","pca","pca_variance","ppm_plot","ppm_plot2",
+    "ppm_plot_meas","scatterplots","score_violin","score_violin2","score_violin_meas")
+  
+  # push font to every plotly WITHOUT re-rendering (client-side relayout, like a resize)
+  observeEvent(plot_font_d(), {
+    for (id in plotly_plot_ids)
+      try(plotlyProxy(id, session) %>%
+            plotlyProxyInvoke("relayout", list("font.size" = plot_font_d())), silent = TRUE)
+  }, ignoreInit = TRUE)
+  
 #------------------Data management-----------------
   ## Reactive dataset container
   raw_list_r <- reactiveVal(NULL) #this is the list of raw data
@@ -469,41 +486,50 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$summary_peptides_plot <- renderPlot({
     lst <- data_list_r()
     check_data_error(lst, na_policy = "ignore")
-    plot_unique_counts(lst, column = "STRIPPED", y_label = "Number of unique peptides", color = input$color_palette)
+    scale_font(
+      plot_unique_counts(lst, column = "STRIPPED", y_label = "Number of unique peptides", color = input$color_palette),
+      plot_font_d())
   })
   
   output$summary_peptidoforms_plot <- renderPlot({
     lst <- data_list_r()
     check_data_error(lst, na_policy = "ignore")
-    plot_unique_counts(lst, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = input$color_palette)
+    scale_font(
+      plot_unique_counts(lst, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = input$color_palette),
+      plot_font_d())
   })
   
   output$summary_proteins_plot <- renderPlot({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "PROTEIN", na_policy = "ignore")
     # Use extract_protein_prefixes for proteins
-    plot_unique_counts(lst, column = "PROTEIN", y_label = "Number of unique proteins",
-                       transform_fn = extract_protein_prefixes, color = input$color_palette)
+    scale_font(
+      plot_unique_counts(lst, column = "PROTEIN", y_label = "Number of unique proteins",
+                       transform_fn = extract_protein_prefixes, color = input$color_palette),
+      plot_font_d())
   })
   
   ## ----Charge / Mass / mz / RT / ppm----
   output$charge_plot <- renderPlot({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "CHARGE", na_policy = "any") #Even if CHARGE is missing, preprocessing would add a charge of 1 to every row.
-    plot_stacked_bar(lst, column = "CHARGE", fill_label = "Charge", percentage = FALSE, color = input$color_palette)
+    scale_font(
+      plot_stacked_bar(lst, column = "CHARGE", fill_label = "Charge", percentage = FALSE, color = input$color_palette),
+      plot_font_d())
   })
   
-  # Example usage for your Shiny outputs
   output$mass_plot <- plotly::renderPlotly({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "MASS", na_policy = "any")
-    plot_density(lst, column = "MASS", x_label = "Mass (Da)", color = input$color_palette)
+    scale_font(plot_density(lst, column = "MASS", x_label = "Mass (Da)", color = input$color_palette),
+               isolate(plot_font_d())) 
   })
   
   output$mz_plot <- plotly::renderPlotly({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "MZ", na_policy = "any")
-    plot_density(lst, column = "MZ", x_label = "m/z", color = input$color_palette)
+    scale_font(plot_density(lst, column = "MZ", x_label = "m/z", color = input$color_palette),
+               isolate(plot_font_d())) 
   })
   
   output$RT_plot <- renderUI({
@@ -528,9 +554,10 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         
         output[[paste0("RT_", sample_local)]] <- renderPlot({
           check_data_error(df_local, required_cols = "RT", na_policy = "any")
-          plot_histogram(df = df_local, column = "RT", x_label = "Retention Time", 
-                         title_name = paste("RT Histogram –", sample_local), color = input$color_palette
-          )
+          scale_font(
+            plot_histogram(df = df_local, column = "RT", x_label = "Retention Time", 
+                         title_name = paste(sample_local), color = input$color_palette),
+            plot_font_d())
         })
       })
     }
@@ -539,14 +566,18 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$ppm_plot <- plotly::renderPlotly({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "PPM", na_policy = "any")
-    plot_density(lst, column = "PPM", x_label = "ppm", color = input$color_palette)
+    scale_font(
+      plot_density(lst, column = "PPM", x_label = "ppm", color = input$color_palette),
+      isolate(plot_font_d())) 
   })
   
   ##----Score distribution----
   output$score_violin <- plotly::renderPlotly({
     lst <- data_list_r()
     check_data_error(lst, required_cols = "SCORE", na_policy = "any")
-    plot_violin(lst, column = "SCORE", color = input$color_palette)
+    scale_font(
+      plot_violin(lst, column = "SCORE", color = input$color_palette),
+      isolate(plot_font_d())) 
   })
   
   ##----Summary Table----
@@ -557,10 +588,12 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
 #---------------------QC Tab-------------------------
   ## ---- length distribution ----
-  output$length_plot <- renderPlotly({
+  output$length_plot <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "LENGTH", na_policy = "any")
-    plot_length_distribution(lst, color = input$color_palette)
+    scale_font(
+      plot_length_distribution(lst, color = input$color_palette),
+      isolate(plot_font_d())) 
   })
   
   ## ---- length range percentage ----
@@ -572,7 +605,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       df$correct_range <- df$LENGTH >= rng[1] & df$LENGTH <= rng[2]
       df
     })
-    plot_stacked_bar(lst, column = "correct_range", fill_label = paste0(rng[1],"-",rng[2],"mer"), percentage = TRUE, color = input$color_palette)
+    scale_font(
+      plot_stacked_bar(lst, column = "correct_range", fill_label = paste0(rng[1],"-",rng[2],"mer"), percentage = TRUE, color = input$color_palette, rev_levels = FALSE),
+      plot_font_d())
   })
   
   output$length_range_percentage_meas <- renderPlot({
@@ -580,39 +615,51 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     check_data_error(lst, required_cols = "LENGTH", na_policy = "any")
     shiny::validate(shiny::need(length(default_quantity_cols_r()) > 0, "No QUANTITY columns found."))
     rng <- if (is.null(input$mhc_length_range)) c(8, 13) else input$mhc_length_range
-    plot_length_range_per_measurement(lst, default_quantity_cols_r(), color = input$color_palette,
-                                      lo = rng[1], hi = rng[2])
+    scale_font(
+      plot_length_range_per_measurement(lst, default_quantity_cols_r(), color = input$color_palette,
+                                      lo = rng[1], hi = rng[2]),
+      plot_font_d())
   })
   
   ## ---- Other numeric columns on per measurement basis ----
   output$charge_plot_meas <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "CHARGE", na_policy = "all")
-    plot_charge_per_measurement(lst, default_quantity_cols_r(), color = input$color_palette)
+    scale_font(
+      plot_charge_per_measurement(lst, default_quantity_cols_r(), color = input$color_palette, base_size = plot_font_d()),
+      isolate(plot_font_d()))
   })
   
   output$mass_plot_meas <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "MASS", na_policy = "any")
-    plot_density_envelope(lst, default_quantity_cols_r(), "MASS", "Mass (Da)", color = input$color_palette)
+    scale_font(
+      plot_density_envelope(lst, default_quantity_cols_r(), "MASS", "Mass (Da)", color = input$color_palette),
+      isolate(plot_font_d()))
   })
   
   output$mz_plot_meas <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "MZ", na_policy = "any")
-    plot_density_envelope(lst, default_quantity_cols_r(), "MZ", "m/z", color = input$color_palette)
+    scale_font(
+      plot_density_envelope(lst, default_quantity_cols_r(), "MZ", "m/z", color = input$color_palette),
+      isolate(plot_font_d()))
   })
   
   output$ppm_plot_meas <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "PPM", na_policy = "any")
-    plot_density_envelope(lst, default_quantity_cols_r(), column = "PPM", x_label = "ppm", color = input$color_palette)
+    scale_font(
+      plot_density_envelope(lst, default_quantity_cols_r(), column = "PPM", x_label = "ppm", color = input$color_palette),
+      isolate(plot_font_d()))
   })
   
   output$score_violin_meas <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "SCORE", na_policy = "any")
-    plot_violin_envelope(lst, default_quantity_cols_r(), column = "SCORE", x_label = "Score", color = input$color_palette)
+    scale_font(
+      plot_violin_envelope(lst, default_quantity_cols_r(), column = "SCORE", x_label = "Score", color = input$color_palette),
+      isolate(plot_font_d()))
   })
   
   output$RT_plot_meas <- renderUI({
@@ -624,7 +671,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       !!!lapply(names(lst), function(s) {
         pid <- paste0("rt_meas_", s)
         output[[pid]] <- renderPlot({
-          plot_rt_histogram_range(lst[[s]], s, qcols)
+          scale_font(plot_rt_histogram_range(lst[[s]], s, qcols), plot_font_d())
         })
         plotOutput(pid, height = "300px")
       })
@@ -710,40 +757,61 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$summary_peptides_plot3 <- renderPlot({
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
-    plot_unique_counts(lst, column = "STRIPPED", y_label = "Number of unique peptides",
-                       color = input$color_palette, quantity_cols = default_quantity_cols_r())
+    scale_font(
+      plot_unique_counts(lst, column = "STRIPPED", y_label = "Number of unique peptides",
+                         color = input$color_palette, quantity_cols = default_quantity_cols_r()),
+      plot_font_d())
   })
   
   output$summary_peptidoforms_plot3 <- renderPlot({
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
-    plot_unique_counts(lst, column = "PEPTIDE", y_label = "Number of unique peptidoforms",
-                       color = input$color_palette, quantity_cols = default_quantity_cols_r())
+    scale_font(
+      plot_unique_counts(lst, column = "PEPTIDE", y_label = "Number of unique peptidoforms",
+                         color = input$color_palette, quantity_cols = default_quantity_cols_r()),
+      plot_font_d())
   })
   
   output$summary_proteins_plot3 <- renderPlot({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "PROTEIN", na_policy = "all")
-    plot_unique_counts(lst, column = "PROTEIN", y_label = "Number of unique proteins",
-                       transform_fn = extract_protein_prefixes,
-                       color = input$color_palette, quantity_cols = default_quantity_cols_r())
+    scale_font(
+      plot_unique_counts(lst, column = "PROTEIN", y_label = "Number of unique proteins",
+                         transform_fn = extract_protein_prefixes,
+                         color = input$color_palette, quantity_cols = default_quantity_cols_r()),
+      plot_font_d())
   })
   
   ## ----Dynamic Range plots (individual, one subplot figure)----
-  output$dynrange_individual_ui <- renderUI({
+  n_dynrange_panels <- reactive({
     lst <- processed_data_list()
-    check_data_error(lst, required_cols = "MAX_QUANTITY", na_policy = "any")
-    n     <- sum(vapply(lst, function(df)
-      nrow(df) >= 10 && "MAX_QUANTITY" %in% colnames(df), logical(1)))
-    nrows <- max(1L, ceiling(n / 3))
+    sum(vapply(lst, function(df) nrow(df) >= 10 && "MAX_QUANTITY" %in% colnames(df), logical(1)))
+  })
+  
+  output$dynrange_individual_ui <- renderUI({
+    check_data_error(processed_data_list(), required_cols = "MAX_QUANTITY", na_policy = "any")
+    nrows <- max(1L, ceiling(n_dynrange_panels() / 3))
     plotly::plotlyOutput("dynrange_grid", height = paste0(nrows * 320, "px"))
   })
   
-  output$dynrange_grid <- renderPlotly({
+  output$dynrange_grid <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "MAX_QUANTITY", na_policy = "any")
-    dynamic_range_subplot(lst, data_col = "MAX_QUANTITY", ncol = 3)
+    dynamic_range_subplot(lst, data_col = "MAX_QUANTITY", ncol = 3,
+                          base_size = isolate(plot_font_d()))      # no scale_font wrapper
   })
+  
+  observeEvent(plot_font_d(), {
+    s <- plot_font_d(); n <- n_dynrange_panels()
+    ax <- unlist(lapply(seq_len(n), function(i) {
+      sfx <- if (i == 1) "" else as.character(i)
+      setNames(list(s, s), c(sprintf("xaxis%s.tickfont.size", sfx),
+                             sprintf("yaxis%s.tickfont.size", sfx)))
+    }), recursive = FALSE)
+    ann <- if (n > 0) setNames(as.list(rep(s, n)), sprintf("annotations[%d].font.size", seq_len(n)-1)) else list()
+    plotly::plotlyProxy("dynrange_grid", session) %>%
+      plotly::plotlyProxyInvoke("relayout", c(list("font.size" = s), ax, ann))
+  }, ignoreInit = TRUE)
   
   applied_search <- reactiveVal(list(prot = "", pep = ""))
   
@@ -819,7 +887,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
   ## ----Dynamic Range plots combined----
-  output$dynrange_combined <- renderPlotly({
+  output$dynrange_combined <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "MAX_QUANTITY", na_policy = "any")
     rm <- isolate(if (is.null(input$dynrange_rank_mode)) "absolute" else input$dynrange_rank_mode)
@@ -895,24 +963,41 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
   ##----1/k0 vs m/z----
-  output$scatterplots_ui <- renderUI({
-    lst   <- processed_data_list()
-    n     <- sum(vapply(lst, function(df)
+  n_scatter_panels <- reactive({
+    lst <- processed_data_list()
+    sum(vapply(lst, function(df)
       !is.null(df) && nrow(df) > 0 && all(c("MZ","K0") %in% colnames(df)), logical(1)))
-    nrows <- max(1L, ceiling(n / 3))
+  })
+  
+  output$scatterplots_ui <- renderUI({
+    nrows <- max(1L, ceiling(n_scatter_panels() / 3))
     plotly::plotlyOutput("scatterplots", height = paste0(nrows * 320, "px"))
   })
   
-  output$scatterplots <- renderPlotly({
+  output$scatterplots <- plotly::renderPlotly({
     lst <- processed_data_list()
-    check_data_error(lst, required_cols = c("MZ", "K0"), na_policy = "all")
-    plot_scatter_mz_k0_plotly(lst, color = input$color_palette, ncol = 3)
+    check_data_error(lst, required_cols = c("MZ","K0"), na_policy = "all")
+    plot_scatter_mz_k0_plotly(lst, color = input$color_palette, ncol = 3,
+                              base_size = isolate(plot_font_d()))   # initial font, no font dependency
   })
+  
+  observeEvent(plot_font_d(), {
+    s <- plot_font_d(); n <- n_scatter_panels()
+    ax <- unlist(lapply(seq_len(n), function(i) {
+      sfx <- if (i == 1) "" else as.character(i)
+      setNames(list(s, s), c(sprintf("xaxis%s.tickfont.size", sfx),
+                             sprintf("yaxis%s.tickfont.size", sfx)))
+    }), recursive = FALSE)
+    ann <- if (n > 0) setNames(as.list(rep(s, n)), sprintf("annotations[%d].font.size", seq_len(n)-1)) else list()
+    plotly::plotlyProxy("scatterplots", session) %>%
+      plotly::plotlyProxyInvoke("relayout", c(list("font.size" = s), ax, ann)) %>%
+      plotly::plotlyProxyInvoke("restyle", list("textfont.size" = s))
+  }, ignoreInit = TRUE)
   
   ## ---- measurement specific heatmap ----
   cor_mat_cache <- reactiveVal(matrix(NA, nrow = 5, ncol = 5)) #necessary as the space reserving rungs before the code.
   
-  output$measurement_heatmap <- renderPlotly({
+  output$measurement_heatmap <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
     quantity_cols <- data_info_r() %>%
@@ -948,7 +1033,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       dplyr::select(-final_name) %>%   # all sample columns.
       unlist(recursive = TRUE, use.names = FALSE)
     
-    plot_completeness(lst, spectra_cols, color = input$color_palette)
+    scale_font(plot_completeness(lst, spectra_cols, color = input$color_palette),plot_font_d()) 
   })
   
   output$completeness_plot2 <- renderPlot({
@@ -960,7 +1045,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       dplyr::select(-final_name) %>%   # all sample columns.
       unlist(recursive = TRUE, use.names = FALSE)
     
-    plot_completeness(lst, spectra_cols, percent = TRUE, color = input$color_palette)
+    scale_font(plot_completeness(lst, spectra_cols, percent = TRUE, color = input$color_palette),plot_font_d()) 
   })
   
   ##----Upset----
@@ -971,7 +1056,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     plot_upset(lst,
                min_size        = filter_inputs_d()$upset_min_size,
                min_degree      = filter_inputs_d()$upset_min_degree,
-               n_intersections = filter_inputs_d()$upset_n_intersect)
+               n_intersections = filter_inputs_d()$upset_n_intersect,
+               base_size = plot_font_d())
   })
   
   ### ---- Intersection data ----
@@ -1074,7 +1160,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
   ## ----Pairwise comparison of shared peptides----
-  output$Pairwise_shared_peptide_matrix <- renderPlotly({
+  output$Pairwise_shared_peptide_matrix <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
     shiny::validate(shiny::need(length(lst) >= 2, "Need 2 or more samples to plot"))
@@ -1084,7 +1170,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
   ## ----Pairwise comparison of shared peptides quantity----
-  output$pairwise_peptide_quant_correlation <- renderPlotly({
+  output$pairwise_peptide_quant_correlation <- plotly::renderPlotly({
     lst <- processed_data_list()
     shiny::validate(shiny::need(length(lst) >= 2, "Need 2 or more samples to plot"))
     check_data_error(lst, required_cols = "MAX_QUANTITY", na_policy = "any")
@@ -1168,57 +1254,76 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     list(pca = prcomp(t(mat), scale. = TRUE), points = points, samp_of = samp_of)
   })
   
-  output$pca <- renderPlotly({
+  output$pca <- plotly::renderPlotly({
     fit <- pca_fit()
     s2g <- pca_sample_group()
     groups <- unname(s2g[fit$samp_of[fit$points]]); groups[is.na(groups)] <- "Ungrouped"
     dim <- if (is.null(input$pca_dim)) "2d" else input$pca_dim
     pca_scatter_plotly(fit$pca, labels = fit$points, groups = groups,
                        color = input$color_palette,
-                       show_labels = length(fit$points) <= 30, dim = dim)
+                       show_labels = length(fit$points) <= 30, dim = dim, base_size = isolate(plot_font_d()))
   })
   
-  output$pca_variance <- renderPlotly({ plot_pca_variance(pca_fit()$pca) })
+  observeEvent(plot_font_d(), {
+    s <- plot_font_d()
+    plotly::plotlyProxy("pca", session) %>%
+      plotly::plotlyProxyInvoke("relayout", list("font.size" = s)) %>%
+      plotly::plotlyProxyInvoke("restyle", list("textfont.size" = s))
+  }, ignoreInit = TRUE)
+  
+  output$pca_variance <- scale_font(plotly::renderPlotly({ plot_pca_variance(pca_fit()$pca) }),isolate(plot_font_d()))
   
   ## ----Number of peptides and peptidoforms----
   output$summary_peptides_plot2 <- renderPlot({
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
-    plot_unique_counts(lst, column = "STRIPPED", y_label = "Number of unique peptides", color = input$color_palette)
+    scale_font(
+      plot_unique_counts(lst, column = "STRIPPED", y_label = "Number of unique peptides", color = input$color_palette),
+      plot_font_d())
   })
   
   output$summary_peptidoforms_plot2 <- renderPlot({
     lst <- processed_data_list()
     check_data_error(lst, na_policy = "ignore")
-    plot_unique_counts(lst, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = input$color_palette)
+    scale_font(
+      plot_unique_counts(lst, column = "PEPTIDE", y_label = "Number of unique peptidoforms", color = input$color_palette),
+      plot_font_d())
   })
   
   output$summary_proteins_plot2 <- renderPlot({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "PROTEIN" , na_policy = "all")
     # Use extract_protein_prefixes for proteins
-    plot_unique_counts(lst, column = "PROTEIN", y_label = "Number of unique proteins",
-                       transform_fn = extract_protein_prefixes, color = input$color_palette)
+    scale_font(
+      plot_unique_counts(lst, column = "PROTEIN", y_label = "Number of unique proteins",
+                       transform_fn = extract_protein_prefixes, color = input$color_palette),
+      plot_font_d())
   })
   
   ## ----Charge / Mass / mz / RT / ppm----
   output$charge_plot2 <- renderPlot({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "CHARGE" , na_policy = "all")
-    plot_stacked_bar(lst, column = "CHARGE", fill_label = "Charge", percentage = FALSE, color = input$color_palette)
+    scale_font(
+      plot_stacked_bar(lst, column = "CHARGE", fill_label = "Charge", percentage = FALSE, color = input$color_palette),
+      plot_font_d())
   })
   
   # Example usage for your Shiny outputs
   output$mass_plot2 <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "MASS" , na_policy = "all")
-    plot_density(lst, column = "MASS", x_label = "Mass (Da)", color = input$color_palette)
+    scale_font(
+      plot_density(lst, column = "MASS", x_label = "Mass (Da)", color = input$color_palette),
+      isolate(plot_font_d()))
   })
   
   output$mz_plot2 <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "MZ" , na_policy = "all")
-    plot_density(lst, column = "MZ", x_label = "m/z", color = input$color_palette)
+    scale_font(
+      plot_density(lst, column = "MZ", x_label = "m/z", color = input$color_palette),
+      isolate(plot_font_d()))
   })
   
   output$RT_plot2 <- renderUI({
@@ -1244,9 +1349,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         
         output[[paste0("RT2_", sample_local)]] <- renderPlot({
           check_data_error(df_local, required_cols = "RT", na_policy = "any")
-          plot_histogram(df = df_local, column = "RT", x_label = "Retention Time", 
-                         title_name = paste("RT Histogram –", sample_local), color = input$color_palette
-          )
+          scale_font(plot_histogram(df = df_local, column = "RT", x_label = "Retention Time", 
+                         title_name = paste(sample_local), color = input$color_palette),
+                         plot_font_d())
         })
       })
     }
@@ -1255,14 +1360,18 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$ppm_plot2 <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "PPM" , na_policy = "all")
-    plot_density(lst, column = "PPM", x_label = "ppm", color = input$color_palette)
+    scale_font(
+      plot_density(lst, column = "PPM", x_label = "ppm", color = input$color_palette),
+      isolate(plot_font_d()))
   })
   
   ##----Score distribution----
   output$score_violin2 <- plotly::renderPlotly({
     lst <- processed_data_list()
     check_data_error(lst, required_cols = "SCORE" , na_policy = "all")
-    plot_violin(lst, column = "SCORE", color = input$color_palette)
+    scale_font(
+      plot_violin(lst, column = "SCORE", color = input$color_palette),
+      isolate(plot_font_d()))
   })
   
 #-------------------Group Comparison------------------------
@@ -1695,11 +1804,11 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     }) |> setNames(names(groups))
   })
   
-  output$group_venn_plot <- renderPlot({
+  output$group_euler <- renderPlot({
     sets <- group_peptide_sets()
     shiny::validate(shiny::need(length(sets) >= 2, "Need 2 or more sets to compare"))
     
-    group_venn_plotting(sets, color = input$color_palette)
+    group_euler_plot(sets, color = input$color_palette)
   })
   
   heatmap_data_r  <- reactive({
@@ -1756,17 +1865,17 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         zoom_info_r(c(as.numeric(ed[["xaxis.range[0]"]]),
                       as.numeric(ed[["xaxis.range[1]"]])))
       } else if (isTRUE(ed[["xaxis.autorange"]])) {
-        zoom_info_r(NULL)
-        # Only treat as user double-click if it happened >1s after a programmatic render
         age <- as.numeric(Sys.time()) - isolate(last_programmatic_t_r())
-        if (age > 1 && isolate(heatmap_mode_r()) == "expanded") {
-          last_programmatic_t_r(as.numeric(Sys.time()))
-          heatmap_mode_r("binned")
-          expanded_peps_r(NULL)
+        if (age > 1) {
+          zoom_info_r(NULL)
+          if (isolate(heatmap_mode_r()) == "expanded") {
+            last_programmatic_t_r(as.numeric(Sys.time()))
+            heatmap_mode_r("binned")
+            expanded_peps_r(NULL)
+          }
         }
       }
-    }, ignoreNULL = TRUE)
-
+    })
 
   zoom_debounced_r <- shiny::debounce(zoom_info_r, 500)
   
@@ -1816,6 +1925,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     }
     
     show <- n_visible <= 250
+    
+    last_programmatic_t_r(as.numeric(Sys.time()))  # <- stamp to avoid the false heatmap zoom reset
     
     plotly::plotlyProxy("group_peptide_heatmap_interactive", session) %>%
       plotly::plotlyProxyInvoke("relayout", list(
@@ -1879,13 +1990,23 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     ) %>%
       plotly::layout(
         uirevision = ui_rev,
+        font  = list(size = isolate(plot_font_d()) * 0.6),
         xaxis = list(title = "", showticklabels = show_ticks,
-                     tickfont = list(size = 8), tickangle = -45),
+                     tickfont = list(size = isolate(plot_font_d())), tickangle = -45),
         yaxis = list(title = "", tickfont = list(size = 8), autorange = "reversed"),
         margin = list(l = 130, b = if (show_ticks) 120 else 30)
       ) %>%
       plotly::event_register("plotly_relayout")
   })
+  
+  observeEvent(plot_font_d(), {
+    last_programmatic_t_r(as.numeric(Sys.time()))          # <- stamp to avoid the false heatmap zoom reset
+    plotly::plotlyProxy("group_peptide_heatmap_interactive", session) %>%
+      plotly::plotlyProxyInvoke("relayout", list(
+        "font.size" = plot_font_d(),
+        "xaxis.tickfont.size" = plot_font_d(),
+        "yaxis.tickfont.size" = plot_font_d()))
+  }, ignoreInit = TRUE)
   
   # Manual expand: zoom in first, then click this button
   observeEvent(input$expand_heatmap_region, {
@@ -2060,30 +2181,30 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         )
         ## ----Volcano plot----
 
-        output[[paste0("volcano_", plot_name)]] <- renderPlotly({
+        output[[paste0("volcano_", plot_name)]] <- plotly::renderPlotly({
           shiny::validate(shiny::need(!is.null(df) && nrow(df) > 0, "No data to plot"))
           sel <- selected_peptide()
-          group_volcano_plot(df,sel,plot_name)
+          scale_font(group_volcano_plot(df,sel,plot_name), isolate(plot_font_d()))
         })
         
         ## ----MA plot----
-        output[[paste0("ma_", plot_name)]] <- renderPlotly({
+        output[[paste0("ma_", plot_name)]] <- plotly::renderPlotly({
           shiny::validate(shiny::need(!is.null(df) && nrow(df) > 0, "No data to plot"))
           sel <- selected_peptide()
-          group_MA_plot(df, sel,plot_name)
+          scale_font(group_MA_plot(df, sel,plot_name), isolate(plot_font_d()))
         })
         
         ## ----P-value histogram----
-        output[[paste0("pval_hist_", plot_name)]] <- renderPlotly({
+        output[[paste0("pval_hist_", plot_name)]] <- plotly::renderPlotly({
           shiny::validate(shiny::need(!is.null(df) && nrow(df) > 0, "No data to plot"))
-          group_p_histogram(df,plot_name)
+          scale_font(group_p_histogram(df,plot_name), isolate(plot_font_d()))
         })
         
         ## ----Ranked Fold Change----
         output[[paste0("rank_fc_", plot_name)]] <- renderPlotly({
           shiny::validate(shiny::need(!is.null(df) && nrow(df) > 0, "No data to plot"))
           sel <- selected_peptide()
-          group_rank_FC(df,plot_name,sel)
+          scale_font(group_rank_FC(df,plot_name,sel), isolate(plot_font_d()))
         })
         ## ----Peptide Fold Change table----
         output[[paste0("peptide_table_", plot_name)]] <- DT::renderDT({
@@ -2092,7 +2213,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         })
         
         ## ----GO term----
-        output[[paste0("go_term_", plot_name)]] <- renderPlotly({
+        output[[paste0("go_term_", plot_name)]] <- plotly::renderPlotly({
           shiny::validate(shiny::need(!is.null(df) && nrow(df) != 0, "No data available."))
           bg <- if (is.null(input$go_background)) "genome" else input$go_background
           universe <- NULL; bg_note <- "whole genome"
@@ -2102,8 +2223,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
               unlist(strsplit(input$go_custom_ids, "[[:space:],;]+")) else NULL
             if (length(cust)) { universe <- .protein_to_entrez(cust); bg_note <- "custom list" }
           }
-          run_go_enrichment(df, universe = universe, bg_note = bg_note,
-                            ont = if (is.null(input$go_ont)) "BP" else input$go_ont)
+          scale_font(run_go_enrichment(df, universe = universe, bg_note = bg_note,
+                            ont = if (is.null(input$go_ont)) "BP" else input$go_ont), 
+                     isolate(plot_font_d()))
         })
         
         ## ----STRING-DB----
@@ -2118,6 +2240,24 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       })
     }
   })
+  
+  observeEvent(plot_font_d(), {
+    s  <- plot_font_d()
+    vl <- isolate(group_comp_data())        # read names, but don't make it a trigger
+    if (is.null(vl)) return()
+    for (name in names(vl)) {
+      for (id in paste0(c("volcano_", "ma_", "pval_hist_", "rank_fc_", "go_term_"), name)) {
+        try({
+          plotly::plotlyProxy(id, session) %>%
+            plotly::plotlyProxyInvoke("relayout", list(
+              "font.size"           = s,
+              "xaxis.tickfont.size" = s,
+              "yaxis.tickfont.size" = s)) %>%
+            plotly::plotlyProxyInvoke("restyle", list("textfont.size" = s))
+        }, silent = TRUE)
+      }
+    }
+  }, ignoreInit = TRUE)
   
   detected_universe <- reactive({
     lst <- processed_data_list(); req(length(lst) > 0)
@@ -2151,7 +2291,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     lst <- lst[!vapply(lst, is.null, logical(1))]
     
-    plot_stacked_bar(lst, column = "PTM", fill_label = "PTM", percentage = FALSE, rev_levels = FALSE)
+    scale_font(plot_stacked_bar(lst, column = "PTM", fill_label = "PTM", percentage = FALSE, rev_levels = FALSE),
+               plot_font_d())  
   })
   
   ## Mapping of PTMs
@@ -2435,7 +2576,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     }
   })
   
-  output$binding_plot <- renderPlotly({
+  output$binding_plot <- plotly::renderPlotly({
     cache <- prediction_cache()
     shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
     req(!is.null(peptide_wide_unique()))
@@ -2445,13 +2586,15 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     if (view == "per_allele") {
       grp <- if (is.null(input$binding_group)) "sample" else input$binding_group
-      plot_binders_per_allele_plotly(peptide_wide_unique(), color = input$color_palette, percent = percent, 
+      scale_font(plot_binders_per_allele_plotly(peptide_wide_unique(), color = input$color_palette, percent = percent, 
                                      alleles = input$allele_viz_select, facet_by = grp, 
-                                     strong = binder_thresholds()$strong, weak = binder_thresholds()$weak)
+                                     strong = binder_thresholds()$strong, weak = binder_thresholds()$weak),
+                 isolate(plot_font_d())) 
     } else {
-      plot_binders_plotly(peptide_wide_unique(), color = input$color_palette,
+      scale_font(plot_binders_plotly(peptide_wide_unique(), color = input$color_palette,
                           percent = percent, alleles = input$allele_viz_select,
-                          strong = binder_thresholds()$strong, weak = binder_thresholds()$weak)
+                          strong = binder_thresholds()$strong, weak = binder_thresholds()$weak),
+                 isolate(plot_font_d())) 
     }
   })
   
@@ -2843,7 +2986,8 @@ shinyApp(
   server = function(input, output, session) {
     server(input, output, session, 
            #input_variable = test_annotation,
-           input_variable = data_list2,
+           input_variable = data_list[15:20],
+           #input_variable = data_list2[1:2],
            #input_variable = preloaded_data,
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 

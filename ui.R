@@ -11,13 +11,6 @@ ui <- bs4DashPage(
     minified = F, # Minified means a little part of the sidebar is still visible.
     expandOnHover = T, # when minified is TRUE, if this property is TRUE, the sidebar opens when hovering but re-collapses as soon as the focus is lost.
     elevation = 3,
-    selectInput(
-      inputId = "color_palette",
-      label = tagList(icon("palette"), "Color palette"),
-      choices = c("default", "viridis", "magma", "inferno", "plasma", "cividis", "mako", "rocket", "turbo"),
-      selected = "default"
-    ),
-    # Your other UI elements here
     uiOutput("sample_selector"),
     uiOutput("length_slider_ui"),
     uiOutput("quantity_slider_ui"),
@@ -88,7 +81,16 @@ ui <- bs4DashPage(
   
   ## ---- Control Bar ----
   controlbar = bs4DashControlbar( #this is just an extra sidebar on the right
-    skinSelector(), pinned = FALSE, value = ""
+    skinSelector(),
+    tags$hr(),
+    selectInput(
+      inputId = "color_palette",
+      label = tagList(icon("palette"), "Color palette"),
+      choices = c("default", "viridis", "magma", "inferno", "plasma", "cividis", "mako", "rocket", "turbo"),
+      selected = "default"
+    ),
+    sliderInput("plot_font", "Plot font size", min = 8, max = 28, value = 13, step = 1),
+    pinned = FALSE, value = ""
     ),
   
   ## ---- Main ----
@@ -487,9 +489,9 @@ ui <- bs4DashPage(
           bs4Card(title = tagList("Quantity variance", bs4Dash::tooltip(icon("info-circle"),"Violin-plot showing distribution of peptides quantities within groups. All measurements from all samples are used.", placement = "right")
                                   ), width = 6, maximizable = TRUE
           ),
-          bs4Card(title = tagList("Group based Venn Diagram", bs4Dash::tooltip(icon("info-circle"),"This is nicer to identify biological differences given multiple biological samples.", placement = "right")
+          bs4Card(title = tagList("Group based Euler Diagram", bs4Dash::tooltip(icon("info-circle"),"Venn Diagram with circle size representing group size", placement = "right")
                                   ), width = 6, maximizable = TRUE,
-                  plotOutput("group_venn_plot")
+                  plotOutput("group_euler")
           ),
           bs4Card(title = tagList("Peptide based heatmap", bs4Dash::tooltip(icon("info-circle"),"Cluster peptides based on differential pattern across groups. Clustering distance is 'euclidean' and method is 'complete'. 
                                                                             The MAX quantity for the peptides is used. Peptides are binned for over 1000+ peptides. Peptide Llabels are remoed when 250+ peptides are visible. Zoom to adjust. NA is coloured Gray.", placement = "right")
