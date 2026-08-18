@@ -1803,14 +1803,14 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       ])
     }) |> setNames(names(groups))
   })
-  
+  ### ----Group Euler----
   output$group_euler <- renderPlot({
     sets <- group_peptide_sets()
     shiny::validate(shiny::need(length(sets) >= 2, "Need 2 or more sets to compare"))
     
     group_euler_plot(sets, color = input$color_palette)
   })
-  
+  ### ----Group heatmap----
   heatmap_data_r  <- reactive({
     lst       <- processed_data_list()
     groups    <- group_list()
@@ -1856,58 +1856,69 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   expand_counter_r <- reactiveVal(0L)
   
   
-  observeEvent({
-    req(length(condition_groups_r()) > 0)
-    plotly::event_data("plotly_relayout", source = "group_hm")
-    }, {
-      ed <- plotly::event_data("plotly_relayout", source = "group_hm")
-      if (!is.null(ed[["xaxis.range[0]"]])) {
-        zoom_info_r(c(as.numeric(ed[["xaxis.range[0]"]]),
-                      as.numeric(ed[["xaxis.range[1]"]])))
-      } else if (isTRUE(ed[["xaxis.autorange"]])) {
+  observeEvent(
+    plotly::event_data(
+      "plotly_relayout",
+      source = "group_hm",
+      priority = "event"
+    ),
+    {
+      ed <- plotly::event_data(
+        "plotly_relayout",
+        source = "group_hm",
+        priority = "event"
+      )
+      
+      req(ed)
+      
+      # ------------------------------------------------------------
+      # 1. User zoom / pan
+      # ------------------------------------------------------------
+      if (!is.null(ed[["xaxis.range[0]"]]) &&
+          !is.null(ed[["xaxis.range[1]"]])) {
+        
+        zoom_info_r(
+          c(
+            as.numeric(ed[["xaxis.range[0]"]]),
+            as.numeric(ed[["xaxis.range[1]"]])
+          )
+        )
+        
+        return()
+      }
+      
+      # ------------------------------------------------------------
+      # 2. User double-click / explicit autorange
+      # ------------------------------------------------------------
+      if (isTRUE(ed[["xaxis.autorange"]])) {
+        
+        # Only reset if this wasn't caused by our own code
         age <- as.numeric(Sys.time()) - isolate(last_programmatic_t_r())
+        
         if (age > 1) {
           zoom_info_r(NULL)
+          
           if (isolate(heatmap_mode_r()) == "expanded") {
-            last_programmatic_t_r(as.numeric(Sys.time()))
-            heatmap_mode_r("binned")
             expanded_peps_r(NULL)
+            heatmap_mode_r("binned")
           }
         }
+        
+        return()
       }
-    })
+    },
+    ignoreInit = TRUE
+  )
 
   zoom_debounced_r <- shiny::debounce(zoom_info_r, 500)
-  
-  # Tick-label proxy: only fires on zoom change, only in binned mode
-  observeEvent(zoom_debounced_r(), {
-    req(heatmap_mode_r() == "binned")
-    zoom  <- zoom_debounced_r()
-    hdata <- heatmap_data_r()
-    req(hdata)
-    
-    n_visible <- if (!is.null(zoom)) {
-      x0 <- max(1L, as.integer(round(zoom[1])) + 1L)
-      x1 <- min(ncol(hdata$mat_display), as.integer(round(zoom[2])) + 1L)
-      max(1L, x1 - x0 + 1L)
-    } else {
-      ncol(hdata$mat_display)
-    }
-    
-    show <- n_visible <= 250
-    plotly::plotlyProxy("group_peptide_heatmap_interactive", session) %>%
-      plotly::plotlyProxyInvoke("relayout", list(
-        "xaxis.showticklabels" = show,
-        "margin.b"             = if (show) 120 else 30
-      ))
-  })
-  
+
   # Dynamically show/hide x-axis tick labels based on visible column count
   # Uses plotlyProxy so no full re-render is triggered
   observe({
     zoom  <- zoom_debounced_r()
     hdata <- heatmap_data_r()
     mode  <- heatmap_mode_r()
+    
     req(hdata)
     
     n_cols <- if (mode == "expanded" && !is.null(expanded_peps_r())) {
@@ -1917,22 +1928,38 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     }
     
     n_visible <- if (!is.null(zoom)) {
-      x0 <- max(1L, as.integer(round(zoom[1])) + 1L)
-      x1 <- min(n_cols, as.integer(round(zoom[2])) + 1L)
+      
+      x0 <- max(
+        1L,
+        as.integer(round(zoom[1])) + 1L
+      )
+      
+      x1 <- min(
+        n_cols,
+        as.integer(round(zoom[2])) + 1L
+      )
+      
       max(1L, x1 - x0 + 1L)
+      
     } else {
+      
       n_cols
+      
     }
     
     show <- n_visible <= 250
     
-    last_programmatic_t_r(as.numeric(Sys.time()))  # <- stamp to avoid the false heatmap zoom reset
-    
-    plotly::plotlyProxy("group_peptide_heatmap_interactive", session) %>%
-      plotly::plotlyProxyInvoke("relayout", list(
-        "xaxis.showticklabels" = show,
-        "margin.b"             = if (show) 120 else 30
-      ))
+    plotly::plotlyProxy(
+      "group_peptide_heatmap_interactive",
+      session
+    ) %>%
+      plotly::plotlyProxyInvoke(
+        "relayout",
+        list(
+          "xaxis.showticklabels" = show,
+          "margin.b" = if (show) 120 else 30
+        )
+      )
   })
   
   output$group_peptide_heatmap_interactive <- plotly::renderPlotly({
@@ -2000,7 +2027,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
   observeEvent(plot_font_d(), {
-    last_programmatic_t_r(as.numeric(Sys.time()))          # <- stamp to avoid the false heatmap zoom reset
     plotly::plotlyProxy("group_peptide_heatmap_interactive", session) %>%
       plotly::plotlyProxyInvoke("relayout", list(
         "font.size" = plot_font_d(),

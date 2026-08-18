@@ -81,8 +81,8 @@ ui <- bs4DashPage(
   
   ## ---- Control Bar ----
   controlbar = bs4DashControlbar( #this is just an extra sidebar on the right
-    skinSelector(),
-    tags$hr(),
+    #skinSelector(),
+    #tags$hr(),
     selectInput(
       inputId = "color_palette",
       label = tagList(icon("palette"), "Color palette"),
