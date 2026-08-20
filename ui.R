@@ -18,7 +18,8 @@ ui <- bs4DashPage(
     uiOutput("charge_slider_ui"),
     uiOutput("mass_slider_ui"),
     uiOutput("RT_slider_ui"),
-    actionButton("generate_report", tagList(icon("file-arrow-down"),"Generate HTML Report"))
+    actionButton("generate_report", tagList(icon("file-arrow-down"),"Generate HTML Report")),
+    actionButton("open_export", "Export figure", icon = icon("camera"))
   ),
   
   ## ---- Header ----
@@ -106,6 +107,62 @@ ui <- bs4DashPage(
         }
       });
     ")),
+    plotExportJS <- tags$head(tags$script(HTML("
+  // ---- existing downloadPlotly handler stays here ----
+  Shiny.addCustomMessageHandler('downloadPlotly', function(msg){
+    var gd = document.getElementById(msg.id);
+    if(!gd) return;
+    Plotly.downloadImage(gd, {
+      format: msg.format, width: msg.width, height: msg.height,
+      scale: msg.scale, filename: msg.filename
+    });
+  });
+
+  // ---- new: resize plotly when its card maximizes/restores ----
+  function resizeCardPlots(card){
+    card.querySelectorAll('.plotly.html-widget').forEach(function(gd){
+      // defer one frame so the card has its final size first
+      window.requestAnimationFrame(function(){ Plotly.Plots.resize(gd); });
+    });
+  }
+  // bs4Dash toggles the .maximized-card / .card-maximized class on the card element.
+  var mo = new MutationObserver(function(muts){
+    muts.forEach(function(m){
+      if(m.attributeName === 'class'){
+        resizeCardPlots(m.target);
+      }
+    });
+  });
+  document.addEventListener('DOMContentLoaded', function(){
+    document.querySelectorAll('.card').forEach(function(c){
+      mo.observe(c, { attributes: true });
+    });
+    // cards rendered later (renderUI) — observe on the fly
+    var bodyMo = new MutationObserver(function(muts){
+      muts.forEach(function(m){
+        m.addedNodes.forEach(function(n){
+          if(n.nodeType===1){
+            if(n.classList && n.classList.contains('card')) mo.observe(n,{attributes:true});
+            n.querySelectorAll && n.querySelectorAll('.card').forEach(function(c){ mo.observe(c,{attributes:true}); });
+          }
+        });
+      });
+    });
+    bodyMo.observe(document.body, { childList: true, subtree: true });
+  });
+window.fitExportPaper = function(){
+  var area  = document.querySelector('.exp-preview-area');
+  var paper = document.getElementById('exp_paper');
+  if(!area || !paper) return;
+  var pxW = parseFloat(paper.dataset.pxw || '768');
+  var pxH = parseFloat(paper.dataset.pxh || '576');
+  paper.style.width  = pxW + 'px';
+  paper.style.height = pxH + 'px';
+  var s = Math.min(area.clientWidth / pxW, area.clientHeight / pxH);
+  paper.style.transformOrigin = 'top left';
+  paper.style.transform = 'scale(' + s + ')';
+};
+"))),
     bs4TabItems(
       ### ---- RAW summary ----
       bs4TabItem(
@@ -186,7 +243,7 @@ ui <- bs4DashPage(
         fluidRow(
           
           ### ---- Peptide Length Distribution ----
-          bs4Card(title = "Peptide Length Distribution", width = 12, maximizable = TRUE, 
+          bs4Card(title = tagList("Peptide Length Distribution", export_btn("length_distribution")), width = 12, maximizable = TRUE, 
                   plotlyOutput("length_plot")
                   ),
           
@@ -212,7 +269,7 @@ ui <- bs4DashPage(
                                tabPanel("Per Sample",      
                                         plotOutput("charge_plot2")),
                                tabPanel("Across Measurement",
-                                        plotlyOutput("charge_plot_meas")
+                                        plotCardUI("charge_card", "charge per measurement",plotlyOutput("charge_plot_meas"), engine = "plotly")
                                )
                              )
                     ),

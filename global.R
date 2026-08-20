@@ -3370,7 +3370,7 @@ summarize_binders <- function(df) {
     pivot_wider(names_from = Binder, values_from = Count, values_fill = 0)
 }
 
-#------Statistical caluclations-------
+#------Statistical calculations-------
 #calcualte group comparison statistics
 compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_peptides_g2,
                                      g1, g2, pep_col, quantity_cols, col_map = NULL, use_measurements = FALSE) {
@@ -3979,7 +3979,6 @@ generate_motif_grid <- function(lst, lengths = 7:20) {
 }
 
 #----Running external stuff------
-
 run_netmhcpan <- function(peptides, allele, netmhcpan_path) {
   peptide_file <- tempfile(fileext = ".txt")
   output_file  <- tempfile(fileext = ".txt")
@@ -4217,4 +4216,30 @@ run_string <- function(df, score_threshold = 400, static = FALSE) {
                            nodesIdSelection = TRUE)
 }
 
+#----Publication Tool------
+export_btn <- function(key){
+  tags$button(
+    type = "button",
+    class = "btn btn-xs btn-outline-secondary",
+    style = "float:right; margin-top:-2px;",
+    title = "Publication export",
+    onclick = sprintf("Shiny.setInputValue('export_open', '%s', {priority:'event'});", key),
+    icon("camera")
+  )
+}
 
+apply_export_labels <- function(p, engine, title = "", xlab = "", ylab = ""){
+  nz <- function(x) !is.null(x) && nzchar(trimws(x))   # non-empty?
+  if (identical(engine, "plotly")) {
+    args <- list()
+    if (nz(title)) args$title <- list(text = title)
+    if (nz(xlab))  args$xaxis <- list(title = list(text = xlab))
+    if (nz(ylab))  args$yaxis <- list(title = list(text = ylab))
+    if (length(args)) p <- do.call(plotly::layout, c(list(p), args))
+  } else {                                   # ggplot
+    if (nz(title)) p <- p + ggplot2::labs(title = title)
+    if (nz(xlab))  p <- p + ggplot2::labs(x = xlab)
+    if (nz(ylab))  p <- p + ggplot2::labs(y = ylab)
+  }
+  p
+}

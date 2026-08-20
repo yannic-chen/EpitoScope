@@ -2975,6 +2975,172 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
                   options = list(pageLength = 25, scrollX = TRUE))
   })
   
+  #---------------------Plot publication modal------------
+  export_catalog <- list(
+    length_distribution = list(
+      title = "Peptide Length Distribution", engine = "plotly",
+      build = function(font, palette){
+        lst <- processed_data_list()                                   # <-- MISSING LINE
+        check_data_error(lst, required_cols = "LENGTH", na_policy = "any")
+        scale_font(plot_length_distribution(lst, color = palette), size = font)
+      }
+    ),
+    charge_per_measurement = list(
+      title = "Charge per measurement", engine = "plotly",
+      build = function(font, palette){
+        lst <- processed_data_list()                                   # <-- MISSING LINE
+        check_data_error(lst, required_cols = "CHARGE", na_policy = "all")
+        scale_font(plot_charge_per_measurement(lst, default_quantity_cols_r(), color = palette), size = font)
+      }
+    )
+    
+    #... add more plots
+  )
+  
+  
+  open_export_modal <- function(initial){
+    showModal(modalDialog(
+      title = "Publication export", size = "l", easyClose = TRUE, footer = modalButton("Close"),
+      
+      # (1) near-fullscreen sizing + preview area/paper styling (auto-removed on close)
+      tags$style(HTML("
+  .modal-dialog { max-width: 94vw !important; width: 94vw; margin: 3vh auto; }
+  .modal-content { height: 94vh; background: #fff; }
+  .modal-body   { height: calc(94vh - 58px); overflow: hidden; }
+
+  /* flex-centered paper — matches the JS (scale about center, no translate) */
+  .exp-preview-area {
+    height: 100%; position: relative; overflow: hidden;
+    display: flex; align-items: flex-start; justify-content: flex-start;
+  }
+  .exp-paper {
+    flex: 0 0 auto;
+    background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.18);
+  }
+
+  /* height chain so the plot fills the paper */
+  #exp_preview_ui { height: 100%; width: 100%; display: block; }
+  #exp_preview_ui > div, #exp_preview_ui .plotly,
+  #exp_preview_ui .shiny-plot-output, #exp_preview_ui img {
+    height: 100% !important; width: 100% !important;
+  }
+
+  .exp-controls { height: 100%; overflow-y: auto; }
+
+  .modal.fade .modal-dialog { transition: none !important; transform: none !important; }
+  .modal.fade            { transition: none !important; }
+  .modal-backdrop.fade   { transition: none !important; }
+  .modal-backdrop.show   { opacity: .5; }
+")),
+      
+      fluidRow(
+        column(2, class = "exp-controls",
+               selectInput("exp_which", "Figure",
+                           choices  = setNames(names(export_catalog),
+                                               vapply(export_catalog, `[[`, "", "title")),
+                           selected = initial),
+               sliderInput ("exp_font", "Font size", 8, 28, 13),
+               selectInput ("exp_palette", "Palette", c("viridis","Set2","Greys"),
+                            selected = isolate(input$color_palette)),
+               textInput("exp_title", "Title",        placeholder = "(keep default)"),
+               textInput("exp_xlab",  "X-axis label", placeholder = "(keep default)"),
+               textInput("exp_ylab",  "Y-axis label", placeholder = "(keep default)"),
+               fluidRow(column(6, numericInput("exp_w","Width (in)", 8, 1, 40, 0.5)),
+                        column(6, numericInput("exp_h","Height (in)",6, 1, 40, 0.5))),
+               fluidRow(column(6, numericInput("exp_dpi","DPI", 300, 72, 600, 1)),
+                        column(6, selectInput ("exp_fmt","Format", c("png","svg","jpeg","pdf")))),
+               uiOutput("exp_dl_ui")
+        ),
+        # (2) wrap the preview in area + paper so fitExportPaper has targets
+        column(10,
+               div(class = "exp-preview-area",
+                   div(id = "exp_paper", class = "exp-paper",
+                       uiOutput("exp_preview_ui"))))
+      )
+    ))
+    shinyjs::runjs("setTimeout(window.fitExportPaper, 120);")
+  }
+  
+  observeEvent(input$open_export, open_export_modal(names(export_catalog)[1]))
+  
+  exp_entry <- reactive({ req(input$exp_which); export_catalog[[input$exp_which]] })
+  
+  exp_plot <- reactive({
+    e <- exp_entry(); req(e)
+    p <- e$build(input$exp_font, input$exp_palette)
+    p <- apply_export_labels(p, e$engine, input$exp_title, input$exp_xlab, input$exp_ylab)
+    if (identical(e$engine, "plotly")) {
+      p <- plotly::layout(p, width = input$exp_w * 96, height = input$exp_h * 96)
+      p <- plotly::config(p, responsive = FALSE)
+    }
+    p
+  }) %>% debounce(300)
+  
+  observeEvent(input$exp_which, {
+    e <- exp_entry(); req(e)
+    p <- e$build(isolate(input$exp_font), isolate(input$exp_palette))
+    if (identical(e$engine, "plotly")) {
+      ax <- function(t) if (is.list(t)) t$text else if (is.character(t)) t else ""
+      updateTextInput(session, "exp_title", value = ax(p$x$layout$title))
+      updateTextInput(session, "exp_xlab",  value = ax(p$x$layout$xaxis$title))
+      updateTextInput(session, "exp_ylab",  value = ax(p$x$layout$yaxis$title))
+    } else {
+      updateTextInput(session, "exp_title", value = p$labels$title %||% "")
+      updateTextInput(session, "exp_xlab",  value = p$labels$x %||% "")
+      updateTextInput(session, "exp_ylab",  value = p$labels$y %||% "")
+    }
+  }, ignoreInit = FALSE)
+  
+  output$exp_preview_ui <- renderUI({
+    e <- exp_entry(); req(e)
+    if (e$engine == "plotly") plotlyOutput("exp_preview_plotly", height = "100%", width = "100%")
+    else                      plotOutput ("exp_preview_ggplot",  height = "100%", width = "100%")
+  })
+  
+  output$exp_preview_plotly <- renderPlotly({ req(exp_entry()$engine == "plotly"); exp_plot() })
+  output$exp_preview_ggplot <- renderPlot(
+    { req(exp_entry()$engine == "ggplot"); exp_plot() },
+    width  = function() input$exp_w * 96,
+    height = function() input$exp_h * 96,
+    res = 96
+  )
+  
+  output$exp_dl_ui <- renderUI({
+    e <- exp_entry(); req(e)
+    if (e$engine == "plotly")
+      actionButton("exp_dl_plotly", "Download", icon = icon("download"), class = "btn-primary")
+    else
+      downloadButton("exp_dl_gg", "Download", class = "btn-primary")
+  })
+  
+  # ggplot -> ggsave at exact inches/DPI
+  output$exp_dl_gg <- downloadHandler(
+    filename = function() paste0(input$exp_which, ".", input$exp_fmt),
+    content  = function(file)
+      ggsave(file, exp_plot(), width = input$exp_w, height = input$exp_h,
+             dpi = input$exp_dpi, units = "in", device = input$exp_fmt, limitsize = FALSE)
+  )
+  
+  # plotly -> client-side capture (reuses your existing downloadPlotly handler)
+  observeEvent(input$exp_dl_plotly, {
+    session$sendCustomMessage("downloadPlotly", list(
+      id = "exp_preview_plotly", format = input$exp_fmt,
+      width = round(input$exp_w * 96), height = round(input$exp_h * 96),
+      scale = input$exp_dpi / 96, filename = input$exp_which))
+  })
+  
+  # Adjust modal window on window size change
+  observe({
+    req(input$exp_w, input$exp_h, input$exp_which)
+    shinyjs::runjs(sprintf(
+      "var p=document.getElementById('exp_paper');
+     if(p){ p.dataset.pxw='%f'; p.dataset.pxh='%f'; setTimeout(window.fitExportPaper, 30); }",
+      input$exp_w * 96, input$exp_h * 96))
+  })
+  
+  # per-card camera buttons  -> open on the clicked plot
+  observeEvent(input$export_open, open_export_modal(input$export_open))
+  
   #---------------------Dev Console-------------------------
   console_history <- reactiveVal("")
   
@@ -3013,7 +3179,7 @@ shinyApp(
   server = function(input, output, session) {
     server(input, output, session, 
            #input_variable = test_annotation,
-           input_variable = data_list[15:20],
+           input_variable = data_list[15:17],
            #input_variable = data_list2[1:2],
            #input_variable = preloaded_data,
            generate_pseudo_sequence = FALSE, 
