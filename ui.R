@@ -243,116 +243,139 @@ window.fitExportPaper = function(){
         fluidRow(
           
           ### ---- Peptide Length Distribution ----
-          bs4Card(title = tagList("Peptide Length Distribution", export_btn("length_distribution")), width = 12, maximizable = TRUE, 
-                  plotlyOutput("length_plot")
-                  ),
-          
-          ### ---- Length Range Percentage ----
-          bs4Card(title = "Length Range Percentage", width = 12, maximizable = TRUE,
-                  sliderInput("mhc_length_range", "length window:", min = 5, max = 30,
-                              value = c(8, 13), step = 1),
-                  tabsetPanel(
-                    tabPanel("Per Sample",
-                             plotOutput("length_range_percentage")
-                    ),
-                    tabPanel("Per Measurement",
-                             plotOutput("length_range_percentage_meas")
-                    )
-                  )
+          with_export(
+            bs4Card(title = "Peptide Length Distribution", width = 12, maximizable = TRUE,
+                    plotlyOutput("length_plot")),
+            "length_distribution"
           ),
+          ### ---- Length Range Percentage ----
+          with_export(
+            bs4Card(title = "Length Range Percentage", width = 12, maximizable = TRUE,
+                    sliderInput("mhc_length_range", "length window:", min = 5, max = 30,
+                                value = c(8, 13), step = 1),
+                    tabsetPanel(
+                      tabPanel("Per Sample",
+                               div(`data-tab-key` = "length_range_distribution",
+                                   plotOutput("length_range_percentage"))),
+                    tabPanel("Per Measurement",
+                             div(`data-tab-key` = "length_range_distribution_meas",
+                                 plotOutput("length_range_percentage_meas")))
+                    )),
+            "length_range_distribution"
+            ),
           
           ### ---- Other Numeric Columns ----
-          bs4Card(title = "Other Numeric Columns", width = 12, maximizable = TRUE, 
-                  tabsetPanel(
-                    tabPanel("Charge",
-                             tabsetPanel(
-                               tabPanel("Per Sample",      
-                                        plotOutput("charge_plot2")),
-                               tabPanel("Across Measurement",
-                                        plotCardUI("charge_card", "charge per measurement",plotlyOutput("charge_plot_meas"), engine = "plotly")
+          with_export(
+            bs4Card(title = "Other Numeric Columns", width = 12, maximizable = TRUE, 
+                    tabsetPanel(
+                      tabPanel("Charge",
+                               tabsetPanel(
+                                 tabPanel("Per Sample",
+                                          div(`data-tab-key` = "charge_plot",
+                                              plotOutput("charge_plot2"))),
+                                 tabPanel("Across Measurement",
+                                          div(`data-tab-key` = "charge_plot_meas",
+                                              plotlyOutput("charge_plot_meas"))
+                                 )
                                )
-                             )
-                    ),
-                    
-                    tabPanel("Mass",
-                             tabsetPanel(
-                               tabPanel("Per Sample",    
-                                        plotlyOutput("mass_plot2")),
-                               tabPanel("Across Measurement",
-                                        h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
-                                        plotlyOutput("mass_plot_meas")
+                      ),
+                      
+                      tabPanel("Mass",
+                               tabsetPanel(
+                                 tabPanel("Per Sample",
+                                          div(`data-tab-key` = "mass_plot",
+                                              plotlyOutput("mass_plot2"))),
+                                 tabPanel("Across Measurement",
+                                          h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
+                                          div(`data-tab-key` = "mass_plot_meas",
+                                              plotlyOutput("mass_plot_meas"))
+                                 )
                                )
-                             )
-                    ),
-                    tabPanel("m/z",
-                             tabsetPanel(
-                               tabPanel("Per Sample",      
-                                        plotlyOutput("mz_plot2")),
-                               tabPanel("Across Measurement",
-                                        h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
-                                        plotlyOutput("mz_plot_meas")
+                      ),
+                      tabPanel("m/z",
+                               tabsetPanel(
+                                 tabPanel("Per Sample",
+                                          div(`data-tab-key` = "mz_plot",
+                                              plotlyOutput("mz_plot2"))),
+                                 tabPanel("Across Measurement",
+                                          h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
+                                          div(`data-tab-key` = "mz_plot_meas",
+                                              plotlyOutput("mz_plot_meas"))
+                                 )
                                )
-                             )
-                    ),
-                    tabPanel("RT",
-                             tabsetPanel(
-                               tabPanel("Per Sample",      
-                                        uiOutput("RT_plot2")),
-                               tabPanel("Across Measurement",
-                                        h6("The light shaded band across the histogram represents the range between measurements."),
-                                        uiOutput("RT_plot_meas")
+                      ),
+                      tabPanel("RT",
+                               tabsetPanel(
+                                 tabPanel("Per Sample",
+                                          div(`data-tab-key` = "rt_histograms",
+                                              uiOutput("RT_plot2"))),
+                                 tabPanel("Across Measurement",
+                                          h6("The light shaded band across the histogram represents the range between measurements."),
+                                          div(`data-tab-key` = "rt_per_measurement",
+                                              uiOutput("RT_plot_meas"))
+                                 )
                                )
-                             )
-                    ),
-                    tabPanel("Mass Error",
-                             bs4Dash::tooltip(icon("info-circle"), "Either ppm (PEAKS) or delta Mass (Fragpipe).", placement = "right"),
-                             tabsetPanel(
-                               tabPanel("Per Sample",      
-                                        plotlyOutput("ppm_plot2")),
-                               tabPanel("Across Measurement", 
-                                        h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
-                                        plotlyOutput("ppm_plot_meas")
+                      ),
+                      tabPanel("Mass Error",
+                               bs4Dash::tooltip(icon("info-circle"), "Either ppm (PEAKS) or delta Mass (Fragpipe).", placement = "right"),
+                               tabsetPanel(
+                                 tabPanel("Per Sample",
+                                          div(`data-tab-key` = "ppm_plot",
+                                              plotlyOutput("ppm_plot2"))),
+                                 tabPanel("Across Measurement", 
+                                          h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
+                                          div(`data-tab-key` = "ppm_plot_meas",
+                                              plotlyOutput("ppm_plot_meas"))
+                                 )
                                )
-                             )
-                    ),
-                    tabPanel("score",
-                             tabsetPanel(
-                               tabPanel("Per Sample",      
-                                        plotlyOutput("score_violin2")),
-                               tabPanel("Across Measurement", 
-                                        h6("Line is mean distribution. THe dashed line is min and the shaded area is max."),
-                                        plotlyOutput("score_violin_meas")
+                      ),
+                      tabPanel("score",
+                               tabsetPanel(
+                                 tabPanel("Per Sample",
+                                          div(`data-tab-key` = "score_plot",
+                                              plotlyOutput("score_violin2"))),
+                                 tabPanel("Across Measurement", 
+                                          h6("Line is mean distribution. THe dashed line is min and the shaded area is max."),
+                                          div(`data-tab-key` = "score_plot_meas",
+                                              plotlyOutput("score_violin_meas"))
+                                 )
                                )
-                             )
-                    )
-                  )
+                      )
+                    )),
+            "charge_plot"
           ),
-          
-          ### ---- Motif Plot ---
-          bs4Card(title = tagList("Motif Plot", bs4Dash::tooltip(icon("info-circle"),"Minimum of 5 sequences are required for Motif generation.", placement = "right")
-                                  ), width = 12, maximizable = TRUE, 
-                  uiOutput("motif_tabs")
-                  ),
-          
+          ### ---- Motif Plot ----
+          with_export(
+            bs4Card(title = tagList("Motif Plot", bs4Dash::tooltip(icon("info-circle"),"Minimum of 5 sequences are required for Motif generation.", placement = "right")
+                                    ), width = 12, maximizable = TRUE, 
+                    uiOutput("motif_tabs")),
+            paste0("motif_len_", motif_plot_length[1])
+            ),
           ### ---- Unique Entries ----
-          bs4Card(title = "Identification distribution", width = 12, maximizable = TRUE, 
-                  tabsetPanel(
-                    tabPanel("Peptides",
-                             h6("Unique Peptides (no PTMs)", bs4Dash::tooltip(icon("info-circle"),"0s are considered identified but not quantified if NA also exist. Otherwise 0 is considered not identified.", placement = "right")),
-                             plotOutput("summary_peptides_plot3")
-                    ),
-                    tabPanel("Peptidoforms", 
-                             h6("Peptidoforms (including PTMs)", bs4Dash::tooltip(icon("info-circle"),"0s are considered identified but not quantified if NA also exist. Otherwise 0 is considered not identified.", placement = "right")),
-                             plotOutput("summary_peptidoforms_plot3")
-                    ),
-                    tabPanel("Proteins",
-                             h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"Protein names is obtained from the Accession column and is truncated to the first space.", placement = "right")),
-                             plotOutput("summary_proteins_plot3")
-                    )
-                  )
+          with_export(
+            bs4Card(title = "Identification distribution", width = 12, maximizable = TRUE, 
+                    tabsetPanel(
+                      tabPanel("Peptides",
+                               h6("Unique Peptides (no PTMs)", bs4Dash::tooltip(icon("info-circle"),"0s are considered identified but not quantified if NA also exist. Otherwise 0 is considered not identified.", placement = "right")),
+                               div(`data-tab-key` = "peptides_unique_meas",
+                                   plotOutput("summary_peptides_plot3"))
+                      ),
+                      tabPanel("Peptidoforms", 
+                               h6("Peptidoforms (including PTMs)", bs4Dash::tooltip(icon("info-circle"),"0s are considered identified but not quantified if NA also exist. Otherwise 0 is considered not identified.", placement = "right")),
+                               div(`data-tab-key` = "peptidoforms_unique_meas",
+                                   plotOutput("summary_peptidoforms_plot3"))
+                      ),
+                      tabPanel("Proteins",
+                               h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"Protein names is obtained from the Accession column and is truncated to the first space.", placement = "right")),
+                               div(`data-tab-key` = "proteins_unique_meas",
+                                   plotOutput("summary_proteins_plot3"))
+                      )
+                    )),
+            "peptides_unique_meas"
           ),
           
           ### ---- Dynamic Range plot ----
+          with_export(
           bs4Card(title = tagList("Dynamic Rang", bs4Dash::tooltip(icon("info-circle"),"Plot generation and highlighting can take long time with large number of samples", placement = "right")
                                   ), width = 12, maximizable = TRUE, 
                   textInput("dynrange_search", "Highlight protein (regex supported):", placeholder = "HLA[ABC]"),
@@ -360,21 +383,27 @@ window.fitExportPaper = function(){
                   actionButton("dynrange_go", "Highlight", icon = icon("magnifying-glass")),
                   h6("Plots with Protein matches have hoverinfo for non-matches deactivated to allow better hovering over matches."),
                   tabsetPanel(
-                    tabPanel("Individual", uiOutput("dynrange_individual_ui")),
+                    tabPanel("Individual", 
+                             div(`data-tab-key` = "dynrange_individual",
+                             uiOutput("dynrange_individual_ui"))),
                     tabPanel("Combined", 
                              radioButtons("dynrange_rank_mode", "Rank scale:",
                                           choices  = c("Absolute" = "absolute", "Relative (%)" = "relative"),
                                           selected = "absolute", inline = TRUE),
-                             plotlyOutput("dynrange_combined"))
+                             div(`data-tab-key` = "dynrange_combined", 
+                             plotlyOutput("dynrange_combined")))
                     )
                   ),
-          
+          "dynrange_individual"
+          ),
           ### ---- 1/k0 vs mz ----
-          bs4Card(title = "k0 vs mz", width = 12, maximizable = TRUE,
-                  uiOutput("scatterplots_ui")
-                  ),
-          
+          with_export(
+            bs4Card(title = "k0 vs mz", width = 12, maximizable = TRUE,
+                    uiOutput("scatterplots_ui")),
+            "mz_k0"
+          ),
           ### ---- measurement specific heatmap ----
+          with_export(
           bs4Card(title = "Measurement Specific Heatmap", width = 12, maximizable = TRUE,
                   selectInput("cluster_mode_ea", "Clustering:",
                               choices = c(
@@ -386,7 +415,9 @@ window.fitExportPaper = function(){
                               
                   ),
                   plotlyOutput("measurement_heatmap", width = "auto", height = "650px")
-                  )
+                  ),
+          "measurement_heatmap"
+          )
           )
         ),
       
@@ -395,95 +426,110 @@ window.fitExportPaper = function(){
         tabName = "results",  # must match menuItem
         fluidRow(
           ### ---- Unique Entries ----
-          bs4Card(title = "Unique entries", width = 12, maximizable = TRUE, 
-                  tabsetPanel(
-                    tabPanel("Peptides",
-                             h6("Unique Peptides (no PTMs)"),
-                             plotOutput("summary_peptides_plot2")
-                    ),
-                    tabPanel("Peptidoforms", 
-                             h6("Peptidoforms (including PTMs)"),
-                             plotOutput("summary_peptidoforms_plot2")
-                    ),
-                    tabPanel("Proteins",
-                             h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"Protein names is obtained from the Accession column and is truncated to the first space.", placement = "right")),
-                             plotOutput("summary_proteins_plot2")
-                    )
-                  )
+          with_export(
+            bs4Card(title = "Unique entries", width = 12, maximizable = TRUE, 
+                    tabsetPanel(
+                      tabPanel("Peptides",
+                               h6("Unique Peptides (no PTMs)"),
+                               div(`data-tab-key` = "peptides_unique",
+                                   plotOutput("summary_peptides_plot2"))
+                      ),
+                      tabPanel("Peptidoforms", 
+                               h6("Peptidoforms (including PTMs)"),
+                               div(`data-tab-key` = "peptidoforms_unique",
+                                   plotOutput("summary_peptidoforms_plot2"))
+                      ),
+                      tabPanel("Proteins",
+                               h6("Proteins", bs4Dash::tooltip(icon("info-circle"),"Protein names is obtained from the Accession column and is truncated to the first space.", placement = "right")),
+                               div(`data-tab-key` = "proteins_unique",
+                                   plotOutput("summary_proteins_plot2"))
+                      )
+                    )),
+            "peptides_unique"
           ),
-          
           ### ---- Data Completeness ----
-          bs4Card(title = tagList("Data Completeness", bs4Dash::tooltip(icon("info-circle"),"NA is used for missing/not identified. If no NA exist, then 0 will be used for missing/not identified", placement = "right")
-                                  ), width = 12, maximizable = TRUE,
-                  h6("WARNING: For PEAKS 12 Studio, the column X.Spec has been replaced with X.Feature. X.Feature returns 0 even when a peptide has been identified but could not be quantified. X.Spec on the other hand only returns 0 if it is not identified at all."),
-                  tabsetPanel(
-                    # --- absolute ---
-                    tabPanel(
-                      "Absolute",
-                      plotOutput("completeness_plot")
-                    ),
-                    
-                    # --- percentage ---
-                    tabPanel(
-                      "Percentage",
-                      plotOutput("completeness_plot2")
-                    )
-                  )
+          with_export(
+            bs4Card(title = tagList("Data Completeness", bs4Dash::tooltip(icon("info-circle"),"NA is used for missing/not identified. If no NA exist, then 0 will be used for missing/not identified", placement = "right")
+            ), width = 12, maximizable = TRUE,
+            h6("WARNING: For PEAKS 12 Studio, the column X.Spec has been replaced with X.Feature. X.Feature returns 0 even when a peptide has been identified but could not be quantified. X.Spec on the other hand only returns 0 if it is not identified at all."),
+            tabsetPanel(
+              # --- absolute ---
+              tabPanel(
+                "Absolute",
+                div(`data-tab-key` = "completeness_count",
+                    plotOutput("completeness_plot"))
+              ),
+              
+              # --- percentage ---
+              tabPanel(
+                "Percentage",
+                div(`data-tab-key` = "completeness_percent",
+                    plotOutput("completeness_plot2"))
+              )
+            )),
+            "completeness_count"
           ),
-          
           ### ---- Upset Plot of Peptides ----
-          bs4Card(title = tagList("Upset Plot of Peptides", bs4Dash::tooltip(icon("info-circle"),"Currently intersection min_size is 2% of combined number of unique peptides.", placement = "right")
-                                  ), width = 12, maximizable = TRUE,
-                  fluidRow(
-                    column(4, numericInput("upset_min_size",    "Min. intersection size (percent):", value = 2,  min = 0, step = 0.1)),
-                    column(4, numericInput("upset_min_degree",  "Min. degree:",            value = 1,  min = 1, step = 1)),
-                    column(4, numericInput("upset_n_intersect", "Max. intersections:",     value = 40, min = 3, step = 1))
-                  ),
-                  plotOutput("upset_plot"),
-                  tags$hr(),
-                  helpText("Click a row below to explore the peptides in that intersection."),
-                  DT::DTOutput("upset_intersection_table")
-                  ),
-          
+          with_export(
+            bs4Card(title = tagList("Upset Plot of Peptides", bs4Dash::tooltip(icon("info-circle"),"Currently intersection min_size is 2% of combined number of unique peptides.", placement = "right")
+            ), width = 12, maximizable = TRUE,
+            fluidRow(
+              column(4, numericInput("upset_min_size",    "Min. intersection size (percent):", value = 2,  min = 0, step = 0.1)),
+              column(4, numericInput("upset_min_degree",  "Min. degree:",            value = 1,  min = 1, step = 1)),
+              column(4, numericInput("upset_n_intersect", "Max. intersections:",     value = 40, min = 3, step = 1))
+            ),
+            plotOutput("upset_plot"),
+            tags$hr(),
+            helpText("Click a row below to explore the peptides in that intersection."),
+            DT::DTOutput("upset_intersection_table")
+            ),
+            "upset_plot"
+          ),
           ### ---- Pairwise shared peptide matrix ----
-          bs4Card(title = tagList("Pairwise shared peptide matrix", bs4Dash::tooltip(icon("info-circle"),"Pairwise comparison of number of shared peptides. For Percent visualization union is used (i.e. jaccard style).", placement = "right")
-                                  ), width = 12, maximizable = TRUE,
-                  selectInput("shared_mode", "Visualization:", choices = c("Count" = "count", "Percent" = "percent")),
-                  plotlyOutput("Pairwise_shared_peptide_matrix")
-                  ),
-          
+          with_export(
+            bs4Card(title = tagList("Pairwise shared peptide matrix", bs4Dash::tooltip(icon("info-circle"),"Pairwise comparison of number of shared peptides. For Percent visualization union is used (i.e. jaccard style).", placement = "right")
+            ), width = 12, maximizable = TRUE,
+            selectInput("shared_mode", "Visualization:", choices = c("Count" = "count", "Percent" = "percent")),
+            plotlyOutput("Pairwise_shared_peptide_matrix")
+            ),
+            "shared_peptide_matrix"
+          ),
           ### ---- Pairwise shared peptide quantity comparison matrix ----
-          bs4Card(title = tagList("Pairwise shared peptide quantity comparison matrix", bs4Dash::tooltip(icon("info-circle"),"Pairwise comparison of peptide max quantity of shared peptides, using pearson correlation. Clustering distance is 'euclidean' and method is 'complete'. 
+          with_export(
+            bs4Card(title = tagList("Pairwise shared peptide quantity comparison matrix", bs4Dash::tooltip(icon("info-circle"),"Pairwise comparison of peptide max quantity of shared peptides, using pearson correlation. Clustering distance is 'euclidean' and method is 'complete'. 
                                                                                                          Peptide label is removed if # > 200. NA is coloured Gray. Rastering is used for large data.", placement = "right")
-          ), width = 12, maximizable = TRUE,
-          selectInput("cluster_mode", "Clustering:",
-                      choices = c(
-                        "None" = "none",
-                        "Rows only" = "rows",
-                        "Columns only" = "columns",
-                        "Rows + columns" = "both"
-                      ), selected = "none"
-
+            ), width = 12, maximizable = TRUE,
+            selectInput("cluster_mode", "Clustering:",
+                        choices = c(
+                          "None" = "none",
+                          "Rows only" = "rows",
+                          "Columns only" = "columns",
+                          "Rows + columns" = "both"
+                        ), selected = "none"
+                        
+            ),
+            plotlyOutput("pairwise_peptide_quant_correlation")
+            ),
+            "pairwise_quant_correlation"
           ),
-          plotlyOutput("pairwise_peptide_quant_correlation")
-          ),
-          
           ### ---- PCA plot ----
-          bs4Card(title = "PCA plot", width = 12, maximizable = TRUE,
-                  radioButtons("pca_level", "PCA level",
-                               c("Sample-level" = "sample", "Measurement-level" = "measurement"),
-                               selected = "sample", inline = TRUE),
-                  radioButtons("pca_dim", "View", c("2D" = "2d", "3D" = "3d"),
-                               selected = "2d", inline = TRUE),
-                  uiOutput("pca_group_ui"),
-                  plotlyOutput("pca", height = "600px"),
-                  tags$hr(),
-                  h5("Explained variance"),
-                  h6("This plot shows how many principle components (PC) are required to explain how much of the variance 
+          with_export(
+            bs4Card(title = "PCA plot", width = 12, maximizable = TRUE,
+                    radioButtons("pca_level", "PCA level",
+                                 c("Sample-level" = "sample", "Measurement-level" = "measurement"),
+                                 selected = "sample", inline = TRUE),
+                    radioButtons("pca_dim", "View", c("2D" = "2d", "3D" = "3d"),
+                                 selected = "2d", inline = TRUE),
+                    uiOutput("pca_group_ui"),
+                    plotlyOutput("pca", height = "600px"),
+                    tags$hr(),
+                    h5("Explained variance"),
+                    h6("This plot shows how many principle components (PC) are required to explain how much of the variance 
                      and how much each PC controbutes. The more PC are required to explain a given variance, the more complex the data is to group."),
-                  plotlyOutput("pca_variance", height = "300px")
-          ),
-          
+                    plotlyOutput("pca_variance", height = "300px")
+            ),
+            "pca_scatter"
+          )
         )
       ),
       
@@ -498,13 +544,6 @@ window.fitExportPaper = function(){
                                                        This can be time consuming, as such the maximum number of groups is limited to 5.
                                                        Group data are combined via unionized, instead of intersected.", placement = "right")
                                   ), width = 12, maximizable = TRUE,
-                  #numericInput(
-                  #  inputId = "max_missing_per_group",
-                  #  label   = "Max missing samples per peptide (per group)",
-                  #  value   = 0,
-                  #  min     = 0,
-                  #  step    = 1
-                  #),
                   sliderInput(
                     "min_presence_fraction",
                     tagList("Minimum fraction the peptide has to be present per group", bs4Dash::tooltip(icon("info-circle"),"0 = union, 1 = intersect", placement = "right")
@@ -517,9 +556,6 @@ window.fitExportPaper = function(){
                   numericInput("n_groups", "Number of groups (2-5):", 2, min = 2, max = 5),
                   uiOutput("group_assign_ui"),
                   actionButton("update_group_comp", "Update Groups"),
-                  #h6("WIP: currently this checkbox doesnt do anything. Need to solve how to combine info same peptide with different peptidoforms"),
-                  #checkboxInput(inputId = "use_peptidoforms",label = tagList("Compare at peptidoform level ",tags$small(style = "color: grey; font-weight: normal;",
-                  #      "(includes PTMs)")),value = FALSE),
                   radioButtons("go_background", "Enrichment background:",
                                c("Whole genome" = "genome", "Detected proteins" = "detected", "Custom list" = "custom"),
                                selected = "genome", inline = TRUE),

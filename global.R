@@ -93,6 +93,7 @@ load_ptm_ref <- function(path = "ptm_reference.csv") {
 }
 
 PTM_REF <- load_ptm_ref()
+motif_plot_length <- 7:20
 
 #-----------Column extraction------------
 # Here we initiate all the possible column names important for us from all different input formats
@@ -2530,7 +2531,7 @@ dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", colo
     
     p <- p %>% plotly::add_trace(
       type = "scattergl", mode = "markers",
-      x = rank_v, y = y_v, text = hover, hoverinfo = "text",
+      x = rank_x, y = y_v, text = hover, hoverinfo = "text",
       marker = list(color = cols[[sname]], size = 4, opacity = 0.5),
       name = sname, legendgroup = sname)
   }
@@ -4242,4 +4243,51 @@ apply_export_labels <- function(p, engine, title = "", xlab = "", ylab = ""){
     if (nz(ylab))  p <- p + ggplot2::labs(y = ylab)
   }
   p
+}
+
+panel_grid <- function(lst, panel_fn, ncol = 3, empty_msg = "No panels to display"){
+  panels <- Filter(Negate(is.null), lapply(names(lst), function(s) panel_fn(lst[[s]], s)))
+  shiny::validate(shiny::need(length(panels) > 0, empty_msg))
+  patchwork::wrap_plots(panels, ncol = min(ncol, length(panels)))
+}
+
+#This is for the quickaccess of the relevant plots for exporting from each card.
+with_export <- function(card, key){
+  card   <- tagAppendAttributes(card, `data-export-key` = key)
+  key_js <- jsonlite::toJSON(key, auto_unbox = TRUE)
+  tagList(
+    card,
+    tags$script(HTML(sprintf("
+      (function(){
+        var host = document.querySelector('[data-export-key=%s]');
+        if(!host) return;
+        var card = host.matches('.card') ? host : host.querySelector('.card');
+        if(!card || card.querySelector('.export-cam')) return;
+
+        var tools = card.querySelector('.card-tools');
+        if(!tools){
+          var header = card.querySelector('.card-header'); if(!header) return;
+          tools = document.createElement('div'); tools.className='card-tools';
+          header.appendChild(tools);
+        }
+
+        var btn = document.createElement('button');
+        btn.type='button'; btn.className='btn btn-tool export-cam';
+        btn.title='Publication export';
+        btn.innerHTML='<i class=\"fas fa-camera\"></i>';
+        btn.addEventListener('click', function(e){
+          e.stopPropagation();
+          var key = %s;                                  // default (card-level)
+          var cands = card.querySelectorAll('[data-tab-key]');
+          for(var i = 0; i < cands.length; i++){
+            var pane = cands[i].closest('.tab-pane');
+            var visible = pane ? (pane.offsetParent !== null) : true;  // truly on-screen pane
+            if(visible){ key = cands[i].getAttribute('data-tab-key'); break; }
+          }
+          Shiny.setInputValue('export_open', key, {priority:'event'});
+        });
+        tools.insertBefore(btn, tools.firstChild);
+      })();
+    ", key_js, key_js)))
+  )
 }
