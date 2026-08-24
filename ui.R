@@ -621,13 +621,13 @@ window.fitExportPaper = function(){
           ),
           ### ---- Statistical Plots ----
           with_export(
-            bs4Card(title = tagList("Statistical Plots", bs4Dash::tooltip(icon("info-circle"),"Only significant datapoints are interactable (to improve speed). 
+          bs4Card(title = tagList("Statistical Plots", bs4Dash::tooltip(icon("info-circle"),"Only significant datapoints are interactable (to improve speed). 
                                                        Both Bonferroni and Benjamin-hochberg adjusted p-value are calculated. Only Benjamin-hochberg used for now.
                                                       p-value can only be calculated when more than 2 datapoints/measurements per peptide in each group exist. Otherwise, no p-value is calculated, which means no visualization.
                                                       Significant here means a corrected p-value of less than 0.05 and a log2FC larger than 1.", placement = "right")
-            ), width = 12, maximizable = TRUE,
-            uiOutput("group_stats_tabs")
-            ),
+                                  ), width = 12, maximizable = TRUE,
+                  uiOutput("group_stats_tabs")
+          ),
           "group_stats"
           ),
           
@@ -679,6 +679,13 @@ window.fitExportPaper = function(){
                     multiple = TRUE,
                     options  = list(placeholder = "Type to search alleles...")
                   ),
+                  selectizeInput(
+                    "HLA_alleles_II",
+                    "Select MHC-II allele(s):",
+                    choices = NULL,
+                    multiple = TRUE,
+                    options = list(placeholder = "Type to search DR / DQ / DP alleles...")
+                    ),
                   actionButton("run_netmhc", "Run netMHCpan"),
                   textOutput("netmhc_status"),
                   radioButtons("mhc_class", "Default thresholds:", c("MHC-I" = "I", "MHC-II" = "II"), selected = "I", inline = TRUE),
@@ -821,10 +828,10 @@ window.fitExportPaper = function(){
                   numericInput("strong_cut", "Strong binder  %Rank \u2264", value = 0.5, min = 0, step = 0.1),
                   numericInput("weak_cut",   "Weak binder  %Rank \u2264",   value = 2.0, min = 0, step = 0.1)
           ),
-          bs4Card(title = "netMHCpan location", width = 6,
-                  textInput("netmhc_path_input", "netMHCpan path", value = ""),
-                  actionButton("netmhc_recheck", "Check", class = "btn-sm"),
-                  textOutput("netmhc_path_status")
+          bs4Card(title = "netMHCpan raw results", width = 6,
+                  p("Raw netMHCpan outputs are written to R's session temp directory:"),
+                  verbatimTextOutput("netmhc_tempdir"),
+                  actionButton("open_netmhc_folder", "Open folder", icon = icon("folder-open"), class = "btn-sm")
           )
         )
       )

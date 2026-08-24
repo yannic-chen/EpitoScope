@@ -44,9 +44,8 @@ Task List
 - [ ] Return netMHCpan results location, so user can save it up.
 - [ ] Allow the measurement decoupling from sample, so each measurement is its own sample or group the measuremuents by condition or replicate.
 - [X] Increase Font size / add control to font size
-- [ ] Add dedicated plot modification tab for each plot to generate publishable figure
+- [X] Add dedicated plot modification tab for each plot to generate publishable figure
 - [ ] Add netMHC2pan
-- [ ] Helper function to separate all measurements to their own sample
 
 ### Maybe?
 - [X] Flexible Length Range Percentage plot for MHC2 and perhaps other species
@@ -125,10 +124,14 @@ Then we install netMHCpan on the WSL.
         ```powershell
         wsl
         ```
+    3. install `tcsh` and `gawk`
+       ```bash
+       sudo apt-get update && sudo apt-get install -y tcsh gawk
+       ```
 2. Download the netMHCpan package from the [official website](https://services.healthtech.dtu.dk/service.php?NetMHCpan-4.2).
 3. **[Optional]** Move the file to a different directory (i.e. Home directory). You can access the Windows folder locations through the `mnt` directory.
     1. for example to access the windows download folder its typically under the path: `/mnt/c/Users/USERNAME/Downloads/`
-    2. to copy the .gz file from the Windows download directory to the WSL root directory do:
+    2. to copy the .gz file from the Windows download directory to the WSL home directory do:
         ```bash
         cp /mnt/c/Users/USERNAME/Downloads/netMHCpan-4.2.tar.gz ~
         ```
@@ -149,30 +152,23 @@ Then we install netMHCpan on the WSL.
   ```bash
   pwd 
   ```
-  copy the path
+  copy the output, which is the absolute path
   ```bash
   nano netMHCpan 
   ```
-  replace the path after `setenv NHOME` with your path.
-7. **[WIP - Skip this step, since R environemnt doesnt read .bashrc]** Add the netMHCpan directory to your PATH by editing the `.bashrc` file:
+  replace the path after `setenv NMHOME` with your path.
+  (Save and exit press: Ctrl+O, Enter, Ctrl+X)
+7. Create a symlink to the netMHCpan path in the `/usr/local/bin` directory. (It is one of the directories in default PATH when invoking WSL from R)::
   ```bash
-  echo 'export PATH=$PATH:/path/to/netMHCpan-4.1' >> ~/.bashrc
-  source ~/.bashrc
+  sudo ln -s "/absolute/path/to/netMHCpan-4.2/netMHCpan" /usr/local/bin/netMHCpan
   ```
+  (this is the same absolute path you copied in step 6)
 8. Test the installation by running:
   ```bash
   netMHCpan -h
   ```
-  of if you skipped the previous step, run the following code from within the netMHCpan folder:
-  ```bash
-  ./netMHCpan -h
-  ```
-9. If everything works, copy the absolute path where the netMHCpan is installed. You can get the path using:
-  ```bash
-  pwd
-  ```
-10. Set the `netmcpan_path` in the Shiny.R script to the path you just copied:
-![alt text](assets/image-2.png)
+**The same steps for NetMHCIIpan, just make sure to adjust the names**
+
 
 ## Usage
 1. Open Shiny.R with Rstudio

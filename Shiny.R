@@ -33,68 +33,89 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
 #------------------State Check---------------------
   ## State container
   startup_done <- reactiveVal(FALSE)
-  #motif_plot_length <- 7:20 # defined in global.R because ui.R uses it before server.
-  netmhcpan_path <- "/mnt/c/Users/Yannic/netMHCpan-4.2/netMHCpan" # This is the absolute path in the WSL. Really want the system to read off .bashrc
   wsl_available <- reactiveVal(NULL)
-  netmhcpan_available <- reactiveVal(NULL)
   software_r <- reactiveVal(NULL)
   
+  netmhcpan_available <- reactiveVal(NULL)
+  netmhcpan_cmd <- reactiveVal("")
+  netmhcpan_alleles <- reactiveVal(character(0))
+  
+  netmhcIIpan_available <- reactiveVal(NULL)
+  netmhcIIpan_cmd    <- reactiveVal("")
+  netmhcII_alleles <- reactiveVal(character(0))
+  
   observe({
-    if (startup_done()) return() #Since there is no reactive dependency, this observe only runs once anyway. But just in case.
-    
-    os <- Sys.info()[["sysname"]] 
+    if (startup_done()) return()
+    os  <- Sys.info()[["sysname"]]
+    ovr <- if (is.null(input$netmhcpan_override)) "" else input$netmhcpan_override
+    ovr2 <- if (is.null(input$netmhcIIpan_override)) "" else input$netmhcIIpan_override
     
     if (os == "Windows") {
-      #### --- WSL CHECK ---
       wsl_ok <- tryCatch(!is.null(system2("wsl", "--status", stdout = TRUE, stderr = TRUE)),
                          error = function(e) FALSE)
       wsl_available(wsl_ok)
       netmhcpan_use_wsl <<- TRUE
       message("WSL available: ", wsl_ok)
-      
-      #### --- netMHCpan CHECK (via WSL) ---
-      netmhcpan_ok <- if (wsl_ok) tryCatch(
-        system2("wsl", c("test", "-x", shQuote(netmhcpan_path)), stdout = FALSE, stderr = FALSE) == 0,
-        error = function(e) FALSE) else FALSE
+      cmd <- if (wsl_ok) resolve_netmhcpan(TRUE, ovr) else ""
+      cmd2 <- if (wsl_ok) resolve_netmhcpan(TRUE, ovr2, exe = "netMHCIIpan") else ""
     } else {
-      #### --- Linux / macOS: native, no WSL ---
       wsl_available(NA)
       netmhcpan_use_wsl <<- FALSE
-      netmhcpan_ok <- nzchar(Sys.which(netmhcpan_path)) ||
-        file.access(netmhcpan_path, mode = 1L) == 0
+      cmd <- resolve_netmhcpan(FALSE, ovr)
+      cmd2 <- resolve_netmhcpan(FALSE, ovr2, exe = "netMHCIIpan")
     }
     
-    netmhcpan_available(netmhcpan_ok)
-    message("Platform: ", os, " | netMHCpan available: ", netmhcpan_ok)
+    netmhcpan_cmd(cmd)
+    netmhcpan_available(nzchar(cmd))
+    if (nzchar(cmd))  netmhcpan_alleles( list_alleles(cmd,  isTRUE(netmhcpan_use_wsl), "-listMHC"))
+    netmhcIIpan_cmd(cmd2)
+    netmhcIIpan_available(nzchar(cmd2))
+    if (nzchar(cmd2)) netmhcII_alleles(list_alleles(cmd2, isTRUE(netmhcpan_use_wsl), "-list"))
+    
+    message("Platform: ", os, 
+            " | netMHCpan: ", if (nzchar(cmd)) cmd else "not found",
+            " | netMHCIIpan: ", if (nzchar(cmd2)) cmd2 else "not found")
     startup_done(TRUE)
   })
   
   ##----Disable buttons------
   observe({
-    req(!is.null(netmhcpan_available()))
-    
-    if (!netmhcpan_available()) {
-      shinyjs::disable("run_netmhc")
-    } else {
-      shinyjs::enable("run_netmhc")
-    }
+    req(!is.null(netmhcpan_available()), !is.null(netmhcIIpan_available()))
+    shinyjs::toggleState("run_netmhc",   condition = isTRUE(netmhcpan_available()))
+    shinyjs::toggleState("run_netmhcII", condition = isTRUE(netmhcIIpan_available()))
   })
   
   output$netmhc_status <- renderText({
-    # Check if WSL is available
-    if (!wsl_available()) {
+    if (isFALSE(wsl_available()))
       return("Disabled: WSL is not available on this system.")
-    }
-    
-    # Check if netMHCpan executable exists
-    if (!netmhcpan_available()) {
-      return(paste0("Disabled: netMHCpan not found at ", netmhcpan_path))
-    }
-    
-    # Otherwise, no message
-    ""
+    if (!isTRUE(netmhcpan_available()))
+      return("Disabled: netMHCpan not found. Ensure it is on your PATH (WSL or native install).")
+    paste0("netMHCpan ready: ", netmhcpan_cmd())
   })
   
+  output$netmhcII_status <- renderText({
+    if (isFALSE(wsl_available()))
+      return("Disabled: WSL is not available on this system.")
+    if (!isTRUE(netmhcIIpan_available()))
+      return("Disabled: netMHCIIpan not found. Ensure it is on your PATH (WSL or native install).")
+    paste0("netMHCIIpan ready: ", netmhcIIpan_cmd())
+  })
+  
+  observeEvent(netmhcII_alleles(), {
+    al <- netmhcII_alleles()
+    req(length(al) > 0)
+    updateSelectizeInput(session, "HLA_alleles_II",
+                         choices = al, server = TRUE)
+  })
+  
+  observe({
+    al <- netmhcpan_alleles()
+    req(length(al) > 0)
+    updateSelectizeInput(session, "HLA_alleles",
+                         choices  = al,
+                         selected = if ("HLA-A02:01" %in% al) "HLA-A02:01" else character(0),
+                         server   = TRUE)
+  })
 #------------------MHC setting---------------------  
   binder_thresholds <- reactive({
     s <- input$strong_cut; w <- input$weak_cut
@@ -234,7 +255,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
           result
         })
       } else {
-        print("No netMHCpan pro-computed variable. SKIP binding prediction")
+        print("No netMHCpan pre-computed variable. SKIP binding prediction")
       }
       #The predicted_cache is initialized using all peptides in the input data. If the netMHCpan precomputed data has been left_joined, these will also be taken.
       prediction <- do.call(rbind, lapply(dfs, function(df) {
@@ -1402,13 +1423,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     )
   })
   
-  observe({
-    updateSelectizeInput(session, "HLA_alleles",
-                         choices  = unname(unlist(hla_alleles)),
-                         selected = "HLA-A02:01",
-                         server   = TRUE)
-  })
-  
   # Populate value choices when column selection changes
   observeEvent(input$cond_col, {
     req(annotation_provided(), input$cond_col)
@@ -2376,7 +2390,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         if (length(peptides_to_predict) == 0) next
         
         res <- tryCatch({
-          out <- run_netmhcpan(peptides_to_predict, al, netmhcpan_path)
+          out <- run_netmhcpan(peptides_to_predict, al, netmhcpan_cmd())
           parse_netmhc_output(out)
         }, error = function(e) {
           showNotification(paste("netMHCpan failed:", conditionMessage(e)), type = "error", duration = 10)
@@ -3341,7 +3355,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   # per-card camera buttons  -> open on the clicked plot
   observeEvent(input$export_open, open_export_modal(input$export_open))
   
-  #---------------------Dev Console-------------------------
+  #---------------------Advanced settings-------------------------
+  ##----Developer console-------
   console_history <- reactiveVal("")
   
   observeEvent(input$console_run, {
@@ -3371,6 +3386,14 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     console_history()
   })
   
+  ##--------netMHCpan temp path------
+  output$netmhc_tempdir <- renderText(tempdir())
+  
+  observeEvent(input$open_netmhc_folder, {
+    d <- tempdir()
+    if (.Platform$OS.type == "windows") shell.exec(d) else system2("xdg-open", shQuote(d))
+  })
+  
 }
 ##---------------End------------
 
@@ -3378,7 +3401,7 @@ shinyApp(
   ui = ui,
   server = function(input, output, session) {
     server(input, output, session, 
-           input_variable = preloaded_data,
+           input_variable = test_annotation,
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 

@@ -179,63 +179,37 @@ signature <- list(
   DIANN_parquet    = c("Run.Index")
 )
 
-#read netMHCpan allelenames.
-hla_alleles <- tryCatch({
-  lines <- readLines(file.path(getwd(), "allelenames.netMHCpan"))
-  lines <- trimws(lines)
-  lines <- lines[nchar(lines) > 0 & !startsWith(lines, "#")]
-  # First column is the allele name passed to netMHCpan
-  alleles <- sapply(strsplit(lines, "\\s+"), `[`, 1)
-  # Group by species prefix (HLA-A, HLA-B, BoLA, etc.) for organised dropdown
-  prefixes <- sub("([^-]+-[^:0-9]*).*", "\\1", alleles)
-  split(alleles, prefixes)
-}, error = function(e) {
-  warning("allelenames.netMHCpan not found, using default allele list.")
-  list(
-    "HLA-A" = c(
-      "HLA-A01:01",
-      "HLA-A02:01", "HLA-A02:03", "HLA-A02:06",
-      "HLA-A03:01",
-      "HLA-A11:01",
-      "HLA-A23:01",
-      "HLA-A24:02",
-      "HLA-A26:01",
-      "HLA-A29:02",
-      "HLA-A30:01", "HLA-A30:02",
-      "HLA-A31:01",
-      "HLA-A32:01",
-      "HLA-A33:01",
-      "HLA-A68:01", "HLA-A68:02"
-    ),
-    "HLA-B" = c(
-      "HLA-B07:02",
-      "HLA-B08:01",
-      "HLA-B13:01",
-      "HLA-B15:01",
-      "HLA-B18:01",
-      "HLA-B27:05",
-      "HLA-B35:01",
-      "HLA-B39:01",
-      "HLA-B40:01",
-      "HLA-B44:02", "HLA-B44:03",
-      "HLA-B51:01",
-      "HLA-B57:01",
-      "HLA-B58:01"
-    ),
-    "HLA-C" = c(
-      "HLA-C03:03", "HLA-C03:04",
-      "HLA-C04:01",
-      "HLA-C05:01",
-      "HLA-C06:02",
-      "HLA-C07:01", "HLA-C07:02",
-      "HLA-C08:02",
-      "HLA-C12:03"
-    )
-  )
-  
-})
-
 #-----------Helper functions------------------
+# Resolve the netMHCpan executable. Returns the command to run — an absolute path,
+# or a bare name found on PATH — or "" if not found. Pure: no reactives/inputs.
+#   use_wsl  : TRUE on Windows (call through WSL), FALSE for native Linux/macOS
+#   override : optional explicit path; if given and valid, it wins
+resolve_netmhcpan <- function(use_wsl, override = "", exe = "netMHCpan") {
+  override <- if (is.null(override)) "" else trimws(override)
+  
+  if (isTRUE(use_wsl)) {
+    exists_wsl <- function(p) tryCatch(
+      system2("wsl", c("test", "-x", shQuote(p))) == 0, error = function(e) FALSE)
+    if (nzchar(override)) return(if (exists_wsl(override)) override else "")
+    
+    hit <- tryCatch(
+      system2("wsl", paste0("command -v ", exe, " 2>/dev/null"), stdout = TRUE, stderr = FALSE),
+      error = function(e) character(0))
+    hit <- trimws(hit[nzchar(hit)])
+    if (length(hit)) return(tail(hit, 1))
+    
+    for (p in c(file.path("/usr/local/bin", exe), file.path("/usr/bin", exe), file.path("/opt", exe, exe)))
+      if (exists_wsl(p)) return(p)
+    return("")
+  }
+  
+  if (nzchar(override)) {
+    ok <- nzchar(Sys.which(override)) || (file.access(override, mode = 1L) == 0)
+    return(if (ok) override else "")
+  }
+  found <- Sys.which(exe); if (nzchar(found)) unname(found) else ""
+}
+
 safe_reactive <- function(x) {
   tryCatch(
     x(),
@@ -4004,49 +3978,39 @@ generate_motif_grid <- function(lst, lengths = 7:20) {
 }
 
 #----Running external stuff------
-run_netmhcpan <- function(peptides, allele, netmhcpan_path) {
+##----netMHCpan----
+list_alleles <- function(cmd, use_wsl, flag = "-listMHC") {
+  if (!nzchar(cmd)) return(character(0))
+  out <- tryCatch(
+    if (isTRUE(use_wsl)) system2("wsl", c(cmd, flag), stdout = TRUE, stderr = FALSE)
+    else                 system2(cmd, flag,           stdout = TRUE, stderr = FALSE),
+    error = function(e) character(0))
+  out <- trimws(out[nzchar(out)])
+  out[!startsWith(out, "#")]          # drop any comment/header lines
+}
+
+run_netmhcpan <- function(peptides, allele, netmhcpan_cmd) {
   peptide_file <- tempfile(fileext = ".txt")
   output_file  <- tempfile(fileext = ".txt")
   writeLines(peptides, peptide_file)
   
-  peptide_wsl <- trimws(system2("wsl", c("wslpath", "-a", shQuote(peptide_file)), stdout = TRUE))
-  out_wsl     <- trimws(system2("wsl", c("wslpath", "-a", shQuote(output_file)),  stdout = TRUE))
-  
-  cmd <- paste(
-    shQuote(netmhcpan_path),
-    "-p", shQuote(peptide_wsl),
-    "-a", shQuote(allele),
-    "-l 8,9,10,11",
-    "-xls",
-    "-xlsfile", shQuote(out_wsl)
-  )
-  status <- system2("wsl", c("bash", "--login", "-c", shQuote(cmd)), stdout = NULL)
-  
-  if (isTRUE(netmhcpan_use_wsl)) {                 # <- reads the flag the observe set
-    peptide_p <- trimws(system2("wsl", c("wslpath","-a",shQuote(peptide_file)), stdout = TRUE))
-    out_p     <- trimws(system2("wsl", c("wslpath","-a",shQuote(output_file)),  stdout = TRUE))
-    cmd <- paste(
-      shQuote(netmhcpan_path), 
-      "-p", shQuote(peptide_p), 
-      "-a", shQuote(allele),
-      "-l 8,9,10,11", 
-      "-xls -xlsfile", 
-      shQuote(out_p))
-    status <- system2("wsl", c("bash", "--login", "-c", shQuote(cmd)), stdout = NULL)
+  if (isTRUE(netmhcpan_use_wsl)) {
+    peptide_p <- trimws(system2("wsl", c("wslpath","-a", shQuote(peptide_file)), stdout = TRUE))
+    out_p     <- trimws(system2("wsl", c("wslpath","-a", shQuote(output_file)),  stdout = TRUE))
+    status <- system2("wsl",
+                      c(netmhcpan_cmd, "-p", peptide_p, "-a", allele,
+                        "-l", "8,9,10,11", "-xls", "-xlsfile", out_p),
+                      stdout = NULL)
   } else {
-    status <- system2(netmhcpan_path,
-                      c("-p", peptide_file, 
-                        "-a", allele,
-                        "-l 8,9,10,11", 
-                        "-xls -xlsfile", 
-                        output_file), stdout = NULL)
+    status <- system2(netmhcpan_cmd,
+                      c("-p", peptide_file, "-a", allele,
+                        "-l", "8,9,10,11", "-xls", "-xlsfile", output_file),
+                      stdout = NULL)
   }
-  
-  
   
   if (status != 0)
     stop("netMHCpan exited with status ", status,
-         ". Check that the path is correct and the executable exists: ", netmhcpan_path)
+         ". Check the executable: ", netmhcpan_cmd)
   if (!file.exists(output_file))
     stop("netMHCpan ran but produced no output file. Check the netMHCpan installation.")
   
@@ -4105,6 +4069,7 @@ parse_netmhc_output <- function(output_file) {
   unique(trimws(out[nzchar(out)]))
 }
 
+##----GO-term-------------
 # memoised: same protein set → resolved once per session (cache key = sorted-unique set)
 .resolve_entry_names <- memoise::memoise(
   function(ids) .uniprot_ids_to_entrez(sort(unique(ids))),
@@ -4195,6 +4160,7 @@ go_dotplot_plotly <- function(ego, show_n = 15, subtitle = NULL) {
       yaxis = list(title = "", automargin = TRUE), margin = list(l = 10))
 }
 
+##------STRING-----------
 run_string <- function(df, score_threshold = 400, static = FALSE) {
   df_sig <- df %>% dplyr::filter(!is.na(log2FC), Significance == "Significant")
   ids <- df_sig$PROTEIN %>% strsplit("[;|]") %>% unlist() %>% trimws()
