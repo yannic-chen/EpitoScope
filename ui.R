@@ -636,8 +636,11 @@ window.fitExportPaper = function(){
         tabName = "ptm",  # must match menuItem
         fluidRow(
           ### ---- PTM distribution ----
-          bs4Card(title = "PTM distribution", width = 12, maximizable = TRUE,
-                  plotOutput("PTM_plot")
+          with_export(
+            bs4Card(title = "PTM distribution", width = 12, maximizable = TRUE,
+                    plotOutput("PTM_plot")
+            ),
+            "ptm_distribution"
           ),
           
           ### ---- PTM sequence motif ----
@@ -682,23 +685,25 @@ window.fitExportPaper = function(){
           ),
           
           ### ---- Summary barchart ----
-          bs4Card(title = tagList("Binding summary", bs4Dash::tooltip(icon("info-circle"),
-                                                                      "Best = best class across selected alleles (min rank). Per allele = each allele's own count breakdown, one panel per sample.",
-                                                                      placement = "right")),
-                  width = 12, maximizable = TRUE,
-                  radioButtons("binding_view", "View:",
-                               c("Best (any allele)" = "best", "Per allele" = "per_allele"),
-                               selected = "best", inline = TRUE),
-                  radioButtons("binding_scale", "Scale:",
-                               c("Absolute" = "absolute", "Percentage" = "percent"),
-                               selected = "absolute", inline = TRUE),
-                  conditionalPanel("input.binding_view == 'per_allele'",
-                                   radioButtons("binding_group", "Group by:",
-                                                c("Sample" = "sample", "Allele" = "allele"),
-                                                selected = "sample", inline = TRUE)),
-                  uiOutput("binding_plot_ui")
+          with_export(
+            bs4Card(title = tagList("Binding summary", bs4Dash::tooltip(icon("info-circle"),
+                                                                        "Best = best class across selected alleles (min rank). Per allele = each allele's own count breakdown, one panel per sample.",
+                                                                        placement = "right")),
+                    width = 12, maximizable = TRUE,
+                    radioButtons("binding_view", "View:",
+                                 c("Best (any allele)" = "best", "Per allele" = "per_allele"),
+                                 selected = "best", inline = TRUE),
+                    radioButtons("binding_scale", "Scale:",
+                                 c("Absolute" = "absolute", "Percentage" = "percent"),
+                                 selected = "absolute", inline = TRUE),
+                    conditionalPanel("input.binding_view == 'per_allele'",
+                                     radioButtons("binding_group", "Group by:",
+                                                  c("Sample" = "sample", "Allele" = "allele"),
+                                                  selected = "sample", inline = TRUE)),
+                    uiOutput("binding_plot_ui")
+            ),
+            "predicted_binders"
           ),
-          
           ### ---- Peptide Table ----
           bs4Card(title = "Peptide Table", width = 12, maximizable = TRUE,
                   DT::DTOutput("binding_table")

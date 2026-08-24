@@ -323,32 +323,54 @@ normalize_peptidoform <- function(seq, ref = PTM_REF) {
   if (is.na(seq) || !nzchar(seq)) return(seq)
   out <- character(0); rest <- seq
   take <- function(p) { r <- regmatches(rest, regexpr(p, rest)); if (length(r)) r else "" }
+  
+  # Allows multiple mods on the same reisude
+  consume_trailing <- function(res) {
+    extra <- character(0)
+    repeat {
+      if      (nzchar(g <- take("^\\[[-0-9.]+\\]")))     tok <- paste0(res, g)
+      else if (nzchar(g <- take("^\\(\\+?[-0-9.]+\\)"))) tok <- paste0(res, g)
+      else if (nzchar(g <- take("^\\(UniMod:[0-9]+\\)"))) tok <- paste0(res, g)
+      else if (nzchar(g <- take("^\\([A-Za-z][^)]*\\)"))) {
+        extra <- c(extra, g); rest <<- substr(rest, nchar(g)+1, nchar(rest)); next }
+      else break
+      extra <- c(extra, paste0("(", canonicalize_mod(tok, ref), ")"))
+      rest  <<- substr(rest, nchar(g)+1, nchar(rest))
+    }
+    paste0(extra, collapse = "")
+  }
+  
   while (nchar(rest) > 0) {
     # N-term mass:  n[42.0106]A
     if (nzchar(m <- take("^n\\[[-0-9.]+\\][A-Z]"))) {
-      res <- substr(m, nchar(m), nchar(m))
-      out <- c(out, paste0("n(", canonicalize_mod(sub("[A-Z]$","",m), ref), ")", res))
-      rest <- substr(rest, nchar(m)+1, nchar(rest)); next }
+      res <- substr(m, nchar(m), nchar(m)); rest <- substr(rest, nchar(m)+1, nchar(rest))
+      out <- c(out, paste0("n(", canonicalize_mod(sub("[A-Z]$","",m), ref), ")", res, consume_trailing(res)))
+      next }
     # N-term UniMod prefix:  (UniMod:1)A
     if (nzchar(m <- take("^\\(UniMod:[0-9]+\\)[A-Z]"))) {
-      res <- substr(m, nchar(m), nchar(m))
-      out <- c(out, paste0("n(", canonicalize_mod(sub("[A-Z]$","",m), ref), ")", res))
-      rest <- substr(rest, nchar(m)+1, nchar(rest)); next }
+      res <- substr(m, nchar(m), nchar(m)); rest <- substr(rest, nchar(m)+1, nchar(rest))
+      out <- c(out, paste0("n(", canonicalize_mod(sub("[A-Z]$","",m), ref), ")", res, consume_trailing(res)))
+      next }
     # residue + mass bracket:  M[15.9949]
     if (nzchar(m <- take("^[A-Z]\\[[-0-9.]+\\]"))) {
-      out <- c(out, paste0(substr(m,1,1), "(", canonicalize_mod(m, ref), ")"))
-      rest <- substr(rest, nchar(m)+1, nchar(rest)); next }
+      res <- substr(m,1,1); rest <- substr(rest, nchar(m)+1, nchar(rest))
+      out <- c(out, paste0(res, "(", canonicalize_mod(m, ref), ")", consume_trailing(res)))
+      next }
     # residue + (+mass):  M(+15.9949)
     if (nzchar(m <- take("^[A-Z]\\(\\+?[-0-9.]+\\)"))) {
-      out <- c(out, paste0(substr(m,1,1), "(", canonicalize_mod(m, ref), ")"))
-      rest <- substr(rest, nchar(m)+1, nchar(rest)); next }
+      res <- substr(m,1,1); rest <- substr(rest, nchar(m)+1, nchar(rest))
+      out <- c(out, paste0(res, "(", canonicalize_mod(m, ref), ")", consume_trailing(res)))
+      next }
     # residue + UniMod:  M(UniMod:35)
     if (nzchar(m <- take("^[A-Z]\\(UniMod:[0-9]+\\)"))) {
-      out <- c(out, paste0(substr(m,1,1), "(", canonicalize_mod(m, ref), ")"))
-      rest <- substr(rest, nchar(m)+1, nchar(rest)); next }
-    # already-canonical named form (LAST, so it doesn't swallow UniMod):  M(Oxidation)
+      res <- substr(m,1,1); rest <- substr(rest, nchar(m)+1, nchar(rest))
+      out <- c(out, paste0(res, "(", canonicalize_mod(m, ref), ")", consume_trailing(res)))
+      next }
+    # already-canonical named form (LAST):  M(Oxidation)
     if (nzchar(m <- take("^[A-Z]\\([A-Za-z][^)]*\\)"))) {
-      out <- c(out, m); rest <- substr(rest, nchar(m)+1, nchar(rest)); next }
+      res <- substr(m,1,1); rest <- substr(rest, nchar(m)+1, nchar(rest))
+      out <- c(out, paste0(m, consume_trailing(res)))
+      next }
     # plain residue
     out <- c(out, substr(rest, 1, 1)); rest <- substr(rest, 2, nchar(rest))
   }
@@ -3187,7 +3209,7 @@ plot_pca_variance <- function(pca, max_pc = 10) {
 }
 
 # --- best across alleles: one bar per sample (min rank) ---
-plot_binders_plotly <- function(df, color = "default", percent = TRUE, alleles = NULL, strong = 0.5, weak = 2) {
+plot_binders_plotly <- function(df, color = "default", percent = TRUE, alleles = NULL, strong = 0.5, weak = 2, orientation = "h") {
   allele_cols <- grep("^HLA", colnames(df), value = TRUE)
   if (!is.null(alleles) && length(alleles) > 0) allele_cols <- intersect(allele_cols, alleles)
   shiny::validate(shiny::need(length(allele_cols) > 0, "No alleles selected."))
@@ -3202,7 +3224,7 @@ plot_binders_plotly <- function(df, color = "default", percent = TRUE, alleles =
     dplyr::count(Set, class, name = "n") %>%
     dplyr::group_by(Set) %>% dplyr::mutate(percent = 100 * n / sum(n)) %>% dplyr::ungroup()
   
-  build_binder_stack(d, catcol = "Set", percent = percent, orientation = "h",)
+  build_binder_stack(d, catcol = "Set", percent = percent, orientation = orientation)
 }
 
 # --- per allele: stacked bars, one subplot panel per sample ---
@@ -3215,7 +3237,7 @@ subplot_heights <- function(n, end_scale = 0.85) {
 }
 
 plot_binders_per_allele_plotly <- function(df, color = "default", percent = TRUE, alleles = NULL,
-                                           facet_by = c("sample", "allele"), strong = 0.5, weak = 2) {
+                                           facet_by = c("sample", "allele"), strong = 0.5, weak = 2, orientation = "h") {
   facet_by <- match.arg(facet_by)
   allele_cols <- grep("^HLA", colnames(df), value = TRUE)
   if (!is.null(alleles) && length(alleles) > 0) allele_cols <- intersect(allele_cols, alleles)
@@ -3244,13 +3266,15 @@ plot_binders_per_allele_plotly <- function(df, color = "default", percent = TRUE
   facets <- levels(droplevels(long[[facet_col]])) 
   figs <- lapply(seq_along(facets), function(i)
     build_binder_stack(long[long[[facet_col]] == facets[i], , drop = FALSE],
-                       catcol = cat_col, percent = percent, orientation = "h",
+                       catcol = cat_col, percent = percent, orientation = orientation,
                        show_legend = (i == 1), title = facets[i]))
-  facets_ <<- facets
-  figs_ <<- figs
   
-  plotly::subplot(figs_, nrows = length(figs_), shareX = TRUE, titleY = FALSE,
-                  heights = subplot_heights(length(figs_)))
+  if (orientation == "h") {
+    plotly::subplot(figs, nrows = length(figs), shareX = TRUE, titleY = FALSE,
+                    heights = subplot_heights(length(figs)))
+  } else {
+    plotly::subplot(figs, nrows = 1, shareY = TRUE, titleY = FALSE)
+  }
 }
 
 ## --- shared: build one stacked-bar figure from a class-count data.frame ---

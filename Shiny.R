@@ -2216,26 +2216,28 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   })
   
 #-------------------PTM------------------------
+  PTM_stacked_bar_plot <- function(lst, column, fill_label, font, palette,
+                               percentage = FALSE, na_policy = "all", rev_levels = TRUE){
+    check_data_error(lst, required_cols = column, na_policy = na_policy)
+    scale_font(plot_stacked_bar(lst, column = column, fill_label = fill_label,
+                                percentage = percentage, color = palette,
+                                rev_levels = rev_levels), font)
+  }
+  
+  prep_ptm_long <- function(lst){
+    lapply(lst, function(df){
+      df %>%
+        dplyr::mutate(PTM = ifelse(is.na(PTM) | PTM == "", "Unmodified", PTM)) %>%
+        tidyr::separate_rows(PTM, sep = "\\s*[,;]\\s*") %>%
+        dplyr::mutate(PTM = gsub("^\\d+", "", PTM))   # strip FragPipe position prefix
+    })
+  }
+  
   output$PTM_plot <- renderPlot({
     lst <- processed_data_list()
-    check_data_error(lst, required_cols = "PTM" , na_policy = "ignore")
-    
-    lst <- lapply(lst, function(df) {
-      
-      df %>%
-        dplyr::mutate(
-          PTM = ifelse(is.na(PTM) | PTM == "", "Unmodified", PTM)
-        ) %>%
-        tidyr::separate_rows(PTM, sep = "\\s*[,;]\\s*") %>%
-        dplyr::mutate(
-          PTM = gsub("^\\d+", "", PTM) #This is specifically for fragpipe to remove the position information on PTMs
-        )
-    })
-    
-    lst <- lst[!vapply(lst, is.null, logical(1))]
-    
-    scale_font(plot_stacked_bar(lst, column = "PTM", fill_label = "PTM", percentage = FALSE, rev_levels = FALSE),
-               plot_font_d())  
+    check_data_error(lst, required_cols = "PTM", na_policy = "ignore")   # check before preprocessing
+    PTM_stacked_bar_plot(prep_ptm_long(lst), "PTM", "PTM", plot_font_d(), input$color_palette,
+                     na_policy = "ignore", rev_levels = FALSE)
   })
   
   ## Mapping of PTMs
@@ -2519,26 +2521,22 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     }
   })
   
-  output$binding_plot <- plotly::renderPlotly({
-    cache <- prediction_cache()
-    shiny::validate(shiny::need(ncol(cache) > 1, "No prediction data"))
-    req(!is.null(peptide_wide_unique()))
-    
+  build_binder_plot <- function(font, palette, view, percent, grp, alleles, orientation = "h"){
+    shiny::validate(shiny::need(ncol(prediction_cache()) > 1, "No prediction data"))
+    df <- peptide_wide_unique()
+    shiny::validate(shiny::need(!is.null(df), "No prediction data"))
+    if (view == "per_allele")
+      plot_binders_per_allele_plotly(df, color = palette, percent = percent,
+                                     alleles = alleles, facet_by = grp, orientation = orientation)
+    else
+      plot_binders_plotly(df, color = palette, percent = percent, alleles = alleles, orientation = orientation)
+  }
+  
+  output$binding_plot <- renderPlotly({
     view    <- if (is.null(input$binding_view))  "best"     else input$binding_view
     percent <- (if (is.null(input$binding_scale)) "absolute" else input$binding_scale) == "percent"
-    
-    if (view == "per_allele") {
-      grp <- if (is.null(input$binding_group)) "sample" else input$binding_group
-      scale_font(plot_binders_per_allele_plotly(peptide_wide_unique(), color = input$color_palette, percent = percent, 
-                                     alleles = input$allele_viz_select, facet_by = grp, 
-                                     strong = binder_thresholds()$strong, weak = binder_thresholds()$weak),
-                 isolate(plot_font_d())) 
-    } else {
-      scale_font(plot_binders_plotly(peptide_wide_unique(), color = input$color_palette,
-                          percent = percent, alleles = input$allele_viz_select,
-                          strong = binder_thresholds()$strong, weak = binder_thresholds()$weak),
-                 isolate(plot_font_d())) 
-    }
+    grp     <- if (is.null(input$binding_group)) "sample"   else input$binding_group
+    build_binder_plot(plot_font_d(), input$color_palette, view, percent, grp, input$allele_viz_select)
   })
   
   output$binding_table <- DT::renderDT({
@@ -3075,6 +3073,46 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         pca_scatter_plotly(fit$pca, labels = fit$points, groups = groups, color = palette,
                            show_labels = length(fit$points) <= 30, dim = dim, base_size = font)
       }
+    ),
+    ptm_distribution = list(
+      title = "PTM distribution", engine = "ggplot",
+      build = function(font, palette){
+        lst <- processed_data_list()
+        check_data_error(lst, required_cols = "PTM", na_policy = "ignore")
+        PTM_stacked_bar_plot(prep_ptm_long(lst), "PTM", "PTM", font, palette,
+                         na_policy = "ignore", rev_levels = FALSE)
+      }
+    ),
+    predicted_binders = list(
+      title = "Predicted binders", engine = "plotly",
+      controls = function(){
+        d     <- tryCatch(peptide_wide_unique(), error = function(e) NULL)
+        all_c <- if (!is.null(d)) grep("^HLA", colnames(d), value = TRUE) else character(0)
+        tagList(
+          radioButtons("exp_binding_orient", "Bars",
+                       c("Horizontal" = "h", "Vertical" = "v"),
+                       selected = "h", inline = TRUE),
+          radioButtons("exp_binding_view",  "View",
+                       c("Best per peptide" = "best", "Per allele" = "per_allele"),
+                       selected = "best", inline = TRUE),
+          radioButtons("exp_binding_scale", "Scale",
+                       c("Absolute" = "absolute", "Percent" = "percent"),
+                       selected = "absolute", inline = TRUE),
+          conditionalPanel("input.exp_binding_view == 'per_allele'",
+                           radioButtons("exp_binding_group", "Facet by",
+                                        c("Sample" = "sample", "Allele" = "allele"),
+                                        selected = "sample", inline = TRUE)),
+          selectInput("exp_allele_viz_select", "Alleles",
+                      choices = all_c, selected = all_c, multiple = TRUE)
+        )
+      },
+      build = function(font, palette){
+        view    <- if (is.null(input$exp_binding_view))  "best"     else input$exp_binding_view
+        percent <- (if (is.null(input$exp_binding_scale)) "absolute" else input$exp_binding_scale) == "percent"
+        grp     <- if (is.null(input$exp_binding_group)) "sample"   else input$exp_binding_group
+        orient <- if (is.null(input$exp_binding_orient)) "h" else input$exp_binding_orient
+        build_binder_plot(font, palette, view, percent, grp, input$exp_allele_viz_select, orientation = orient)
+      }
     )
   )
   
@@ -3105,7 +3143,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       tags$style(HTML("
   .modal-dialog { max-width: 94vw !important; width: 94vw; margin: 3vh auto; }
   .modal-content { height: 94vh; background: #fff; }
-  .modal-body   { height: calc(94vh - 58px); overflow: hidden; }
+  .modal-body   { height: calc(94vh - 58px); overflow: hidden; display: flex; flex-direction: column; }
+  .exp-content-row { flex: 1 1 auto; min-height: 0; }
+  .exp-controls { height: 100%; overflow-y: auto; min-height: 0; }
 
   /* flex-centered paper — matches the JS (scale about center, no translate) */
   .exp-preview-area {
@@ -3276,9 +3316,6 @@ shinyApp(
   server = function(input, output, session) {
     server(input, output, session, 
            input_variable = test_annotation,
-           #input_variable = data_list[15:17],
-           #input_variable = data_list2[1:2],
-           #input_variable = preloaded_data,
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 
