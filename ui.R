@@ -579,46 +579,56 @@ window.fitExportPaper = function(){
           ),
           
           ### ---- Group Stuff ----
-          bs4Card(title = tagList("Quantity variance", bs4Dash::tooltip(icon("info-circle"),"Violin-plot showing distribution of peptides quantities within groups. All measurements from all samples are used.", placement = "right")
-                                  ), width = 6, maximizable = TRUE
+          with_export(
+            bs4Card(title = tagList("Group based Unique Peptides", bs4Dash::tooltip(icon("info-circle"),"Violin-plot showing distribution of peptides quantities within groups. All measurements from all samples are used.", placement = "right")
+            ), width = 6, maximizable = TRUE,
+            plotOutput("group_unique_bar")
+            ),
+            "group_unique_bar"
           ),
-          bs4Card(title = tagList("Group based Euler Diagram", bs4Dash::tooltip(icon("info-circle"),"Venn Diagram with circle size representing group size", placement = "right")
-                                  ), width = 6, maximizable = TRUE,
-                  plotOutput("group_euler")
+          with_export(
+            bs4Card(title = tagList("Group based Euler Diagram", bs4Dash::tooltip(icon("info-circle"),"Venn Diagram with circle size representing group size", placement = "right")
+            ), width = 6, maximizable = TRUE,
+            plotOutput("group_euler")
+            ),
+            "group_euler"
           ),
-          bs4Card(title = tagList("Peptide based heatmap", bs4Dash::tooltip(icon("info-circle"),"Cluster peptides based on differential pattern across groups. Clustering distance is 'euclidean' and method is 'complete'. 
+          with_export(
+            bs4Card(title = tagList("Peptide based heatmap", bs4Dash::tooltip(icon("info-circle"),"Cluster peptides based on differential pattern across groups. Clustering distance is 'euclidean' and method is 'complete'. 
                                                                             The MAX quantity for the peptides is used. Peptides are binned for over 1000+ peptides. Peptide Llabels are remoed when 250+ peptides are visible. Zoom to adjust. NA is coloured Gray.", placement = "right")
-                                  ), width = 12, maximizable = TRUE,
-                  plotlyOutput("group_peptide_heatmap_interactive", height = "600px"),
-                  fluidRow(
-                    column(4,tagList(actionButton("expand_heatmap_region", "Expand Visible Bins",icon = icon("search-plus"),class = "btn-sm btn-outline-info mt-2"),
-                             bs4Dash::tooltip(
-                               icon("info-circle"),
-                               title = "Replaces the heatmap with individual peptides from the currently zoomed region. Peptides outside this regions are removed and needs to be reset via Full View button.",
-                               placement = "top"
-                             )
-                           )
-                    ),
-                    column(4,tagList(actionButton("reset_heatmap_view", "Full View",icon = icon("compress"),class = "btn-sm btn-outline-secondary mt-2"),
-                             bs4Dash::tooltip(
-                               icon("info-circle"),
-                               title = "Returns to the full binned heatmap with all peptides. Use this to restore the full data that was cut by the Expand Visible Bins.",
-                               placement = "top"
-                             )
-                           )
-                    ),
-                    column(4,downloadButton("download_visible_peptides", "Download Visible",class = "btn-sm btn-outline-secondary mt-2")
-                    )
-                  )
+            ), width = 12, maximizable = TRUE,
+            plotlyOutput("group_peptide_heatmap_interactive", height = "600px"),
+            fluidRow(
+              column(4,tagList(actionButton("expand_heatmap_region", "Expand Visible Bins",icon = icon("search-plus"),class = "btn-sm btn-outline-info mt-2"),
+                               bs4Dash::tooltip(
+                                 icon("info-circle"),
+                                 title = "Replaces the heatmap with individual peptides from the currently zoomed region. Peptides outside this regions are removed and needs to be reset via Full View button.",
+                                 placement = "top")
+                               )
+                     ),
+              column(4,tagList(actionButton("reset_heatmap_view", "Full View",icon = icon("compress"),class = "btn-sm btn-outline-secondary mt-2"),
+                               bs4Dash::tooltip(
+                                 icon("info-circle"),
+                                 title = "Returns to the full binned heatmap with all peptides. Use this to restore the full data that was cut by the Expand Visible Bins.",
+                                 placement = "top")
+                               )
+                     ),
+              column(4,downloadButton("download_visible_peptides", "Download Visible",class = "btn-sm btn-outline-secondary mt-2")
+                     )
+              )
+            ),
+            "group_heatmap"
           ),
-          
           ### ---- Statistical Plots ----
-          bs4Card(title = tagList("Statistical Plots", bs4Dash::tooltip(icon("info-circle"),"Only significant datapoints are interactable (to improve speed). 
+          with_export(
+            bs4Card(title = tagList("Statistical Plots", bs4Dash::tooltip(icon("info-circle"),"Only significant datapoints are interactable (to improve speed). 
                                                        Both Bonferroni and Benjamin-hochberg adjusted p-value are calculated. Only Benjamin-hochberg used for now.
                                                       p-value can only be calculated when more than 2 datapoints/measurements per peptide in each group exist. Otherwise, no p-value is calculated, which means no visualization.
                                                       Significant here means a corrected p-value of less than 0.05 and a log2FC larger than 1.", placement = "right")
-                                  ), width = 12, maximizable = TRUE,
-                  uiOutput("group_stats_tabs")
+            ), width = 12, maximizable = TRUE,
+            uiOutput("group_stats_tabs")
+            ),
+          "group_stats"
           ),
           
           ### ---- GO-terms ----

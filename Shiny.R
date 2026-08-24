@@ -1720,6 +1720,15 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       ])
     }) |> setNames(names(groups))
   })
+  
+  ### ----Group Unique peptides----
+  output$group_unique_bar <- renderPlot({
+    sets <- group_peptide_sets()
+    shiny::validate(shiny::need(length(sets) >= 1, "No groups defined"))
+    lst <- lapply(sets, function(v) data.frame(STRIPPED = v, stringsAsFactors = FALSE))
+    unique_counts_plot(lst, "STRIPPED", "Unique peptides", plot_font_d(), input$color_palette)
+  })
+  
   ### ----Group Euler----
   output$group_euler <- renderPlot({
     sets <- group_peptide_sets()
@@ -1879,68 +1888,54 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       )
   })
   
-  output$group_peptide_heatmap_interactive <- plotly::renderPlotly({
-    hdata <- heatmap_data_r()
-    color <- input$color_palette
-    mode  <- heatmap_mode_r()
-    
-    if (mode == "expanded" && !is.null(expanded_peps_r())) {
-      pep_names    <- expanded_peps_r()
-      mat_to_show  <- hdata$mat_full[, pep_names, drop = FALSE]
-      bin_map_show <- NULL
-      ui_rev       <- paste0("exp_", expand_counter_r())
-    } else {
-      mat_to_show  <- hdata$mat_display
-      bin_map_show <- hdata$bin_map
-      ui_rev       <- "binned"
-    }
-    
-    mat_to_show <- mat_to_show[hdata$row_ord, , drop = FALSE]
-    
-    hover_mat <- matrix("", nrow = nrow(mat_to_show), ncol = ncol(mat_to_show))
-    for (j in seq_len(ncol(mat_to_show))) {
-      cn <- colnames(mat_to_show)[j]
-      if (!is.null(bin_map_show) && cn %in% names(bin_map_show)) {
-        peps  <- bin_map_show[[cn]]
-        n     <- length(peps)
+  heatmap_hover <- function(mat, bin_map){
+    hv <- matrix("", nrow(mat), ncol(mat))
+    for (j in seq_len(ncol(mat))) {
+      cn <- colnames(mat)[j]
+      if (!is.null(bin_map) && cn %in% names(bin_map)) {
+        peps <- bin_map[[cn]]; n <- length(peps)
         shown <- paste(head(peps, 30), collapse = "<br>")
         extra <- if (n > 30) paste0("<br><i>+", n - 30, " more</i>") else ""
-        hover_mat[, j] <- paste0("<b>", n, " peptides in bin</b><br>", shown, extra)
-      } else {
-        hover_mat[, j] <- cn
-      }
+        hv[, j] <- paste0("<b>", n, " peptides in bin</b><br>", shown, extra)
+      } else hv[, j] <- cn
     }
-    
-    if (color == "default") {
-      cscale <- list(list(0, "lightyellow"), list(1, "red"))
+    hv
+  }
+  
+  group_heatmap_figure <- function(mat, hover, palette, font = 8,
+                                   source = NULL, ui_rev = NULL, register = FALSE){
+    cscale <- if (palette == "default") list(list(0, "lightyellow"), list(1, "red"))
+    else { vcols <- viridis::viridis(10, option = palette)
+    lapply(seq_along(vcols) - 1, function(i) list(i/(length(vcols)-1), vcols[i+1])) }
+    show_ticks <- ncol(mat) <= 250
+    p <- plotly::plot_ly(
+      source = source, x = colnames(mat), y = rownames(mat), z = mat, text = hover,
+      type = "heatmap", colorscale = cscale, hovertemplate = "%{text}<extra></extra>",
+      colorbar = list(title = "log10(QUANTITY+1)", tickfont = list(size = font))
+    ) %>% plotly::layout(
+      uirevision = ui_rev,
+      xaxis  = list(title = "", showticklabels = show_ticks, tickfont = list(size = font), tickangle = -45),
+      yaxis  = list(title = "", tickfont = list(size = font), autorange = "reversed"),
+      margin = list(l = 130, b = if (show_ticks) 120 else 30),
+      font   = list(size = font)
+    )
+    if (register) p <- plotly::event_register(p, "plotly_relayout")
+    p
+  }
+  
+  output$group_peptide_heatmap_interactive <- renderPlotly({
+    hdata <- heatmap_data_r(); mode <- heatmap_mode_r()
+    if (mode == "expanded" && !is.null(expanded_peps_r())) {
+      mat <- hdata$mat_full[, expanded_peps_r(), drop = FALSE]; bin_map <- NULL
+      ui_rev <- paste0("exp_", expand_counter_r())
     } else {
-      vcols  <- viridis::viridis(10, option = color)
-      cscale <- lapply(seq_along(vcols) - 1,
-                       function(i) list(i / (length(vcols) - 1), vcols[i + 1]))
+      mat <- hdata$mat_display; bin_map <- hdata$bin_map; ui_rev <- "binned"
     }
-    
-    show_ticks <- ncol(mat_to_show) <= 250
-    
-    plotly::plot_ly(
-      source        = "group_hm",
-      x             = colnames(mat_to_show),
-      y             = rownames(mat_to_show),
-      z             = mat_to_show,
-      text          = hover_mat,
-      type          = "heatmap",
-      colorscale    = cscale,
-      hovertemplate = "%{text}<extra></extra>",
-      colorbar      = list(title = "log10(QUANTITY+1)")
-    ) %>%
-      plotly::layout(
-        uirevision = ui_rev,
-        font  = list(size = isolate(plot_font_d()) * 0.6),
-        xaxis = list(title = "", showticklabels = show_ticks,
-                     tickfont = list(size = isolate(plot_font_d())), tickangle = -45),
-        yaxis = list(title = "", tickfont = list(size = 8), autorange = "reversed"),
-        margin = list(l = 130, b = if (show_ticks) 120 else 30)
-      ) %>%
-      plotly::event_register("plotly_relayout")
+    mat   <- mat[hdata$row_ord, , drop = FALSE]
+    hover <- heatmap_hover(mat, bin_map)
+    group_heatmap_figure(mat, hover, input$color_palette,
+                         font = isolate(plot_font_d()),
+                         source = "group_hm", ui_rev = ui_rev, register = TRUE)
   })
   
   observeEvent(plot_font_d(), {
@@ -2104,6 +2099,19 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     uiOutput("volcano_comparison_tabs")
   })
   
+  build_go_plot <- function(df, ont = NULL){
+    bg <- if (is.null(input$go_background)) "genome" else input$go_background
+    universe <- NULL; bg_note <- "whole genome"
+    if (bg == "detected") { universe <- detected_universe(); bg_note <- "detected proteins" }
+    else if (bg == "custom") {
+      cust <- if (!is.null(input$go_custom_ids) && nzchar(input$go_custom_ids))
+        unlist(strsplit(input$go_custom_ids, "[[:space:],;]+")) else NULL
+      if (length(cust)) { universe <- .protein_to_entrez(cust); bg_note <- "custom list" }
+    }
+    ont_use <- if (!is.null(ont)) ont else if (is.null(input$go_ont)) "BP" else input$go_ont
+    run_go_enrichment(df, universe = universe, bg_note = bg_note, ont = ont_use)
+  }
+  
   # Render each volcano plot (optimized)
   observe({
     volcano_list <- group_comp_data()
@@ -2156,19 +2164,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         })
         
         ## ----GO term----
-        output[[paste0("go_term_", plot_name)]] <- plotly::renderPlotly({
+        output[[paste0("go_term_", plot_name)]] <- renderPlotly({
           shiny::validate(shiny::need(!is.null(df) && nrow(df) != 0, "No data available."))
-          bg <- if (is.null(input$go_background)) "genome" else input$go_background
-          universe <- NULL; bg_note <- "whole genome"
-          if (bg == "detected") { universe <- detected_universe(); bg_note <- "detected proteins" }
-          else if (bg == "custom") {
-            cust <- if (!is.null(input$go_custom_ids) && nzchar(input$go_custom_ids))
-              unlist(strsplit(input$go_custom_ids, "[[:space:],;]+")) else NULL
-            if (length(cust)) { universe <- .protein_to_entrez(cust); bg_note <- "custom list" }
-          }
-          scale_font(run_go_enrichment(df, universe = universe, bg_note = bg_note,
-                            ont = if (is.null(input$go_ont)) "BP" else input$go_ont), 
-                     isolate(plot_font_d()))
+          build_go_plot(df)
         })
         
         ## ----STRING-DB----
@@ -3072,6 +3070,71 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         
         pca_scatter_plotly(fit$pca, labels = fit$points, groups = groups, color = palette,
                            show_labels = length(fit$points) <= 30, dim = dim, base_size = font)
+      }
+    ),
+    group_unique_bar = list(
+      title = "Unique peptides per group", engine = "ggplot",
+      build = function(font, palette){
+        sets <- group_peptide_sets()
+        shiny::validate(shiny::need(length(sets) >= 1, "No groups defined"))
+        lst  <- lapply(sets, function(v) data.frame(STRIPPED = v, stringsAsFactors = FALSE))
+        unique_counts_plot(lst, "STRIPPED", "Unique peptides", font, palette)
+      }
+    ),
+    group_euler = list(
+      title = "Group Euler", engine = "ggplot",
+      build = function(font, palette){
+        sets <- group_peptide_sets()
+        shiny::validate(shiny::need(length(sets) >= 2, "Need 2 or more sets to compare"))
+        scale_font(group_euler_plot(sets, color = palette), font)
+      }
+    ),
+    group_heatmap = list(
+      title = "Group peptide heatmap", engine = "plotly",
+      build = function(font, palette){
+        hdata <- heatmap_data_r()
+        mat   <- hdata$mat_display[hdata$row_ord, , drop = FALSE]
+        hover <- heatmap_hover(mat, hdata$bin_map)
+        group_heatmap_figure(mat, hover, palette, font = font)     # static: source/ui_rev/register omitted
+      }
+    ),
+    group_stats = list(
+      title = "Group comparison stats", engine = "plotly",
+      controls = function(){
+        comps <- tryCatch(names(group_comp_data()), error = function(e) character(0))
+        tagList(
+          selectInput("exp_stat_comp", "Comparison", choices = comps),
+          radioButtons("exp_stat_type", "Plot",
+                       c("Volcano"="volcano", "MA"="ma", "P-value hist"="pval",
+                         "Rank-FC"="rankfc", "GO-term"="go"),          # <- added
+                       selected = "volcano", inline = TRUE),
+          conditionalPanel("input.exp_stat_type == 'go'",              # <- GO-only control
+                           radioButtons("exp_go_ont", "GO ontology",
+                                        c("BP"="BP","CC"="CC","MF"="MF"),
+                                        selected = isolate(if (is.null(input$go_ont)) "BP" else input$go_ont),
+                                        inline = TRUE))
+        )
+      },
+      build = function(font, palette){
+        vl   <- group_comp_data()
+        comp <- input$exp_stat_comp
+        shiny::validate(shiny::need(!is.null(comp) && comp %in% names(vl), "Select a comparison"))
+        df   <- vl[[comp]]
+        shiny::validate(shiny::need(!is.null(df) && nrow(df) > 0, "No data to plot"))
+        df$Significance <- ifelse(
+          is.na(df$negLog10AdjP_BH) | is.na(df$log2FC), "Missing",
+          ifelse(df$negLog10AdjP_BH > 1.3 & abs(df$log2FC) > 1, "Significant", "Not significant"))
+        
+        sel <- NULL
+        switch(if (is.null(input$exp_stat_type)) "volcano" else input$exp_stat_type,
+               volcano = group_volcano_plot(df, sel, comp),
+               ma      = group_MA_plot(df, sel, comp),
+               pval    = group_p_histogram(df, comp),
+               rankfc  = group_rank_FC(df, comp, sel),
+               go      = { g <- build_go_plot(df, input$exp_go_ont)
+               shiny::validate(shiny::need(!is.null(g), "No enriched GO terms for this comparison"))
+               g }
+               )
       }
     ),
     ptm_distribution = list(
