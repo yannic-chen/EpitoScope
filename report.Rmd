@@ -837,13 +837,12 @@ if (!is.null(group_list) && length(group_list) > 0) {
 
 ## Group based Euler Diagram
 
-```{r Group_Venn}
+```{r Group_Euler}
 incProgress(1/chunk_num, detail = "Group Euler Diagram...")
 if (!is.null(group_list)) {
   lst <- processed_list
   groups <- group_list
-  pep_col <- "PEPTIDE"
-  #pep_col    <- if (!is.null(input$use_peptidoforms) && input$use_peptidoforms) "PEPTIDE" else "STRIPPED"
+  pep_col <- "STRIPPED"
   
  group_peptide_sets <- lapply(names(groups), function(g) {
     grp <- groups[[g]]
@@ -880,6 +879,14 @@ if (!is.null(group_list)) {
     ])
   }) |> setNames(names(groups))
 
+  # --- unique peptides per group (same sets as the Venn) ---
+  group_bar_lst <- lapply(group_peptide_sets,
+                          function(v) data.frame(STRIPPED = v, stringsAsFactors = FALSE))
+  bar <- plot_unique_counts(group_bar_lst, column = pep_col,
+                            y_label = "Unique peptides", color = color_palette)
+
+  print(bar)
+ 
   group_euler_plot(group_peptide_sets, color = color_palette)
 } else {
   cat("no Groups defined")
