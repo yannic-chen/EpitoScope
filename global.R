@@ -94,6 +94,7 @@ load_ptm_ref <- function(path = "ptm_reference.csv") {
 
 PTM_REF <- load_ptm_ref()
 motif_plot_length <- 7:20
+MHC_PREFIX      <- "hla_"
 
 #-----------Column extraction------------
 # Here we initiate all the possible column names important for us from all different input formats
@@ -3184,7 +3185,7 @@ plot_pca_variance <- function(pca, max_pc = 10) {
 
 # --- best across alleles: one bar per sample (min rank) ---
 plot_binders_plotly <- function(df, color = "default", percent = TRUE, alleles = NULL, strong = 0.5, weak = 2, orientation = "h") {
-  allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+  allele_cols <- mhc_allele_cols(df)
   if (!is.null(alleles) && length(alleles) > 0) allele_cols <- intersect(allele_cols, alleles)
   shiny::validate(shiny::need(length(allele_cols) > 0, "No alleles selected."))
   
@@ -3213,7 +3214,7 @@ subplot_heights <- function(n, end_scale = 0.85) {
 plot_binders_per_allele_plotly <- function(df, color = "default", percent = TRUE, alleles = NULL,
                                            facet_by = c("sample", "allele"), strong = 0.5, weak = 2, orientation = "h") {
   facet_by <- match.arg(facet_by)
-  allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+  allele_cols <- mhc_allele_cols(df)
   if (!is.null(alleles) && length(alleles) > 0) allele_cols <- intersect(allele_cols, alleles)
   shiny::validate(shiny::need(length(allele_cols) > 0, "No alleles selected."))
   
@@ -3351,7 +3352,7 @@ render_summary_pre <- function(lst, height = "800px", font_size = "10px") {
 summarize_binders <- function(df) {
   
   # Select only HLA columns
-  hla_cols <- grep("^HLA", names(df), value = TRUE)
+  hla_cols <- mhc_allele_cols(df)
   
   df %>%
     dplyr::select(all_of(hla_cols)) %>%
@@ -3544,7 +3545,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
 
 #binding prediction summary
 compute_binder_summary <- function(df, alleles = NULL, strong = 0.5, weak = 2) {
-  allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+  allele_cols <- mhc_allele_cols(df)
   if (!is.null(alleles) && length(alleles) > 0){
     allele_cols <- intersect(allele_cols, alleles)
   }
@@ -3989,6 +3990,8 @@ list_alleles <- function(cmd, use_wsl, flag = "-listMHC") {
   out[!startsWith(out, "#")]          # drop any comment/header lines
 }
 
+mhc_allele_cols <- function(df)  colnames(df)[startsWith(colnames(df), MHC_PREFIX)]
+
 run_netmhcpan <- function(peptides, allele, netmhcpan_cmd) {
   peptide_file <- tempfile(fileext = ".txt")
   output_file  <- tempfile(fileext = ".txt")
@@ -4017,27 +4020,43 @@ run_netmhcpan <- function(peptides, allele, netmhcpan_cmd) {
   output_file
 }
 
-parse_netmhc_output <- function(output_file) {
-  res     <- read.table(output_file, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
-  header1 <- colnames(res)
-  header2 <- as.character(unlist(res[1, ]))
+run_netmhciipan <- function(peptides, allele, cmd) {
+  peptide_file <- tempfile(fileext = ".txt")
+  output_file  <- tempfile(fileext = ".txt")
+  writeLines(peptides, peptide_file)
   
-  colnames_new <- header1
-  colnames_new[2] <- "Peptide"
-  current_hla  <- NULL
-  for (i in seq_along(colnames_new)) {
-    if (grepl("^HLA", header1[i])) current_hla <- header1[i]
-    if (!is.null(current_hla) && header2[i] != "") colnames_new[i] <- paste0(current_hla, "_", header2[i])
+  if (isTRUE(netmhcpan_use_wsl)) {
+    pf <- trimws(system2("wsl", c("wslpath","-a", shQuote(peptide_file)), stdout = TRUE))
+    of <- trimws(system2("wsl", c("wslpath","-a", shQuote(output_file)),  stdout = TRUE))
+    status <- system2("wsl",
+                      c(cmd, "-f", pf, "-inptype", "1", "-a", allele, "-xls", "-xlsfile", of),
+                      stdout = NULL)
+  } else {
+    status <- system2(cmd,
+                      c("-f", peptide_file, "-inptype", "1", "-a", allele, "-xls", "-xlsfile", output_file),
+                      stdout = NULL)
   }
-  colnames(res) <- colnames_new
-  res <- res[-1, ]
+  if (status != 0)          stop("netMHCIIpan exited with status ", status, ": ", cmd)
+  if (!file.exists(output_file)) stop("netMHCIIpan produced no output file.")
+  output_file
+}
+
+parse_netmhc_output <- function(output_file) {
+  res <- read.table(output_file, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+  sub <- tolower(as.character(unlist(res[1, ])))
+  res <- res[-1, , drop = FALSE]
   
-  keep_cols    <- c("Peptide", grep("_Rank$", colnames(res), value = TRUE, ignore.case = TRUE)) #This handles case insensitive _rank.
-  res          <- res[, keep_cols, drop = FALSE]
-  colnames(res) <- gsub("(_[A-Za-z]+)?_rank$", "", colnames(res), ignore.case = TRUE) #this now also handles _EL_rank as well as just _Rank.
-  colnames(res)[-1] <- sub("^([^.]+\\.[^.]+)\\.", "\\1", colnames(res)[-1])
-  res[-1] <- lapply(res[-1], as.numeric)
-  res
+  pep_i   <- which(sub == "peptide")[1]
+  rank_is <- which(grepl("rank", sub))
+  el      <- rank_is[grepl("el", sub[rank_is])]
+  rank_i  <- if (length(el)) el[1] else rank_is[1]
+  
+  if (is.na(pep_i) || !length(rank_i))
+    stop("Could not locate Peptide / Rank columns in netMHCpan output.")
+  
+  data.frame(Peptide = as.character(res[[pep_i]]),
+             Rank    = as.numeric(res[[rank_i]]),
+             stringsAsFactors = FALSE)
 }
 
 # UniProt entry-name → Entrez via synchronous stream endpoint. REST API didnt work.

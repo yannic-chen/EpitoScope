@@ -1121,7 +1121,7 @@ if (!is.null(binder_unique)) {
 ```{r Binding_allele_samp_abs}
 incProgress(1/chunk_num, detail = "Per-allele (sample, absolute)...")
 if (!is.null(binder_unique)) {
-  n_all  <- length(grep("^HLA", colnames(binder_unique), value = TRUE))
+  n_all  <- length(mhc_allele_cols(binder_unique))
   n_samp <- length(unique(binder_unique$Set))
   h      <- n_samp * max(140, n_all * 30 + 70)
   p <- plot_binders_per_allele_plotly(binder_unique, color = color_palette,
@@ -1137,7 +1137,7 @@ if (!is.null(binder_unique)) {
 ```{r Binding_allele_samp_perc}
 incProgress(1/chunk_num, detail = "Per-allele (sample, percentage)...")
 if (!is.null(binder_unique)) {
-  n_all  <- length(grep("^HLA", colnames(binder_unique), value = TRUE))
+  n_all  <- length(mhc_allele_cols(binder_unique))
   n_samp <- length(unique(binder_unique$Set))
   h      <- n_samp * max(140, n_all * 30 + 70)
   p <- plot_binders_per_allele_plotly(binder_unique, color = color_palette,
@@ -1154,7 +1154,7 @@ if (!is.null(binder_unique)) {
 ```{r Binding_allele_all_abs}
 incProgress(1/chunk_num, detail = "Per-allele (allele, absolute)...")
 if (!is.null(binder_unique)) {
-  n_all  <- length(grep("^HLA", colnames(binder_unique), value = TRUE))
+  n_all  <- length(mhc_allele_cols(binder_unique))
   n_samp <- length(unique(binder_unique$Set))
   h      <- n_samp * max(140, n_all * 30 + 70)
   p <- plot_binders_per_allele_plotly(binder_unique, color = color_palette,
@@ -1170,7 +1170,7 @@ if (!is.null(binder_unique)) {
 ```{r Binding_allele_all_perc}
 incProgress(1/chunk_num, detail = "Per-allele (allele, percentage)...")
 if (!is.null(binder_unique)) {
-  n_all  <- length(grep("^HLA", colnames(binder_unique), value = TRUE))
+  n_all  <- length(mhc_allele_cols(binder_unique))
   n_samp <- length(unique(binder_unique$Set))
   h      <- n_samp * max(140, n_all * 30 + 70)
   p <- plot_binders_per_allele_plotly(binder_unique, color = color_palette,

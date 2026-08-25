@@ -38,14 +38,14 @@ Task List
 - [ ] Improve report download handler to be faster.
 - [ ] Add normalization methods options for group based analysis
 - [ ] More variable handling of reported decoys. DIA-NN now also reports decoy with the "rev_" prefix
-- [ ] Allow more species in the app. For example, HLA nomenclature is different for mouse.
+- [X] Allow more species in the app. For example, HLA nomenclature is different for mouse.
 - [X] Annotation table condition applying colour to PCA plot
 - [X] Handle the reactive nature better to allow more filtering adjustments before plot update.
-- [ ] Return netMHCpan results location, so user can save it up.
+- [X] Return netMHCpan results location, so user can save it up.
 - [ ] Allow the measurement decoupling from sample, so each measurement is its own sample or group the measuremuents by condition or replicate.
 - [X] Increase Font size / add control to font size
 - [X] Add dedicated plot modification tab for each plot to generate publishable figure
-- [ ] Add netMHC2pan
+- [X] Add netMHC2pan
 
 ### Maybe?
 - [X] Flexible Length Range Percentage plot for MHC2 and perhaps other species

@@ -679,6 +679,7 @@ window.fitExportPaper = function(){
                     multiple = TRUE,
                     options  = list(placeholder = "Type to search alleles...")
                   ),
+                  actionButton("run_netmhc", "Run netMHCpan"),
                   selectizeInput(
                     "HLA_alleles_II",
                     "Select MHC-II allele(s):",
@@ -686,7 +687,7 @@ window.fitExportPaper = function(){
                     multiple = TRUE,
                     options = list(placeholder = "Type to search DR / DQ / DP alleles...")
                     ),
-                  actionButton("run_netmhc", "Run netMHCpan"),
+                  actionButton("run_netmhcII", "Run netMHCIIpan"),
                   textOutput("netmhc_status"),
                   radioButtons("mhc_class", "Default thresholds:", c("MHC-I" = "I", "MHC-II" = "II"), selected = "I", inline = TRUE),
                   h6("For custom cutoffs, go to Console \u2192 Settings.")

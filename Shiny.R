@@ -113,7 +113,6 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     req(length(al) > 0)
     updateSelectizeInput(session, "HLA_alleles",
                          choices  = al,
-                         selected = if ("HLA-A02:01" %in% al) "HLA-A02:01" else character(0),
                          server   = TRUE)
   })
 #------------------MHC setting---------------------  
@@ -240,17 +239,15 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       # Add netMHCpan info to dataframes
       if (exists("netMHCpan")) {
         print("left_join netMHCpan pre-generated data.")
+        ac <- setdiff(colnames(netMHCpan), "Peptide")
+        ac <- ac[!startsWith(ac, MHC_PREFIX)]
+        if (length(ac)) data.table::setnames(netMHCpan, ac, paste0(MHC_PREFIX, ac))
         
-        # Collect all unique peptides across all dfs upfront
-        all_peptides <- unique(unlist(lapply(dfs, `[[`, "STRIPPED")))
-        
-        # Filter netMHCpan once, before the loop
+        all_peptides       <- unique(unlist(lapply(dfs, `[[`, "STRIPPED")))
         netMHCpan_filtered <- netMHCpan[Peptide %in% all_peptides]
-        
         dfs <- lapply(dfs, function(df) {
-          df_dt <- as.data.table(df)
-          result <- netMHCpan_filtered[df_dt, on = c(Peptide = "STRIPPED")]
-          result <- as.data.frame(result)
+          df_dt  <- as.data.table(df)
+          result <- as.data.frame(netMHCpan_filtered[df_dt, on = c(Peptide = "STRIPPED")])
           names(result)[names(result) == "Peptide"] <- "STRIPPED"
           result
         })
@@ -259,17 +256,14 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       }
       #The predicted_cache is initialized using all peptides in the input data. If the netMHCpan precomputed data has been left_joined, these will also be taken.
       prediction <- do.call(rbind, lapply(dfs, function(df) {
-        hla_cols <- grep("^HLA", colnames(df), value = TRUE)
-        
-        if (length(hla_cols) == 0) {
-          df_subset <- data.frame(Peptide = df$STRIPPED, stringsAsFactors = FALSE) #if only Peptide column exist, then R automatically formats to matrix. We need to enforce dataframe format.
+        allele_cols <- mhc_allele_cols(df)
+        if (length(allele_cols) == 0) {
+          df_subset <- data.frame(Peptide = df$STRIPPED, stringsAsFactors = FALSE)
         } else {
-          df_subset <- df[, c("STRIPPED", hla_cols), drop = FALSE]
+          df_subset <- df[, c("STRIPPED", allele_cols), drop = FALSE]
           colnames(df_subset)[1] <- "Peptide"
         }
-        
-        df_subset <- df_subset[!duplicated(df_subset$Peptide), , drop = FALSE]
-        df_subset
+        df_subset[!duplicated(df_subset$Peptide), , drop = FALSE]
       }))
       
       # Extract summary tables
@@ -2376,6 +2370,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         
         al_conversion <- sub("-", "\\.", al)
         al_conversion <- sub(":", "", al_conversion)
+        al_conversion <- paste0(MHC_PREFIX, al_conversion) 
         
         # Determine which peptides need prediction
         if (!(al_conversion %in% colnames(cache)[-1])) {
@@ -2391,7 +2386,9 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         
         res <- tryCatch({
           out <- run_netmhcpan(peptides_to_predict, al, netmhcpan_cmd())
-          parse_netmhc_output(out)
+          r <- parse_netmhc_output(out)
+          names(r)[names(r) != "Peptide"] <- al_conversion
+          r
         }, error = function(e) {
           showNotification(paste("netMHCpan failed:", conditionMessage(e)), type = "error", duration = 10)
           NULL
@@ -2420,6 +2417,52 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     prediction_cache(cache)
   })
   
+  observeEvent(input$run_netmhcII, {
+    if (is.null(input$HLA_alleles_II) || length(input$HLA_alleles_II) == 0) {
+      showNotification("Please select at least one MHC-II allele.", type = "error"); return()
+    }
+    lst   <- processed_data_list()
+    cache <- prediction_cache()
+    check_data_error(lst, required_cols = "LENGTH", na_policy = "any")
+    req(cache, input$HLA_alleles_II)
+    
+    peptides <- unique(unlist(lapply(lst, `[[`, "STRIPPED"), use.names = FALSE))
+    peptides <- peptides[nchar(peptides) >= 9]          # class II: no 8–11 cap; core is 9mer
+    shiny::validate(shiny::need(length(peptides) > 0, "No peptides of suitable length."))
+    
+    withProgress(message = "Running netMHCIIpan predictions...", value = 0, {
+      for (al in input$HLA_alleles_II) {
+        col <- paste0(MHC_PREFIX, make.names(al))        # class-II-safe column id
+        to_predict <- if (!(col %in% colnames(cache)[-1])) peptides
+        else unique(cache$Peptide[is.na(cache[[col]])])
+        incProgress(1 / length(input$HLA_alleles_II), detail = paste("MHC-II:", al))
+        if (!length(to_predict)) next
+        
+        res <- tryCatch({
+          out <- run_netmhciipan(to_predict, al, netmhcIIpan_cmd())
+          r   <- parse_netmhc_output(out)
+          names(r)[names(r) != "Peptide"] <- col
+          r
+        }, error = function(e) {
+          showNotification(paste("netMHCIIpan failed:", conditionMessage(e)), type = "error", duration = 10)
+          NULL
+        })
+        if (is.null(res)) next
+        
+        if (!(col %in% colnames(cache)[-1])) {
+          cache <- left_join(cache, res, by = "Peptide")
+        } else {
+          res   <- distinct(res,   Peptide, .keep_all = TRUE)
+          cache <- distinct(cache, Peptide, .keep_all = TRUE)
+          cache <- full_join(cache, res, by = "Peptide") %>%
+            dplyr::mutate(!!col := coalesce(.data[[paste0(col, ".x")]], .data[[paste0(col, ".y")]])) %>%
+            dplyr::select(-all_of(c(paste0(col, ".x"), paste0(col, ".y"))))
+        }
+      }
+    })
+    prediction_cache(cache)
+  })
+  
   observeEvent(list(input$strong_cut, input$weak_cut), {
     s <- input$strong_cut; w <- input$weak_cut
     sel <- if      (isTRUE(s == 0.5 && w == 2))  "I"
@@ -2433,7 +2476,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   output$allele_viz_selector_ui <- renderUI({
     df <- peptide_wide_unique()
     req(!is.null(df), ncol(df) > 1)
-    allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+    allele_cols <- mhc_allele_cols(df)
     req(length(allele_cols) > 0)
     selectInput(
       "allele_viz_select",
@@ -2467,7 +2510,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       
       out <- lapply(names(lst), function(nm) {
         df <- lst[[nm]]
-        allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+        allele_cols <- mhc_allele_cols(df)
         df <- df %>%
           dplyr::filter(LENGTH >= 8, LENGTH <= 11) %>%
           dplyr::select(STRIPPED, all_of(allele_cols)) %>%
@@ -2485,7 +2528,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     df <- peptide_wide_all()
     set_order   <- unique(df$Set) 
-    allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+    allele_cols <- mhc_allele_cols(df)
     
     res <- df %>%
       dplyr::group_by(Set, STRIPPED) %>%
@@ -2517,7 +2560,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     if (view == "per_allele") {
       d      <- peptide_wide_unique()
-      all_c  <- grep("^HLA", colnames(d), value = TRUE)
+      all_c  <- mhc_allele_cols(d)
       sel    <- input$allele_viz_select
       n_all  <- if (is.null(sel) || !length(sel)) length(all_c) else length(intersect(all_c, sel))
       n_samp <- length(unique(d$Set))
@@ -2559,7 +2602,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     df_collapsed <- peptide_wide_unique() %>%
       dplyr::select(-dplyr::any_of(
-        setdiff(grep("^HLA", colnames(.), value = TRUE), selected_alleles)
+        setdiff(mhc_allele_cols(.), selected_alleles)
       )) %>%
       dplyr::group_by(STRIPPED) %>%
       dplyr::summarise_all(~ {
@@ -2592,7 +2635,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     filename = function() { paste0("peptides_binders_", Sys.Date(), ".csv") },
     content = function(file) {
       df <- peptide_wide_unique()
-      allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+      allele_cols <- mhc_allele_cols(df)
       
       # Keep rows where at least one allele is <= 2 (Strong or Weak)
       binders <- df[rowSums(df[allele_cols] <= 2, na.rm = TRUE) > 0, ]
@@ -2605,7 +2648,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     filename = function() { paste0("peptides_nonbinders_", Sys.Date(), ".csv") },
     content = function(file) {
       df <- peptide_wide_unique()
-      allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+      allele_cols <- mhc_allele_cols(df)
       
       # Keep rows where all non-NA alleles > 2
       nonbinders <- df[apply(df[allele_cols], 1, function(x) {
@@ -2621,7 +2664,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     filename = function() { paste0("peptides_missing_", Sys.Date(), ".csv") },
     content = function(file) {
       df <- peptide_wide_unique()
-      allele_cols <- grep("^HLA", colnames(df), value = TRUE)
+      allele_cols <- mhc_allele_cols(df)
       
       # Keep rows where all alleles are NA
       missing <- df[rowSums(!is.na(df[allele_cols])) == 0, ]
@@ -3164,7 +3207,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       title = "Predicted binders", engine = "plotly",
       controls = function(){
         d     <- tryCatch(peptide_wide_unique(), error = function(e) NULL)
-        all_c <- if (!is.null(d)) grep("^HLA", colnames(d), value = TRUE) else character(0)
+        all_c <- if (!is.null(d)) mhc_allele_cols(df) else character(0)
         tagList(
           radioButtons("exp_binding_orient", "Bars",
                        c("Horizontal" = "h", "Vertical" = "v"),

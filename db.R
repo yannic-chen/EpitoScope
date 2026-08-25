@@ -19,6 +19,30 @@ save_analysis_to_db <- function(lst, meta_table, quantity_cols, col_map = NULL,
   
   con <- .db_con(path); on.exit(DBI::dbDisconnect(con))
   aid <- paste0("A_", format(Sys.time(), "%Y%m%d_%H%M%S"))
+  
+  ## ---- split binding predictions out of the analysis data ----
+  allele_cols <- unique(unlist(lapply(lst, mhc_allele_cols)))
+  
+  if (length(allele_cols)) {
+    pred_long <- dplyr::bind_rows(lapply(lst, function(df) {
+      ac <- intersect(allele_cols, colnames(df))
+      df[, c("STRIPPED", ac), drop = FALSE]
+    })) %>%
+      tidyr::pivot_longer(cols = dplyr::any_of(allele_cols),
+                          names_to = "allele", values_to = "rank") %>%
+      dplyr::filter(!is.na(rank)) %>%
+      dplyr::transmute(peptide = STRIPPED,
+                       allele  = sub(paste0("^", MHC_PREFIX), "", allele),
+                       rank    = as.numeric(rank)) %>%
+      dplyr::distinct(peptide, allele, .keep_all = TRUE)
+    
+    # remove allele columns from EVERY sample frame
+    lst <- lapply(lst, function(df) df[, setdiff(names(df), allele_cols), drop = FALSE])
+  } else {
+    pred_long <- NULL
+  }
+  
+  ## ---- fingerprint the analysis WITHOUT predictions ---
   fp <- analysis_fingerprint(lst, quantity_cols, spectra_cols) #compute hash
 
   ##---- analysis row ----
@@ -114,6 +138,16 @@ save_analysis_to_db <- function(lst, meta_table, quantity_cols, col_map = NULL,
     if (!is.null(cmap)) DBI::dbWriteTable(con, "column_map", cmap, append = TRUE)
     mm <- build_mod_map_long(aid, mod_map)
     if (!is.null(mm)) DBI::dbWriteTable(con, "mod_map", mm, append = TRUE) 
+    
+    # ---- shared binding-prediction cache ----
+    if (!is.null(pred_long) && nrow(pred_long)) {
+      DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS predictions
+                           (peptide TEXT, allele TEXT, rank REAL, PRIMARY KEY (peptide, allele))")
+      DBI::dbWriteTable(con, "predictions_stg", pred_long, temporary = TRUE, overwrite = TRUE)
+      DBI::dbExecute(con, "INSERT OR IGNORE INTO predictions
+                           SELECT peptide, allele, rank FROM predictions_stg")
+      DBI::dbExecute(con, "DROP TABLE predictions_stg")
+    }
     
     DBI::dbCommit(con)
   }, error = function(e) { DBI::dbRollback(con); stop(e) })
