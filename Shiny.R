@@ -151,7 +151,13 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
 #------------------Data management-----------------
   ## Reactive dataset container
   raw_list_r <- reactiveVal(NULL) #this is the list of raw data
-  data_list_r <- reactiveVal(NULL) #this is the list of trimmed and filtered data
+  data_list_raw_r <- reactiveVal(NULL) #this is the snapshot, since we now also allow splitting measurement.
+  data_list_r <- reactive({
+    d <- data_list_raw_r()
+    if (isTRUE(input$split_measurements) && !is.null(d))
+      split_measurements_to_samples(d, default_quantity_cols_r())
+    else d
+  })
   data_info_r <- reactiveVal(NULL) #this is the info list to know which columns are used for what
   data_mod_map <- reactiveVal(NULL) #this is the conversion map when modified amino acids are given their own symbol. Only used in PTM analysis.
   prediction_cache <- reactiveVal(data.frame(Peptide = character())) #This is to save netMHCpan predictions
@@ -167,7 +173,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   #Preloaded Data
   observe({
-    if (is.null(data_list_r())) {
+    if (is.null(data_list_raw_r())) {
       start <- Sys.time() #measure time
       
       register_custom_schema(custom_schema, custom_signature, replace_schema)
@@ -287,7 +293,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       }
   
       prediction_cache(distinct(prediction))
-      data_list_r(dfs)
+      data_list_raw_r(dfs)
       data_info_r(merged_info)
       data_mod_map(global_mod_map)
     }
@@ -323,7 +329,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       imap(~ .x %>% dplyr::rename(!!.y := coalesced_list)) %>%  # rename value column to sample name
       purrr::reduce(full_join, by = "final_name")
     
-    data_list_r(dfs)
+    data_list_raw_r(dfs)
     data_info_r(merged_info)
   })
   
@@ -345,6 +351,12 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     req(length(sel) > 0)                 # intersect guard against transient race for loading from SQL database.
     data_list_r()[sel]
   })
+  
+  ## Visual differentiator when the split_measurement is used
+  observeEvent(input$split_measurements, {
+    shinyjs::toggleClass(selector = ".main-header", class = "split-mode",
+                         condition = isTRUE(input$split_measurements))
+  }, ignoreInit = FALSE)
   
 #-------------------Data Transformation tab-----------------------
   # Add delayed reaction
@@ -2785,7 +2797,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       dplyr::select(-final_name) %>%
       unlist(recursive = TRUE, use.names = FALSE)
     id <- tryCatch(
-      save_analysis_to_db(lst = data_list_r(), meta_table = edited,
+      save_analysis_to_db(lst = data_list_raw_r(), meta_table = edited,
                           quantity_cols = default_quantity_cols_r(), col_map = measurement_col_map_r(),
                           spectra_cols = spectra_cols, data_info = data_info_r(), mod_map = data_mod_map(),
                           submitted_by = input$meta_user, description = input$meta_description),
@@ -2877,7 +2889,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     
     # core data reactiveVals
     raw_list_r(dfs)                              # note: normalized data, not original raw format
-    data_list_r(dfs)
+    data_list_raw_r(dfs)
     data_info_r(di)
     data_mod_map(dmm)
     software_r(loaded$software)

@@ -97,7 +97,10 @@ ui <- bs4DashPage(
   ## ---- Main ----
   body = bs4DashBody(
     shinyjs::useShinyjs(), #needed to make button grey out
-    tags$head(tags$style(HTML("html { scrollbar-gutter: stable; }"))),
+    tags$head(tags$style(HTML("
+  html { scrollbar-gutter: stable; }
+  .main-header.split-mode { background: #6f42c1 !important; }
+"))),
     tags$script(HTML("
       document.addEventListener('keydown', function(e){
         if (e.key === 'Enter' &&
@@ -824,6 +827,12 @@ window.fitExportPaper = function(){
       ## ---- Advanced settings ----
       bs4TabItem(
         tabName = "advanced_settings",
+        checkboxInput("split_measurements",
+                      "Treat each measurement as a separate sample",
+                      value = FALSE),
+        helpText("For datasets where one file contains multiple conditions as measurement columns. ",
+                 "Splits each measurement into its own sample. Original data is preserved for saving. ",
+                 "Changing this resets sample selection and manual groups."),
         fluidRow(
           bs4Card(title = "Binding thresholds", width = 6,
                   numericInput("strong_cut", "Strong binder  %Rank \u2264", value = 0.5, min = 0, step = 0.1),
@@ -836,7 +845,6 @@ window.fitExportPaper = function(){
           )
         )
       )
-      
       )
     )
   )

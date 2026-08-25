@@ -1336,6 +1336,26 @@ normalize_df <- function(df) {
               software = software))
 }
 
+split_measurements_to_samples <- function(dfs, quantity_cols, detected_only = TRUE) {
+  out <- list()
+  for (s in names(dfs)) {
+    df <- dfs[[s]]
+    mc <- intersect(quantity_cols, colnames(df))
+    if (length(mc) <= 1) { out[[s]] <- df; next }        # nothing to split
+    id <- setdiff(colnames(df), quantity_cols)           # identity columns
+    for (m in mc) {
+      sub <- df[, c(id, m), drop = FALSE]
+      if (detected_only) {                               # keep only peptides seen in THIS measurement
+        v <- sub[[m]]
+        sub <- sub[if (any(is.na(v))) !is.na(v) else v > 0, , drop = FALSE]
+      }
+      nm <- if (length(dfs) > 1) paste0(s, "__", m) else m
+      out[[nm]] <- sub
+    }
+  }
+  out
+}
+
 # @param lst      Named list of data.frames (active_data_list())
 # @param filters  Named list of slider values from input$*
 # @return         Filtered named list of data.frames
