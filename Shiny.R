@@ -124,7 +124,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   
   observeEvent(input$mhc_class, {
     req(input$mhc_class %in% c("I", "II"))
-    thr <- if (input$mhc_class == "II") c(2, 10) else c(0.5, 2)
+    thr <- if (input$mhc_class == "II") c(1, 5) else c(0.5, 2)
     updateNumericInput(session, "strong_cut", value = thr[1])
     updateNumericInput(session, "weak_cut",   value = thr[2])
     len <- if (input$mhc_class == "II") c(13, 25) else c(8, 11)
@@ -358,7 +358,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
                          condition = isTRUE(input$split_measurements))
   }, ignoreInit = FALSE)
   
-#-------------------Data Transformation tab-----------------------
+#-------------------Data Transformation-----------------------
   # Add delayed reaction
   filter_inputs <- reactive({
     list(
@@ -2193,7 +2193,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
         output[[paste0("STRING_", plot_name)]] <- visNetwork::renderVisNetwork({
           shiny::validate(shiny::need(curl::has_internet(), "No Internet Connection."))
           shiny::validate(shiny::need(!is.null(df) && nrow(df) != 0, "No data available."))
-          net <- run_string(df)
+          net <- tryCatch(run_string(df), string_too_many = function(e) conditionMessage(e))
+          if (is.character(net)) shiny::validate(net)
           shiny::validate(shiny::need(!is.null(net),
                                       "No STRING network (no significant hits, or none resolved by STRING)."))
           net
@@ -2478,7 +2479,7 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
   observeEvent(list(input$strong_cut, input$weak_cut), {
     s <- input$strong_cut; w <- input$weak_cut
     sel <- if      (isTRUE(s == 0.5 && w == 2))  "I"
-    else if (isTRUE(s == 2   && w == 10)) "II"
+    else if (isTRUE(s == 1   && w == 5)) "II"
     else    character(0)                       # custom -> no radio ticked
     cur <- if (length(input$mhc_class)) input$mhc_class else character(0)
     if (!identical(cur, sel))
@@ -2523,14 +2524,12 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       out <- lapply(names(lst), function(nm) {
         df <- lst[[nm]]
         allele_cols <- mhc_allele_cols(df)
-        df <- df %>%
-          dplyr::filter(LENGTH >= 8, LENGTH <= 11) %>%
+        df %>%
+          dplyr::filter(dplyr::if_any(dplyr::all_of(allele_cols), ~ !is.na(.x))) %>%  # keep predicted peptides, any length
           dplyr::select(STRIPPED, all_of(allele_cols)) %>%
           dplyr::mutate(Set = nm)
-        
-        df
       })
-      
+      out <- Filter(Negate(is.null), out)
       dplyr::bind_rows(out)
   })
   
@@ -3456,7 +3455,7 @@ shinyApp(
   ui = ui,
   server = function(input, output, session) {
     server(input, output, session, 
-           input_variable = test_annotation,
+           input_variable = preloaded_data,
            generate_pseudo_sequence = FALSE, 
            custom_schema = NULL, 
            custom_signature = NULL, 

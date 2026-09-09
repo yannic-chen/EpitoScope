@@ -46,6 +46,7 @@ Task List
 - [X] Increase Font size / add control to font size
 - [X] Add dedicated plot modification tab for each plot to generate publishable figure
 - [X] Add netMHC2pan
+- [ ] Fragpipe: Generate peptidoform from assigned modification column. Exists in psm.tsv and peptide.tsv. Contains delta mass of PTM.
 
 ### Maybe?
 - [X] Flexible Length Range Percentage plot for MHC2 and perhaps other species
@@ -71,6 +72,7 @@ Task List
   - FragPipe combined_(modified)_peptide.tsv
   - DIANN parquet
   - DIANN pr.matrix and pg.matrix
+  - Spectronaut report.tsv
 - Allows custom formats
 - Allows loading from an annotation table
 - Different formats can be analysed in the same session, allowing comparisons between software.

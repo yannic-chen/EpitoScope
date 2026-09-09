@@ -169,6 +169,23 @@ column_schema <- list(
     QUANTITY       = c("Precursor.quantity"), #Could Use Precursor.Normalized (but values look the same to me). Transformed from long format. Why not use MS1.Area/Ms1.normalised
     SPECTRA        = c(),                   #Transformed from long format.
     PTM            = c()                   # not present in parquet
+  ),
+  
+  Spectronaut = list( #This is for DIANN parquet file, which is in long format.
+    PEPTIDE        = c("EG.ModifiedPeptide"),
+    STRIPPED       = c("PEP.StrippedSequence"),
+    LENGTH         = c(),                  # not present 
+    MASS           = c("FG.Mass"),
+    MZ             = c("FG.PrecMZ"),
+    SCORE          = c("EG.Qvalue"),        
+    CHARGE         = c("FG.Charge"),   
+    RT             = c("EG.ApexRT"),              # could also use iRT, or predicted.iRT
+    K0             = c(),
+    PPM            = c(),
+    PROTEIN        = c("PG.ProteinGroups"),
+    QUANTITY       = c("FG.Quantity"), 
+    SPECTRA        = c("R.FileName"),                   #Transformed from long format.
+    PTM            = c()
   )
 )
 
@@ -177,7 +194,8 @@ signature <- list(
   PEAKS    = c("X.10LgP"),
   Fragpipe = c("prev.aa"),
   DIANN    = c("First.Protein.Description"), #this is for report.pr_matrix.tsv.
-  DIANN_parquet    = c("Run.Index")
+  DIANN_parquet    = c("Run.Index"),
+  Spectronaut = c("EG.ModifiedPeptide")
 )
 
 #-----------Helper functions------------------
@@ -294,6 +312,33 @@ canonicalize_mod <- function(token, ref = PTM_REF, tol = 0.005) {
   if (length(rm)) ref$name[rm[1]] else sprintf("%+.4f", mass)
 }
 
+# Build a peptidoform from FragPipe's stripped sequence + Assigned Modifications.
+# Assigned mods: "<pos><res>(<delta>)" comma-separated, plus "N-term(<d>)" / "C-term(<d>)".
+fragpipe_build_peptide <- function(stripped, assigned) {
+  if (is.na(stripped) || !nzchar(stripped)) return(stripped)
+  if (is.na(assigned) || !nzchar(assigned)) return(stripped)   # no mods -> stripped
+  
+  chars <- strsplit(stripped, "")[[1]]
+  ins   <- rep("", length(chars))                              # per-position bracket(s)
+  nterm <- ""; cterm <- ""
+  
+  for (tok in trimws(strsplit(assigned, ",")[[1]])) {
+    if (!nzchar(tok)) next
+    d <- sub(".*\\(([-0-9.]+)\\).*", "\\1", tok)                # delta inside parens
+    if (grepl("^N-?term", tok, ignore.case = TRUE)) {
+      nterm <- paste0(nterm, "n[", d, "]")
+    } else if (grepl("^C-?term", tok, ignore.case = TRUE)) {
+      cterm <- paste0(cterm, "[", d, "]")                      # append at C-terminus
+    } else {
+      pos <- suppressWarnings(as.integer(sub("^([0-9]+).*", "\\1", tok)))
+      if (!is.na(pos) && pos >= 1 && pos <= length(chars))
+        ins[pos] <- paste0(ins[pos], "[", d, "]")              # stacks if >1 mod on a residue
+    }
+  }
+  
+  paste0(nterm, paste(paste0(chars, ins), collapse = ""), cterm)
+}
+
 normalize_peptidoform <- function(seq, ref = PTM_REF) {
   if (is.na(seq) || !nzchar(seq)) return(seq)
   out <- character(0); rest <- seq
@@ -326,6 +371,14 @@ normalize_peptidoform <- function(seq, ref = PTM_REF) {
       res <- substr(m, nchar(m), nchar(m)); rest <- substr(rest, nchar(m)+1, nchar(rest))
       out <- c(out, paste0("n(", canonicalize_mod(sub("[A-Z]$","",m), ref), ")", res, consume_trailing(res)))
       next }
+    # N-term named bracket (Spectronaut):  [Acetyl (Protein N-term)]A  -> n(Acetyl)A
+    if (nzchar(m <- take("^\\[[A-Za-z][^]]*\\][A-Z]"))) {
+      res   <- substr(m, nchar(m), nchar(m))
+      inner <- sub("^\\[(.*)\\][A-Z]$", "\\1", m)
+      name  <- trimws(sub("\\s*\\([^)]*\\)\\s*$", "", inner))
+      rest  <- substr(rest, nchar(m)+1, nchar(rest))
+      out   <- c(out, paste0("n(", name, ")", res, consume_trailing(res)))
+      next }
     # residue + mass bracket:  M[15.9949]
     if (nzchar(m <- take("^[A-Z]\\[[-0-9.]+\\]"))) {
       res <- substr(m,1,1); rest <- substr(rest, nchar(m)+1, nchar(rest))
@@ -340,6 +393,14 @@ normalize_peptidoform <- function(seq, ref = PTM_REF) {
     if (nzchar(m <- take("^[A-Z]\\(UniMod:[0-9]+\\)"))) {
       res <- substr(m,1,1); rest <- substr(rest, nchar(m)+1, nchar(rest))
       out <- c(out, paste0(res, "(", canonicalize_mod(m, ref), ")", consume_trailing(res)))
+      next }
+    # residue + named bracket (Spectronaut):  M[Oxidation (M)]  -> M(Oxidation)
+    if (nzchar(m <- take("^[A-Z]\\[[A-Za-z][^]]*\\]"))) {
+      res   <- substr(m, 1, 1)
+      inner <- sub("^[A-Z]\\[(.*)\\]$", "\\1", m)
+      name  <- trimws(sub("\\s*\\([^)]*\\)\\s*$", "", inner))   # drop trailing " (spec)"
+      rest  <- substr(rest, nchar(m)+1, nchar(rest))
+      out   <- c(out, paste0(res, "(", name, ")", consume_trailing(res)))
       next }
     # already-canonical named form (LAST):  M(Oxidation)
     if (nzchar(m <- take("^[A-Z]\\([A-Za-z][^)]*\\)"))) {
@@ -1080,7 +1141,7 @@ normalize_df <- function(df) {
 
     columns_to_keep <- c(columns_to_keep, unlist(column_schema$Fragpipe, use.names = FALSE))
     
-    if(any(tolower(colnames(df)) == "peptide.sequence")) { #for combined_peptide.tsv, it follows a wide format similar to PEAKS. For Intensity, we use MaxLFQ.Intensity columns.
+    if(any(tolower(colnames(df)) == "peptide.sequence")) { #for combined_peptide.tsv, it follows a wide format similar to PEAKS. For Quantification, we use MaxLFQ.Intensity columns.
       columns_to_keep <- c(columns_to_keep, colnames(df)[grepl("maxlfq.intensity", tolower(colnames(df)))])
     }
     
@@ -1143,10 +1204,17 @@ normalize_df <- function(df) {
         Protein_Mapped.Proteins = str_replace_all(Protein_Mapped.Proteins, "sp\\|", "")
       )
     
-    if(any(tolower(colnames(df)) == "assigned.modifications")) { #detect fragpipe
+    if (any(tolower(colnames(df)) == "assigned.modifications")) {
+      # Build the peptidoform from stripped seq + assigned mods (delta masses + positions)
+      strip_col <- column_schema[[software]]$STRIPPED
+      strip_col <- strip_col[strip_col %in% colnames(df)][1]
+      df$Modified.Peptide  <- mapply(fragpipe_build_peptide,
+                            df[[strip_col]], df$Assigned.Modifications,
+                            USE.NAMES = FALSE)
+      
       res <- find_transform_column(df, column_schema[[software]][["PTM"]], "PTM")
-      df <- res$df
-      #For Fragpipe, we need to extract the numbers
+      df  <- res$df
+      # adjust the assigned.modification column for PTM.
       df$PTM <- sapply(df$PTM, function(x) {
         ptms <- stringr::str_extract_all(x, "\\(\\d+\\.\\d+\\)")[[1]]
         ptms <- gsub("[()]", "", ptms)
@@ -1154,8 +1222,8 @@ normalize_df <- function(df) {
         paste(ptms, collapse = ";")
       })
       original <- log_rename(original, res, "PTM")
-    } else { #for peptide.tsv and combined_peptide.tsv we dont have modification, thus we need to assign as NA.
-      df$PTM <- NA
+    } else {                                               # peptide.tsv / combined_peptide.tsv: no mods
+      df$PTM      <- NA
     }
     
   }
@@ -1184,6 +1252,30 @@ normalize_df <- function(df) {
     
     df <- left_join(df_top %>% dplyr::select(-Run, -any_of("Precursor.Quantity")), df_wide, by = "Modified.Sequence")
     
+  }
+  
+  if (software == "Spectronaut") {
+    
+    df <- df %>% dplyr::select(any_of(c(unlist(column_schema$Spectronaut, use.names = FALSE))))
+    
+    df_wide <- df %>% dplyr::select(EG.ModifiedPeptide, R.FileName, FG.Quantity) %>%
+      tidyr::pivot_wider(
+        names_from   = R.FileName,
+        values_from  = FG.Quantity,
+        names_prefix = "FG.Quantity.",
+        values_fn    = ~ if (all(is.na(.x))) NA_real_ else max(.x, na.rm = TRUE),
+        values_fill  = NA_real_)
+    
+    df_top <- df %>%
+      dplyr::group_by(EG.ModifiedPeptide) %>%
+      dplyr::arrange(EG.Qvalue, .by_group = TRUE) %>%
+      dplyr::slice_head(n = 1) %>%
+      dplyr::ungroup()
+    
+    df <- dplyr::left_join(df_top %>% dplyr::select(-R.FileName, -dplyr::any_of("FG.Quantity")),
+                           df_wide, by = "EG.ModifiedPeptide")
+    
+    df$EG.ModifiedPeptide <- gsub("^_+|_+$", "", df$EG.ModifiedPeptide)
   }
   
   res <- transform_columns(df, column_schema, software)
@@ -4200,18 +4292,32 @@ go_dotplot_plotly <- function(ego, show_n = 15, subtitle = NULL) {
 }
 
 ##------STRING-----------
-run_string <- function(df, score_threshold = 400, static = FALSE) {
+run_string <- function(df, score_threshold = 400, static = FALSE, max_ids = 500) {
   df_sig <- df %>% dplyr::filter(!is.na(log2FC), Significance == "Significant")
   ids <- df_sig$PROTEIN %>% strsplit("[;|]") %>% unlist() %>% trimws()
   ids <- unique(ids[nzchar(ids) & !grepl("_CONTA", ids)])     # drop contaminants
   if (length(ids) == 0) return(NULL)
   
-  url <- paste0("https://string-db.org/api/json/network?",
-                "identifiers=",
-                paste(vapply(ids, utils::URLencode, character(1), reserved = TRUE), collapse = "%0d"),
-                "&species=9606&required_score=", score_threshold)
-  res  <- tryCatch(httr::GET(url), error = function(e) NULL)
+  # distinct, reportable error type when the query would be unusably large
+  if (length(ids) > max_ids) {
+    stop(structure(
+      class = c("string_too_many", "error", "condition"),
+      list(message = sprintf(
+        "Too many significant proteins (%d; STRING network limited to %d).",
+        length(ids), max_ids),
+        call = NULL)))
+  }
+  
+  # POST (not GET) so a long identifier list never overflows the URL
+  res <- tryCatch(
+    httr::POST("https://string-db.org/api/json/network",
+               body = list(identifiers    = paste(ids, collapse = "\r"),
+                           species        = 9606,
+                           required_score = score_threshold),
+               encode = "form"),
+    error = function(e) NULL)
   if (is.null(res) || httr::http_error(res)) return(NULL)
+  
   data <- tryCatch(jsonlite::fromJSON(httr::content(res, "text", encoding = "UTF-8")),
                    error = function(e) NULL)
   if (is.null(data) || length(data) == 0 ||
