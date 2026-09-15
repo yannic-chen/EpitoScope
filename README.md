@@ -46,8 +46,10 @@ Task List
 - [X] Increase Font size / add control to font size
 - [X] Add dedicated plot modification tab for each plot to generate publishable figure
 - [X] Add netMHC2pan
-- [ ] Fragpipe: Generate peptidoform from assigned modification column. Exists in psm.tsv and peptide.tsv. Contains delta mass of PTM.
-
+- [X] Fragpipe: Generate peptidoform from assigned modification column. Exists in psm.tsv and peptide.tsv. Contains delta mass of PTM.
+- [ ] Decouple Score value y-axis between different software. (Rank system doesnt work because all ranks exist once)
+- [ ] Solve when certain formats dont have a column for filtering, how to handle NA, so that these are not removed from the analysis.
+ 
 ### Maybe?
 - [X] Flexible Length Range Percentage plot for MHC2 and perhaps other species
 - [ ] Call GibbsCluster from WSL or mix MHCpred for allele preidtion. Otherwise pre-generated database would also be ok fine.

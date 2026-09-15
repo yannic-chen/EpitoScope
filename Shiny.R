@@ -370,7 +370,8 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       RT_range              = input$RT_range,
       upset_min_size    = input$upset_min_size,
       upset_min_degree  = input$upset_min_degree,
-      upset_n_intersect = input$upset_n_intersect
+      upset_n_intersect = input$upset_n_intersect,
+      na_policy = input$na_policy
     )
   })
   
@@ -394,14 +395,15 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
       score_range    = filter_inputs_d()$score_range,
       charge_range   = filter_inputs_d()$charge_range,
       mass_range     = filter_inputs_d()$mass_range,
-      RT_range       = filter_inputs_d()$RT_range
+      RT_range       = filter_inputs_d()$RT_range,
+      na_policy = filter_inputs_d()$na_policy
     )
     apply_filters(lst, filters)
   })
   
   output$length_slider_ui   <- renderUI({ make_range_slider_ui(data_list_r(), "LENGTH",       "length_range",   tagList(icon("ruler-horizontal"), "Filter by Length:"),   step = 1, current = isolate(input$length_range)) })
   output$quantity_slider_ui <- renderUI({ make_range_slider_ui(data_list_r(), "MAX_QUANTITY", "quantity_range", "Filter by Max Quantity:",                                step = 1, current = isolate(input$quantity_range)) })
-  output$score_slider_ui    <- renderUI({ make_range_slider_ui(data_list_r(), "SCORE",        "score_range",    "Filter by Score:", current = isolate(input$score_range)) })
+  output$score_slider_ui    <- renderUI({ make_range_slider_ui(data_list_r(), "SCORE",        "score_range",    "Filter by Score:",                                      digits = 2, current = isolate(input$score_range)) })
   output$charge_slider_ui   <- renderUI({ make_range_slider_ui(data_list_r(), "CHARGE",       "charge_range",   "Filter by Charge:",                                     step = 1, current = isolate(input$charge_range)) })
   output$mass_slider_ui     <- renderUI({ make_range_slider_ui(data_list_r(), "MASS",         "mass_range",     "Filter by Mass:",                                       digits = 2, current = isolate(input$mass_range)) })
   output$RT_slider_ui       <- renderUI({ make_range_slider_ui(data_list_r(), "RT",           "RT_range",       "Filter by RT:",                                         digits = 2, current = isolate(input$RT_range)) })
@@ -2593,9 +2595,11 @@ server <- function(input, output, session, input_variable, generate_pseudo_seque
     shiny::validate(shiny::need(!is.null(df), "No prediction data"))
     if (view == "per_allele")
       plot_binders_per_allele_plotly(df, color = palette, percent = percent,
-                                     alleles = alleles, facet_by = grp, orientation = orientation)
+                                     alleles = alleles, facet_by = grp, orientation = orientation,
+                                     strong = binder_thresholds()$strong, weak = binder_thresholds()$weak)
     else
-      plot_binders_plotly(df, color = palette, percent = percent, alleles = alleles, orientation = orientation)
+      plot_binders_plotly(df, color = palette, percent = percent, alleles = alleles, orientation = orientation,
+                          strong = binder_thresholds()$strong, weak = binder_thresholds()$weak)
   }
   
   output$binding_plot <- renderPlotly({

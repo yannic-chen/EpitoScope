@@ -334,6 +334,7 @@ make_row <- function(label, val) {
 
 filter_df <- do.call(rbind, Filter(Negate(is.null), list(
   make_row("Samples",        f$samples),
+  make_row("NA handling", c(include = "Included", exclude = "Excluded",zero = "Treated as 0")[f$na_policy]),
   make_row("Length range",   f$length_range),
   make_row("Quantity range", f$quantity_range),
   make_row("Score range",    f$score_range),

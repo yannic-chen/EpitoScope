@@ -176,7 +176,7 @@ column_schema <- list(
     STRIPPED       = c("PEP.StrippedSequence"),
     LENGTH         = c(),                  # not present 
     MASS           = c("FG.Mass"),
-    MZ             = c("FG.PrecMZ"),
+    MZ             = c("FG.PrecMz"),
     SCORE          = c("EG.Qvalue"),        
     CHARGE         = c("FG.Charge"),   
     RT             = c("EG.ApexRT"),              # could also use iRT, or predicted.iRT
@@ -1452,39 +1452,29 @@ split_measurements_to_samples <- function(dfs, quantity_cols, detected_only = TR
 # @param filters  Named list of slider values from input$*
 # @return         Filtered named list of data.frames
 apply_filters <- function(lst, filters) {
+  
+  # Global NA policy for every range filter.
+  # "include" = keep NA rows regardless of range
+  # "exclude" = drop NA rows
+  # "zero"    = treat NA as 0, then apply the range
+  policy <- if (is.null(filters$na_policy)) "include" else filters$na_policy
+  
+  range_keep <- function(df, col, rng) {
+    if (is.null(rng) || !col %in% names(df) || length(rng) != 2) return(df)
+    v <- df[[col]]
+    if (identical(policy, "zero")) v[is.na(v)] <- 0
+    keep <- v >= rng[1] & v <= rng[2]
+    keep[is.na(keep)] <- identical(policy, "include")
+    df[keep, , drop = FALSE]
+  }
+  
   lapply(lst, function(df) {
-    
-    # Length filter
-    if (!is.null(filters$length_range) && "LENGTH" %in% names(df)) {
-      df <- df[df$LENGTH >= filters$length_range[1] & df$LENGTH <= filters$length_range[2], ]
-    }
-    
-    # Quantity filter
-    if (!is.null(filters$quantity_range) && "MAX_QUANTITY" %in% names(df) &&
-        length(filters$quantity_range) == 2) {
-      df <- df[df$MAX_QUANTITY >= filters$quantity_range[1] &
-                 df$MAX_QUANTITY <= filters$quantity_range[2], ]
-    }
-    
-    # Score filter
-    if (!is.null(filters$score_range) && "SCORE" %in% names(df)) {
-      df <- df[df$SCORE >= filters$score_range[1] & df$SCORE <= filters$score_range[2], ]
-    }
-    
-    # Charge filter
-    if (!is.null(filters$charge_range) && "CHARGE" %in% names(df)) {
-      df <- df[df$CHARGE >= filters$charge_range[1] & df$CHARGE <= filters$charge_range[2], ]
-    }
-    
-    # Mass filter
-    if (!is.null(filters$mass_range) && "MASS" %in% names(df)) {
-      df <- df[df$MASS >= filters$mass_range[1] & df$MASS <= filters$mass_range[2], ]
-    }
-    
-    # RT filter
-    if (!is.null(filters$RT_range) && "RT" %in% names(df)) {
-      df <- df[df$RT >= filters$RT_range[1] & df$RT <= filters$RT_range[2], ]
-    }
+    df <- range_keep(df, "LENGTH",       filters$length_range)
+    df <- range_keep(df, "MAX_QUANTITY", filters$quantity_range)
+    df <- range_keep(df, "SCORE",        filters$score_range)
+    df <- range_keep(df, "CHARGE",       filters$charge_range)
+    df <- range_keep(df, "MASS",         filters$mass_range)
+    df <- range_keep(df, "RT",           filters$RT_range)
     
     # Remove all-NA rows
     df[rowSums(!is.na(df)) > 0, , drop = FALSE]

@@ -12,6 +12,11 @@ ui <- bs4DashPage(
     expandOnHover = T, # when minified is TRUE, if this property is TRUE, the sidebar opens when hovering but re-collapses as soon as the focus is lost.
     elevation = 3,
     uiOutput("sample_selector"),
+    selectInput("na_policy", "Missing values (NA) in filters:",
+                choices = c("Include" = "include",
+                            "Exclude" = "exclude",
+                            "Treat as 0" = "zero"),
+                selected = "exclude"),
     uiOutput("length_slider_ui"),
     uiOutput("quantity_slider_ui"),
     uiOutput("score_slider_ui"),
