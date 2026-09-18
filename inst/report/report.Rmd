@@ -241,16 +241,14 @@ pre {
 </style>
 
 ```{r setup, include=FALSE}
-library(shiny)
 chunk_num <- 70
 
 knitr::opts_chunk$set(
   echo    = FALSE,
   warning = FALSE,
-  message = FALSE
+  message = FALSE,
+  error   = TRUE
 )
-
-source("global.R")
 
 data_info      <- params$data_info
 data_list      <- params$data_list
@@ -274,7 +272,8 @@ upset_n_intersect <- params$upset_n_intersect
 mhc_length_range <- params$mhc_length_range
 default_quantity_cols_r <- params$default_quantity_cols_r
 
-motif_plot_length <- 7:13 # should be the same as in Shiny.R
+motif_plot_length <- if (length(params$mhc_length_range) == 2)
+  params$mhc_length_range[1]:params$mhc_length_range[2] else 8:11
 
 quantity_cols <- get_quantity_cols(data_info)
 
@@ -632,14 +631,12 @@ dynamic_range_combined_static(processed_list, data_col = "MAX_QUANTITY", color =
 
 ```{r k0_vs_mz_grid, fig.height=5}
 incProgress(1/chunk_num, detail = "1/k0 vs m/z...")
-scatter_list <- generate_scatterplots(processed_list, color = color_palette)
-scatter_list <- Filter(Negate(is.null), scatter_list)
-
-if (length(scatter_list) == 0) {
-  ggplot() + annotate("text", x = .5, y = .5, label = "No scatterplots available",
+p <- plot_scatter_mz_k0_static(processed_list, color = color_palette, ncol = 3)
+if (is.null(p)) {
+  ggplot() + annotate("text", x = .5, y = .5, label = "No m/z / 1/K0 data available",
                       size = 6, color = "red") + theme_void()
 } else {
-  wrap_plots(scatter_list, ncol = min(2, length(scatter_list)))
+  p
 }
 ```
 
@@ -662,7 +659,7 @@ if (length(quantity_cols) == 0) {
     groups <- sapply(colnames(cor_mat), get_group)
     plot_correlation_heatmap_interactive(cor_mat, color = color_palette,
                                          cluster_mode = cluster_mode_ea,
-                                         groups = groups, label = "Pearson")
+                                         groups = groups, label = "Pearson", engine = "plotly")
   }
 }
 ```
@@ -734,14 +731,14 @@ plot_upset(processed_list,
 
 ```{r Pairwise_overlap_count}
 incProgress(1/chunk_num, detail = "Pairwise Overlap Matrix Count...")
-plot_shared_peptide_interactive(processed_list, mode = "count", percent_type = "union", color = color_palette)
+plot_shared_peptide_interactive(processed_list, mode = "count", percent_type = "union", color = color_palette, engine = "plotly")
 ```
 
 ### Percent
 
 ```{r Pairwise_overlap_percent}
 incProgress(1/chunk_num, detail = "Pairwise Overlap Matrix Percentage...")
-plot_shared_peptide_interactive(processed_list, mode = "percent", percent_type = "union", color = color_palette)
+plot_shared_peptide_interactive(processed_list, mode = "percent", percent_type = "union", color = color_palette, engine = "plotly")
 ```
 
 ## Pairwise comparison Matrix {.tabset}
@@ -750,14 +747,14 @@ plot_shared_peptide_interactive(processed_list, mode = "percent", percent_type =
 
 ```{r Pairwise_comp}
 incProgress(1/chunk_num, detail = "Pairwise Comparison no Cluster...")
-plot_pairwise_quant_correlation_interactive(processed_list, color = color_palette, cluster = "none")
+plot_pairwise_quant_correlation_interactive(processed_list, color = color_palette, cluster = "none", engine = "plotly")
 ```
 
 ### Cluster
 
 ```{r Pairwise_comp_cluster}
 incProgress(1/chunk_num, detail = "Pairwise Comparison Cluster...")
-plot_pairwise_quant_correlation_interactive(processed_list, color = color_palette, cluster = "both")
+plot_pairwise_quant_correlation_interactive(processed_list, color = color_palette, cluster = "both", engine = "plotly")
 ```
 
 ## PCA {.tabset}
@@ -1001,8 +998,13 @@ if (is.null(group_comp_stats) || length(group_comp_stats) == 0) {
     if (!curl::has_internet()) {
       cat("_No internet connection — STRING-DB network unavailable._\n\n")
     } else {
-      res <- run_string(df, static = TRUE)
-      if (is.null(res)) cat("_No STRING network available._\n\n") else { print(res); cat("\n\n") }
+      tryCatch({
+        res <- run_string(df, static = TRUE)
+        if (is.null(res)) cat("_No STRING network available._\n\n")
+        else { print(res); cat("\n\n") }
+      },
+      string_too_many = function(e) cat("_", conditionMessage(e), "_\n\n", sep = ""),
+      error = function(e) cat("_STRING network unavailable: ", conditionMessage(e), "_\n\n", sep = ""))
     }
   }
 }
@@ -1229,7 +1231,7 @@ DT::datatable(
     scrollX     = TRUE,
     dom         = "frtip",
     autoWidth   = FALSE,
-    initComplete = JS("function(settings, json) { this.api().columns.adjust(); }")
+    initComplete = DT::JS("function(settings, json) { this.api().columns.adjust(); }")
   )
 )
 ```

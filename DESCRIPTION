@@ -1,0 +1,74 @@
+Package: EpitoScope
+Title: Interactive QC, Visualization, and Immunogenicity Assessment of Immunopeptidomics Data
+Version: 0.9.0
+Authors@R: 
+    person("Yannic", "Chen", , "yannicchn@gmail.com", role = c("aut", "cre"))
+Description: An interactive R/Shiny application that unifies quality control,
+    visualization, comparative statistics, and MHC class I/II binding
+    prediction for mass-spectrometry-based immunopeptidomics data. It ingests
+    search-engine outputs from PEAKS, FragPipe, DIA-NN, and Spectronaut through
+    a configurable column-mapping layer, and provides publication-ready figure
+    export and relational storage of processed results and binding predictions.
+License: GPL-3
+URL: https://github.com/yannic-chen/EpitoScope
+BugReports: https://github.com/yannic-chen/EpitoScope/issues
+Encoding: UTF-8
+LazyData: true
+biocViews:
+Depends:
+    R (>= 4.1)
+Imports:
+    shiny,
+    bs4Dash,
+    DT,
+    rhandsontable,
+    shinyjs,
+    DBI,
+    RSQLite,
+    dplyr,
+    tidyr,
+    purrr,
+    stringr,
+    data.table,
+    arrow,
+    memoise,
+    curl,
+    httr,
+    jsonlite,
+    ggplot2,
+    ggrepel,
+    ggseqlogo,
+    ggVennDiagram,
+    ggnewscale,
+    eulerr,
+    heatmaply,
+    viridis,
+    patchwork,
+    plotly,
+    igraph,
+    ggraph,
+    visNetwork,
+    ComplexUpset,
+    ComplexHeatmap,
+    clusterProfiler,
+    org.Hs.eg.db,
+    rmarkdown,
+    knitr,
+    grid,
+    grDevices,
+    stats,
+    utils,
+    tools,
+    limma,
+    digest,
+    viridisLite,
+    scales,
+    gtable,
+    htmltools,
+    rlang,
+    bslib,
+    RColorBrewer
+Suggests:
+    fastcluster
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 8.0.0

@@ -1,0 +1,15 @@
+Name;Source;Measurement;Raw;Biological_replicate;technical_replicate;condition1;condition2;conditionType;conditionSex;ConditionAge
+tumor1;PATH/TO/tumor1/db.peptides.csv;tumor1_sample1_inj1;test1.d;1;1;tumor;patient1;GBM;M;50
+tumor1;PATH/TO/tumor1/db.peptides.csv;tumor1_sample1_inj2;test2.d;1;2;tumor;patient1;GBM;M;50
+tumor1;PATH/TO/tumor1/db.peptides.csv;tumor1_sample2_inj1;test3.d;2;1;tumor;patient1;GBM;M;50
+tumor1;PATH/TO/tumor1/db.peptides.csv;tumor1_sample2_inj2;test4.d;2;2;tumor;patient1;GBM;M;50
+normal1;PATH/TO/normal1/db.peptides.csv;normal1_sample1_inj1;test5.d;1;1;plasma;patient1;CSF;M;50
+normal1;PATH/TO/normal1/db.peptides.csv;normal1_sample1_inj2;test6.d;1;2;plasma;patient1;CSF;M;50
+normal1;PATH/TO/normal1/db.peptides.csv;normal1_sample2_inj1;test7.d;2;1;plasma;patient1;CSF;M;50
+normal1;PATH/TO/normal1/db.peptides.csv;normal1_sample2_inj2;test8.d;2;2;plasma;patient1;CSF;M;50
+tumor2;PATH/TO/tumor2/db.peptides.csv;tumor2_sample1_inj1;test9.d;1;1;tumor;patient2;PDAC;F;49
+tumor2;PATH/TO/tumor2/db.peptides.csv;tumor2_sample1_inj2;test10.d;1;2;tumor;patient2;PDAC;F;49
+normal2;PATH/TO/normal2/db.peptides.csv;normal2_sample1_inj1;test11.d;1;1;plasma;patient2;plasma;F;49
+normal2;PATH/TO/normal2/db.peptides.csv;normal2_sample1_inj2;test12.d;1;2;plasma;patient2;plasma;F;49
+normal2;PATH/TO/normal2/db.peptides.csv;normal2_sample2_inj1;test13.d;2;1;plasma;patient2;plasma;F;49
+normal2;PATH/TO/normal2/db.peptides.csv;normal2_sample2_inj2;test14.d;2;2;plasma;patient2;plasma;F;49

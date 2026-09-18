@@ -1,9 +1,9 @@
-ui <- bs4DashPage(
+app_ui <- function() {bs4DashPage(
   title = "EpitoScope",
   help = TRUE, # automatically enable/disable all bs4Dash::tooltips and popover that are present in the shiny app
   fullscreen = FALSE, # an icon is displayed in the navbar to switch to full screen mode
   scrollToTop = FALSE, # allows to toggle the scroll to top button shown in the bottom right corner
-  
+
   ## ---- Sidebar ----
   sidebar = bs4DashSidebar(
     title = "Filters",
@@ -26,7 +26,7 @@ ui <- bs4DashPage(
     actionButton("generate_report", tagList(icon("file-arrow-down"),"Generate HTML Report")),
     actionButton("open_export", "Export figure", icon = icon("camera"))
   ),
-  
+
   ## ---- Header ----
   header = bs4DashNavbar(
     fixed = TRUE,
@@ -34,7 +34,7 @@ ui <- bs4DashPage(
       title = "EpitoScope",
       color = "primary",
       href = "https://github.com/yannic-chen/EpitoScope",
-      image = "Epitoscope.png"
+      image = "www/Epitoscope.png"
     ),
     rightUi = tags$li(
       class = "nav-item dropdown d-flex align-items-center px-3",
@@ -84,7 +84,7 @@ ui <- bs4DashPage(
         )
       )
   ),
-  
+
   ## ---- Control Bar ----
   controlbar = bs4DashControlbar( #this is just an extra sidebar on the right
     #skinSelector(),
@@ -98,7 +98,7 @@ ui <- bs4DashPage(
     sliderInput("plot_font", "Plot font size", min = 8, max = 28, value = 13, step = 1),
     pinned = FALSE, value = ""
     ),
-  
+
   ## ---- Main ----
   body = bs4DashBody(
     shinyjs::useShinyjs(), #needed to make button grey out
@@ -177,30 +177,30 @@ window.fitExportPaper = function(){
         tabName = "raw_summary",  # must match menuItem
         fluidRow(
           ### ---- Column Map ----
-          bs4Card(title = tagList("Column Map", 
+          bs4Card(title = tagList("Column Map",
                                   span(bs4Dash::tooltip(icon("info-circle"), title = "This table maps the columns of your dataset to the expected schema.
                                                     Note: m/z values are taken from the report and not calculated from the mass and charge column. These two values do differ.", placement = "right")
-                                  )), width = 12, maximizable = TRUE, 
+                                  )), width = 12, maximizable = TRUE,
                   #DT::DTOutput("summary_table")
                   div(style = 'overflow-x: auto;', DT::DTOutput("summary_table"))
                   ),
-          
+
           ### ---- Annotation Table (if given) ----
           bs4Card(inputId = "annotation_card", title = tagList("Annotation Table", bs4Dash::tooltip(icon("info-circle"),"This is the original input annotation table.", placement = "right")
           ), width = 12, maximizable = TRUE,
           #DT::DTOutput("annotation_table")
           div(style = 'overflow-x: auto;', DT::DTOutput("annotation_table"))
           ),
-          
-          
+
+
           ### ---- Unique Entries ----
-          bs4Card(title = "Unique entries", width = 12, maximizable = TRUE, 
+          bs4Card(title = "Unique entries", width = 12, maximizable = TRUE,
                   tabsetPanel(
                     tabPanel("Peptides",
                              h6("Unique Peptides (no PTMs)"),
                              plotOutput("summary_peptides_plot")
                              ),
-                    tabPanel("Peptidoforms", 
+                    tabPanel("Peptidoforms",
                              h6("Peptidoforms (including PTMs)"),
                              plotOutput("summary_peptidoforms_plot")
                              ),
@@ -210,13 +210,13 @@ window.fitExportPaper = function(){
                              )
                     )
                   ),
-          
+
           ### ---- Other Numeric Columns ----
-          bs4Card(title = "Other Numeric Columns", width = 12, maximizable = TRUE, 
+          bs4Card(title = "Other Numeric Columns", width = 12, maximizable = TRUE,
                   tabsetPanel(
                     tabPanel("Charge",
                              bs4Dash::tooltip(icon("info-circle"),"In case multiple charges are given, the minimum is taken.", placement = "right"),
-                             plotOutput("charge_plot")                               
+                             plotOutput("charge_plot")
                              ),
                     tabPanel("Mass",
                              plotlyOutput("mass_plot")
@@ -236,7 +236,7 @@ window.fitExportPaper = function(){
                              )
                     )
                   ),
-          
+
           ### ---- Summary Table ----
           bs4Card(title = tagList("Summary Table", bs4Dash::tooltip(icon("info-circle"),"This is simply the summary() output. Each sample occupies one row.", placement = "right")
                                   ), width = 12, maximizable = TRUE,
@@ -244,12 +244,12 @@ window.fitExportPaper = function(){
                   )
           )
         ),
-      
+
       ## ---- QC ----
       bs4TabItem(
         tabName = "qc",  # must match menuItem
         fluidRow(
-          
+
           ### ---- Peptide Length Distribution ----
           with_export(
             bs4Card(title = "Peptide Length Distribution", width = 12, maximizable = TRUE,
@@ -271,10 +271,10 @@ window.fitExportPaper = function(){
                     )),
             "length_range_distribution"
             ),
-          
+
           ### ---- Other Numeric Columns ----
           with_export(
-            bs4Card(title = "Other Numeric Columns", width = 12, maximizable = TRUE, 
+            bs4Card(title = "Other Numeric Columns", width = 12, maximizable = TRUE,
                     tabsetPanel(
                       tabPanel("Charge",
                                tabsetPanel(
@@ -287,7 +287,7 @@ window.fitExportPaper = function(){
                                  )
                                )
                       ),
-                      
+
                       tabPanel("Mass",
                                tabsetPanel(
                                  tabPanel("Per Sample",
@@ -330,7 +330,7 @@ window.fitExportPaper = function(){
                                  tabPanel("Per Sample",
                                           div(`data-tab-key` = "ppm_plot",
                                               plotlyOutput("ppm_plot2"))),
-                                 tabPanel("Across Measurement", 
+                                 tabPanel("Across Measurement",
                                           h6("Density Curve with the line being the mean and the shaded band representing the range between measurements."),
                                           div(`data-tab-key` = "ppm_plot_meas",
                                               plotlyOutput("ppm_plot_meas"))
@@ -342,7 +342,7 @@ window.fitExportPaper = function(){
                                  tabPanel("Per Sample",
                                           div(`data-tab-key` = "score_plot",
                                               plotlyOutput("score_violin2"))),
-                                 tabPanel("Across Measurement", 
+                                 tabPanel("Across Measurement",
                                           h6("Line is mean distribution. THe dashed line is min and the shaded area is max."),
                                           div(`data-tab-key` = "score_plot_meas",
                                               plotlyOutput("score_violin_meas"))
@@ -355,20 +355,20 @@ window.fitExportPaper = function(){
           ### ---- Motif Plot ----
           with_export(
             bs4Card(title = tagList("Motif Plot", bs4Dash::tooltip(icon("info-circle"),"Minimum of 5 sequences are required for Motif generation.", placement = "right")
-                                    ), width = 12, maximizable = TRUE, 
+                                    ), width = 12, maximizable = TRUE,
                     uiOutput("motif_tabs")),
             paste0("motif_len_", motif_plot_length[1])
             ),
           ### ---- Unique Entries ----
           with_export(
-            bs4Card(title = "Identification distribution", width = 12, maximizable = TRUE, 
+            bs4Card(title = "Identification distribution", width = 12, maximizable = TRUE,
                     tabsetPanel(
                       tabPanel("Peptides",
                                h6("Unique Peptides (no PTMs)", bs4Dash::tooltip(icon("info-circle"),"0s are considered identified but not quantified if NA also exist. Otherwise 0 is considered not identified.", placement = "right")),
                                div(`data-tab-key` = "peptides_unique_meas",
                                    plotOutput("summary_peptides_plot3"))
                       ),
-                      tabPanel("Peptidoforms", 
+                      tabPanel("Peptidoforms",
                                h6("Peptidoforms (including PTMs)", bs4Dash::tooltip(icon("info-circle"),"0s are considered identified but not quantified if NA also exist. Otherwise 0 is considered not identified.", placement = "right")),
                                div(`data-tab-key` = "peptidoforms_unique_meas",
                                    plotOutput("summary_peptidoforms_plot3"))
@@ -381,24 +381,24 @@ window.fitExportPaper = function(){
                     )),
             "peptides_unique_meas"
           ),
-          
+
           ### ---- Dynamic Range plot ----
           with_export(
           bs4Card(title = tagList("Dynamic Rang", bs4Dash::tooltip(icon("info-circle"),"Plot generation and highlighting can take long time with large number of samples", placement = "right")
-                                  ), width = 12, maximizable = TRUE, 
+                                  ), width = 12, maximizable = TRUE,
                   textInput("dynrange_search", "Highlight protein (regex supported):", placeholder = "HLA[ABC]"),
                   textInput("dynrange_pep_search","Highlight peptide (regex, stripped or peptidoform):",placeholder = "e.g. SLLQHLIGL|SINFKL"),
                   actionButton("dynrange_go", "Highlight", icon = icon("magnifying-glass")),
                   h6("Plots with Protein matches have hoverinfo for non-matches deactivated to allow better hovering over matches."),
                   tabsetPanel(
-                    tabPanel("Individual", 
+                    tabPanel("Individual",
                              div(`data-tab-key` = "dynrange_individual",
                              uiOutput("dynrange_individual_ui"))),
-                    tabPanel("Combined", 
+                    tabPanel("Combined",
                              radioButtons("dynrange_rank_mode", "Rank scale:",
                                           choices  = c("Absolute" = "absolute", "Relative (%)" = "relative"),
                                           selected = "absolute", inline = TRUE),
-                             div(`data-tab-key` = "dynrange_combined", 
+                             div(`data-tab-key` = "dynrange_combined",
                              plotlyOutput("dynrange_combined")))
                     )
                   ),
@@ -420,7 +420,7 @@ window.fitExportPaper = function(){
                                 "Columns only" = "columns",
                                 "Rows + columns" = "both"
                               ), selected = "sample"
-                              
+
                   ),
                   plotlyOutput("measurement_heatmap", width = "auto", height = "650px")
                   ),
@@ -428,21 +428,21 @@ window.fitExportPaper = function(){
           )
           )
         ),
-      
+
       ## ---- Results ----
       bs4TabItem(
         tabName = "results",  # must match menuItem
         fluidRow(
           ### ---- Unique Entries ----
           with_export(
-            bs4Card(title = "Unique entries", width = 12, maximizable = TRUE, 
+            bs4Card(title = "Unique entries", width = 12, maximizable = TRUE,
                     tabsetPanel(
                       tabPanel("Peptides",
                                h6("Unique Peptides (no PTMs)"),
                                div(`data-tab-key` = "peptides_unique",
                                    plotOutput("summary_peptides_plot2"))
                       ),
-                      tabPanel("Peptidoforms", 
+                      tabPanel("Peptidoforms",
                                h6("Peptidoforms (including PTMs)"),
                                div(`data-tab-key` = "peptidoforms_unique",
                                    plotOutput("summary_peptidoforms_plot2"))
@@ -467,7 +467,7 @@ window.fitExportPaper = function(){
                 div(`data-tab-key` = "completeness_count",
                     plotOutput("completeness_plot"))
               ),
-              
+
               # --- percentage ---
               tabPanel(
                 "Percentage",
@@ -504,7 +504,7 @@ window.fitExportPaper = function(){
           ),
           ### ---- Pairwise shared peptide quantity comparison matrix ----
           with_export(
-            bs4Card(title = tagList("Pairwise shared peptide quantity comparison matrix", bs4Dash::tooltip(icon("info-circle"),"Pairwise comparison of peptide max quantity of shared peptides, using pearson correlation. Clustering distance is 'euclidean' and method is 'complete'. 
+            bs4Card(title = tagList("Pairwise shared peptide quantity comparison matrix", bs4Dash::tooltip(icon("info-circle"),"Pairwise comparison of peptide max quantity of shared peptides, using pearson correlation. Clustering distance is 'euclidean' and method is 'complete'.
                                                                                                          Peptide label is removed if # > 200. NA is coloured Gray. Rastering is used for large data.", placement = "right")
             ), width = 12, maximizable = TRUE,
             selectInput("cluster_mode", "Clustering:",
@@ -514,7 +514,7 @@ window.fitExportPaper = function(){
                           "Columns only" = "columns",
                           "Rows + columns" = "both"
                         ), selected = "none"
-                        
+
             ),
             plotlyOutput("pairwise_peptide_quant_correlation")
             ),
@@ -532,7 +532,7 @@ window.fitExportPaper = function(){
                     plotlyOutput("pca", height = "600px"),
                     tags$hr(),
                     h5("Explained variance"),
-                    h6("This plot shows how many principle components (PC) are required to explain how much of the variance 
+                    h6("This plot shows how many principle components (PC) are required to explain how much of the variance
                      and how much each PC controbutes. The more PC are required to explain a given variance, the more complex the data is to group."),
                     plotlyOutput("pca_variance", height = "300px")
             ),
@@ -540,14 +540,14 @@ window.fitExportPaper = function(){
           )
         )
       ),
-      
+
       ## ---- Group Comparison ----
       bs4TabItem(
         tabName = "group_comp",  # must match menuItem
         fluidRow(
           h6("Note: No normalization is being done. Max Quantity values are used as is to calculate the group mean which is then compared."),
           ### ---- Create Groups ----
-          bs4Card(title = tagList("Create Groups", bs4Dash::tooltip(icon("info-circle"),"Here we can create groups out of one or more samples to do group based comparison. 
+          bs4Card(title = tagList("Create Groups", bs4Dash::tooltip(icon("info-circle"),"Here we can create groups out of one or more samples to do group based comparison.
                                                        The groups are only valid for this page. Pairwise comparisons will be done for all possible group pairings.
                                                        This can be time consuming, as such the maximum number of groups is limited to 5.
                                                        Group data are combined via unionized, instead of intersected.", placement = "right")
@@ -570,7 +570,7 @@ window.fitExportPaper = function(){
                   conditionalPanel("input.go_background == 'custom'",
                                    textAreaInput("go_custom_ids", "Custom background — UniProt IDs (space/comma/newline separated):",
                                                  rows = 4, placeholder = "P04439\nP01889\n...")),
-                  
+
                   # --- warning box: only visible for detected/custom ---
                   conditionalPanel(
                     condition = "input.go_background == 'detected' || input.go_background == 'custom'",
@@ -580,12 +580,12 @@ window.fitExportPaper = function(){
                         "Protein symbols through UniProt web requests. The first run on a dataset can be slow \u2014. Results are cached afterward, so later ",
                         "changes are fast.")
                   ),
-                  
+
                   selectInput("go_ont", "GO ontology:",
                               c("Biological Process" = "BP", "Molecular Function" = "MF", "Cellular Component" = "CC"),
                               selected = "BP")
           ),
-          
+
           ### ---- Group Stuff ----
           with_export(
             bs4Card(title = tagList("Group based Unique Peptides", bs4Dash::tooltip(icon("info-circle"),"Violin-plot showing distribution of peptides quantities within groups. All measurements from all samples are used.", placement = "right")
@@ -602,7 +602,7 @@ window.fitExportPaper = function(){
             "group_euler"
           ),
           with_export(
-            bs4Card(title = tagList("Peptide based heatmap", bs4Dash::tooltip(icon("info-circle"),"Cluster peptides based on differential pattern across groups. Clustering distance is 'euclidean' and method is 'complete'. 
+            bs4Card(title = tagList("Peptide based heatmap", bs4Dash::tooltip(icon("info-circle"),"Cluster peptides based on differential pattern across groups. Clustering distance is 'euclidean' and method is 'complete'.
                                                                             The MAX quantity for the peptides is used. Peptides are binned for over 1000+ peptides. Peptide Llabels are remoed when 250+ peptides are visible. Zoom to adjust. NA is coloured Gray.", placement = "right")
             ), width = 12, maximizable = TRUE,
             plotlyOutput("group_peptide_heatmap_interactive", height = "600px"),
@@ -629,26 +629,18 @@ window.fitExportPaper = function(){
           ),
           ### ---- Statistical Plots ----
           with_export(
-          bs4Card(title = tagList("Statistical Plots", bs4Dash::tooltip(icon("info-circle"),"Only significant datapoints are interactable (to improve speed). 
+          bs4Card(title = tagList("Statistical Plots", bs4Dash::tooltip(icon("info-circle"),"Only significant datapoints are interactable (to improve speed).
                                                        Both Bonferroni and Benjamin-hochberg adjusted p-value are calculated. Only Benjamin-hochberg used for now.
                                                       p-value can only be calculated when more than 2 datapoints/measurements per peptide in each group exist. Otherwise, no p-value is calculated, which means no visualization.
                                                       Significant here means a corrected p-value of less than 0.05 and a log2FC larger than 1.", placement = "right")
                                   ), width = 12, maximizable = TRUE,
                   uiOutput("group_stats_tabs")
-          ),
+                  ),
           "group_stats"
-          ),
-          
-          ### ---- GO-terms ----
-          bs4Card(title = "GO-term and STRING-DB analysis. Proof of work", width = 6, maximizable = TRUE,
-                  h6("WIP: This is wrong, since we would need to translate peptide difference to gene/protein level difference. And accessions need to be correct. 
-                     Currently we only pick the significant peptides and only get their first accession. These accessions are then used for GO-term. Also we do not differentiate between negative and positive change.
-                     We use bitr() to convert from uniprot to entrezID, so if the protein is not uniprot ID, we will likely get an error.
-                     we also only keep the first mapping per UniProt.", style = "color: red;")
           )
         )
       ),
-      
+
       ## ---- PTMs ----
       bs4TabItem(
         tabName = "ptm",  # must match menuItem
@@ -660,9 +652,9 @@ window.fitExportPaper = function(){
             ),
             "ptm_distribution"
           ),
-          
+
           ### ---- PTM sequence motif ----
-          bs4Card(title = tagList("PTM sequence motif", bs4Dash::tooltip(icon("info-circle"),"The below table and motif plots are experimental analysis to identify the significance of PTMs on the motif. 
+          bs4Card(title = tagList("PTM sequence motif", bs4Dash::tooltip(icon("info-circle"),"The below table and motif plots are experimental analysis to identify the significance of PTMs on the motif.
                                                        To do this, modified amino acids are treated as their own unique amino acid with a given symbol as mapped on the table.
                                                        Note: Since binding predictions do not account for PTMs, it is not possible to determine whether these peptidoforms are predicted binders or only their native form.
                                                        Only modified peptides are used to plot the motifs. Otherwise signals will be buried under the sheer quantity of non-modified peptides", placement = "right")
@@ -672,7 +664,7 @@ window.fitExportPaper = function(){
           )
         )
       ),
-      
+
       ## ---- Binding Predictions ----
       bs4TabItem(
         tabName = "binding_pred",  # must match menuItem
@@ -700,16 +692,16 @@ window.fitExportPaper = function(){
                   radioButtons("mhc_class", "Default thresholds:", c("MHC-I" = "I", "MHC-II" = "II"), selected = "I", inline = TRUE),
                   h6("For custom cutoffs, go to Console \u2192 Settings.")
           ),
-          
+
           ### ---- Allele selection ----
           uiOutput("allele_viz_selector_ui"),
-          
+
           ### ---- Summary Table ----
           bs4Card(title = tagList("Summary Table", bs4Dash::tooltip(icon("info-circle"),"On default the threshold for weak binder is 2.0 and for strong binder is 0.5 Rank_EL. (Hard coded).", placement = "right")
                                   ), width = 12, maximizable = TRUE,
                   DT::DTOutput("binding_summary")
           ),
-          
+
           ### ---- Summary barchart ----
           with_export(
             bs4Card(title = tagList("Binding summary", bs4Dash::tooltip(icon("info-circle"),
@@ -742,7 +734,7 @@ window.fitExportPaper = function(){
           )
         )
       ),
-      
+
       ## ---- Peptide Lookup ----
       bs4TabItem(
         tabName = "peptide_lookup",  # must match menuItem
@@ -781,7 +773,7 @@ window.fitExportPaper = function(){
                 actionButton("load_from_db", "Load selected analysis", icon = icon("upload"))
         )
       ),
-      
+
       bs4TabItem(tabName = "SQL_query",
                  bs4Card(title = "SQL help — click to expand", width = 12, collapsible = TRUE, collapsed = TRUE,
                          tags$p("A query reads: ", tags$code("SELECT columns FROM table WHERE conditions"), "."),
@@ -810,7 +802,7 @@ window.fitExportPaper = function(){
                          DT::DTOutput("browse_result")
                  )
       ),
-      
+
       ## ---- Dev Console ----
       bs4TabItem(
         tabName = "dev_console",
@@ -828,7 +820,7 @@ window.fitExportPaper = function(){
           )
         )
       ),
-      
+
       ## ---- Advanced settings ----
       bs4TabItem(
         tabName = "advanced_settings",
@@ -852,4 +844,4 @@ window.fitExportPaper = function(){
       )
       )
     )
-  )
+  )}

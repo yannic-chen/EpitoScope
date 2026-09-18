@@ -20,55 +20,6 @@
 #       }
 # Perhaps check our renv::init()?
 
-
-source("db.R")
-#These are for Shiny UI
-library(shiny)
-library(shinyBS)
-library(bs4Dash)
-library(bslib)
-library(DT)
-library(shinyjs) #Only used to grey out buttons.
-#These are for general data handling
-library(dplyr)
-library(tidyr)
-library(purrr)
-library(data.table)
-library(stringr)
-library(reshape2)
-library(curl)
-library(anticlust) #this is used for same size clustering to speed up heatmap generation for large datasets by clustering datapoints together.
-library(limma) #only for grouped comparison when only 1 measurement exists in the group. Limma is used to infer p-value.
-#These are for plotting
-library(viridis)
-library(ggplot2)
-library(ggrepel)
-library(ggseqlogo)
-library(ggVennDiagram)
-library(plotly)
-library(ComplexUpset)
-library(ComplexHeatmap)
-library(ggnewscale) #this is to have a secondary colour fill legend in the static combined dynamic range plot for the html report.
-library(TSP) #required for heatmaply
-library(registry) #required for heatmaply
-library(ca) #required for heatmaply
-library(eulerr)
-library(heatmaply)
-library(visNetwork) #used for stringDB plot
-library(circlize)
-library(grid)
-library(patchwork) #This is only used for the 1/k0 vs m/z plot. Could remove this by changing the code.
-#These are exclusive for GO-term.
-library(clusterProfiler) #this one masks a lot of dplyr and other package functions
-library(org.Hs.eg.db)
-library(memoise) #this is for caching uniprot push requests when converting IDs
-#These are exclusive for STRING-DB
-library(httr)
-library(jsonlite)
-library(igraph)
-library(ggraph)
-library(tidyverse)
-
 if (requireNamespace("fastcluster", quietly = TRUE)) {
   hclust_fn <- fastcluster::hclust
 } else {
@@ -82,7 +33,7 @@ if (requireNamespace("fastcluster", quietly = TRUE)) {
   residue = c("C","M","","",""),
   stringsAsFactors = FALSE)
 
-load_ptm_ref <- function(path = "ptm_reference.csv") {
+load_ptm_ref <- function(path = system.file("extdata", "ptm_reference.csv", package = "EpitoScope")) {
   if (!file.exists(path)) return(.PTM_FALLBACK)
   ref <- tryCatch(utils::read.csv(path, stringsAsFactors = FALSE), error = function(e) NULL)
   if (is.null(ref) || !all(c("name","mass") %in% names(ref))) return(.PTM_FALLBACK)
@@ -104,7 +55,7 @@ MHC_PREFIX      <- "hla_"
 column_schema <- list(
   #If multiple column for a stat is detected, an error will occur.
   PEAKS = list( #Only checked for peptide.tsv
-    PEPTIDE        = c("Peptide"),                       
+    PEPTIDE        = c("Peptide"),
     STRIPPED       = c(),                       # not present in peptide.tsv
     LENGTH         = c("Length"),
     MASS           = c("Mass"),
@@ -119,7 +70,7 @@ column_schema <- list(
     SPECTRA        = c("x.feature.", "X.Spec."),  #Prefix. X.Spec for PEAKS 11 Online. X.Feature for PEAKS 12 studio. PEAKS 13 returns both. Prefer x.spec over x.feature. PEAKS is unique in that peptides can be found but still have 0 or NA quantity, hence using spectra here is crucial
     PTM            = c("PTM")
   ),
-  
+
   Fragpipe = list( #Checked psm.tsv and combined.peptide.tsv
     PEPTIDE        = c("Modified.Peptide", "Modified.Sequence"),
     STRIPPED       = c("Peptide", "Peptide.Sequence"),           #not present in combined_peptide.tsv
@@ -136,7 +87,7 @@ column_schema <- list(
     SPECTRA        = c("Spectral.Count"),                        #suffix. Cannot use spectrum in psm.csv file since these are only the names and are lost
     PTM            = c("Assigned.Modifications")                 #not present in combined_modified_peptide.tsv, combined_peptide.tsv
   ),
-  
+
   DIANN = list( #This is for report.pr_matrix.tsv from the DIANN of the fragpipe pipeline (may be the same as original DIANN)
     PEPTIDE        = c("modified.sequence"),
     STRIPPED       = c("stripped.sequence"),
@@ -153,7 +104,7 @@ column_schema <- list(
     SPECTRA        = c("D..data"),         #Can use the same as quantity.
     PTM            = c("")                 # not present in report.pr_matrix.tsv
   ),
-  
+
   DIANN_parquet = list( #This is for DIANN parquet file, which is in long format.
     PEPTIDE        = c("modified.sequence"),
     STRIPPED       = c("stripped.sequence"),
@@ -161,7 +112,7 @@ column_schema <- list(
     MASS           = c(),                  # not present in parquet
     MZ             = c("Precursor.Mz"),
     SCORE          = c("Q.Value"),         # this is used for FDR. But Global.Q.Value can also be used. PEP does not replace Q.value, but can be used as additional filter.
-    CHARGE         = c("Precursor.Charge"),   
+    CHARGE         = c("Precursor.Charge"),
     RT             = c("RT"),              # could also use iRT, predicted.RT or predicted.iRT
     K0             = c("IM"),              # There is also indexed and predictet and predicted.iIM
     PPM            = c(),                  # not present in parquet
@@ -170,20 +121,20 @@ column_schema <- list(
     SPECTRA        = c(),                   #Transformed from long format.
     PTM            = c()                   # not present in parquet
   ),
-  
+
   Spectronaut = list( #This is for DIANN parquet file, which is in long format.
     PEPTIDE        = c("EG.ModifiedPeptide"),
     STRIPPED       = c("PEP.StrippedSequence"),
-    LENGTH         = c(),                  # not present 
+    LENGTH         = c(),                  # not present
     MASS           = c("FG.Mass"),
     MZ             = c("FG.PrecMz"),
-    SCORE          = c("EG.Qvalue"),        
-    CHARGE         = c("FG.Charge"),   
+    SCORE          = c("EG.Qvalue"),
+    CHARGE         = c("FG.Charge"),
     RT             = c("EG.ApexRT"),              # could also use iRT, or predicted.iRT
     K0             = c(),
     PPM            = c(),
     PROTEIN        = c("PG.ProteinGroups"),
-    QUANTITY       = c("FG.Quantity"), 
+    QUANTITY       = c("FG.Quantity"),
     SPECTRA        = c("R.FileName"),                   #Transformed from long format.
     PTM            = c()
   )
@@ -205,23 +156,23 @@ signature <- list(
 #   override : optional explicit path; if given and valid, it wins
 resolve_netmhcpan <- function(use_wsl, override = "", exe = "netMHCpan") {
   override <- if (is.null(override)) "" else trimws(override)
-  
+
   if (isTRUE(use_wsl)) {
     exists_wsl <- function(p) tryCatch(
       system2("wsl", c("test", "-x", shQuote(p))) == 0, error = function(e) FALSE)
     if (nzchar(override)) return(if (exists_wsl(override)) override else "")
-    
+
     hit <- tryCatch(
       system2("wsl", paste0("command -v ", exe, " 2>/dev/null"), stdout = TRUE, stderr = FALSE),
       error = function(e) character(0))
     hit <- trimws(hit[nzchar(hit)])
     if (length(hit)) return(tail(hit, 1))
-    
+
     for (p in c(file.path("/usr/local/bin", exe), file.path("/usr/bin", exe), file.path("/opt", exe, exe)))
       if (exists_wsl(p)) return(p)
     return("")
   }
-  
+
   if (nzchar(override)) {
     ok <- nzchar(Sys.which(override)) || (file.access(override, mode = 1L) == 0)
     return(if (ok) override else "")
@@ -262,7 +213,7 @@ safe_draw <- function(ht, ...) {
 
 scale_font <- function(p, size = 13, base = 13, label_rate = 0.5) {
   if (is.null(p)) return(p)
-  
+
   if (inherits(p, "ggplot")) {
     p <- p + ggplot2::theme(text = ggplot2::element_text(size = size))
     f <- 1 + (size / base - 1) * label_rate # scaling factor for geom_text. It scales half the amount as label.
@@ -270,13 +221,13 @@ scale_font <- function(p, size = 13, base = 13, label_rate = 0.5) {
       g <- class(p$layers[[i]]$geom)[1]
       if (grepl("Text|Label", g)) {
         cur <- p$layers[[i]]$aes_params$size
-        if (is.null(cur)) cur <- 3.88 
+        if (is.null(cur)) cur <- 3.88
         p$layers[[i]]$aes_params$size <- cur * f
       }
     }
     return(p)
   }
-  
+
   if (inherits(p, "plotly")) return(p %>% plotly::layout(font = list(size = size)))
   p
 }
@@ -300,11 +251,11 @@ canonicalize_mod <- function(token, ref = PTM_REF, tol = 0.005) {
     h <- which(ref$unimod == uid)
     if (length(h)) return(ref$name[h[1]])
     return(paste0("UniMod:", uid))          # <- unknown UniMod: preserve the ID, do NOT parse as mass
-  } 
+  }
   mass <- .mod_mass(token); if (is.na(mass)) return(token)
   res  <- .mod_residue(token)
   cand <- which(abs(ref$mass - mass) <= tol)
-  
+
   if (!length(cand))       return(sprintf("%+.4f", mass))
   if (length(cand) == 1)   return(ref$name[cand])
   # isobaric: disambiguate by residue; if still ambiguous, keep the mass (don't guess)
@@ -317,11 +268,11 @@ canonicalize_mod <- function(token, ref = PTM_REF, tol = 0.005) {
 fragpipe_build_peptide <- function(stripped, assigned) {
   if (is.na(stripped) || !nzchar(stripped)) return(stripped)
   if (is.na(assigned) || !nzchar(assigned)) return(stripped)   # no mods -> stripped
-  
+
   chars <- strsplit(stripped, "")[[1]]
   ins   <- rep("", length(chars))                              # per-position bracket(s)
   nterm <- ""; cterm <- ""
-  
+
   for (tok in trimws(strsplit(assigned, ",")[[1]])) {
     if (!nzchar(tok)) next
     d <- sub(".*\\(([-0-9.]+)\\).*", "\\1", tok)                # delta inside parens
@@ -335,7 +286,7 @@ fragpipe_build_peptide <- function(stripped, assigned) {
         ins[pos] <- paste0(ins[pos], "[", d, "]")              # stacks if >1 mod on a residue
     }
   }
-  
+
   paste0(nterm, paste(paste0(chars, ins), collapse = ""), cterm)
 }
 
@@ -343,7 +294,7 @@ normalize_peptidoform <- function(seq, ref = PTM_REF) {
   if (is.na(seq) || !nzchar(seq)) return(seq)
   out <- character(0); rest <- seq
   take <- function(p) { r <- regmatches(rest, regexpr(p, rest)); if (length(r)) r else "" }
-  
+
   # Allows multiple mods on the same reisude
   consume_trailing <- function(res) {
     extra <- character(0)
@@ -359,7 +310,7 @@ normalize_peptidoform <- function(seq, ref = PTM_REF) {
     }
     paste0(extra, collapse = "")
   }
-  
+
   while (nchar(rest) > 0) {
     # N-term mass:  n[42.0106]A
     if (nzchar(m <- take("^n\\[[-0-9.]+\\][A-Z]"))) {
@@ -426,14 +377,14 @@ remove_ptms <- function(x) {
 }
 
 convert_with_mod_map <- function(sequences, mod_map) {
-  
+
   convert_single <- function(seq) {
     out <- character(0)
     i <- 1
-    
+
     while (i <= nchar(seq)) {
       rest <- substr(seq, i, nchar(seq))
-      
+
       matched <- FALSE
       for (token in names(mod_map)) {
         if (startsWith(rest, token)) {
@@ -443,16 +394,16 @@ convert_with_mod_map <- function(sequences, mod_map) {
           break
         }
       }
-      
+
       if (!matched) {
         out <- c(out, substr(seq, i, i))
         i <- i + 1
       }
     }
-    
+
     paste0(out, collapse = "")
   }
-  
+
   unname(vapply(sequences, convert_single, character(1)))
 }
 
@@ -461,7 +412,7 @@ extract_mod_tokens <- function(sequences) {
   for (seq in sequences) {
     rest <- seq
     while (nchar(rest) > 0) {
-      
+
       # canonical named form (post-normalization):  M(Oxidation), C(Carbamidomethyl), E(Glu->pyro-Glu)
       if (grepl("^[A-Z]\\([A-Za-z][^)]*\\)", rest)) {
         token <- regmatches(rest, regexpr("^[A-Z]\\([A-Za-z][^)]*\\)", rest))
@@ -480,7 +431,7 @@ extract_mod_tokens <- function(sequences) {
         token <- regmatches(rest, regexpr("^[A-Z]\\(\\+[0-9.]+\\)", rest))
         tokens <- c(tokens, token); rest <- substr(rest, nchar(token)+1, nchar(rest)); next
       }
-      
+
       rest <- substr(rest, 2, nchar(rest))
     }
   }
@@ -510,10 +461,10 @@ extract_protein_prefixes <- function(accessions) {
 aa_comp_from_peptides <- function(peptides) {
   aa <- unlist(strsplit(peptides, ""))
   tab <- table(aa)
-  
+
   freq <- as.numeric(tab)
   names(freq) <- names(tab)
-  
+
   100 * freq / sum(freq)
 }
 
@@ -526,43 +477,43 @@ check_data_error <- function(data, required_cols = NULL, na_policy = c("any", "a
   #'
   #'
   na_policy <- match.arg(na_policy)
-  
+
   stop_with_msg <- function(msg) {
     shiny::validate(shiny::need(FALSE, msg))
   }
-  
+
   if (is.null(data)) stop_with_msg("Data not available")
-  
+
   # Single data.frame case
   if (is.data.frame(data)) {
     missing_cols <- dplyr::setdiff(required_cols, colnames(data))
     if (length(missing_cols) > 0) stop_with_msg(
       paste("Missing column(s):", paste(missing_cols, collapse = ", "))
     )
-    
+
     if (na_policy != "ignore") {
       for (col in required_cols) {
         if (na_policy == "any" && any(is.na(data[[col]]))) stop_with_msg(paste("NA in column:", col))
         if (na_policy == "all" && all(is.na(data[[col]]))) stop_with_msg(paste("All NA in column:", col))
       }
     }
-    
+
     return(TRUE)
   }
-  
+
   #named list case
   if (is.list(data)) {
     # Keep only data frames
     valid_dfs <- data[vapply(data, is.data.frame, logical(1))]
     if (length(valid_dfs) == 0) stop_with_msg("No valid data.frames in the list")
-    
+
     # Check which dfs have all required columns
     dfs_with_cols <- valid_dfs[vapply(valid_dfs, function(df) all(required_cols %in% colnames(df)), logical(1))]
-    
+
     if (length(dfs_with_cols) == 0) stop_with_msg(
       paste("None of the data.frames contain required column(s):", paste(required_cols, collapse = ", "))
     )
-    
+
     # NA check: only on dfs that have the columns
     if (na_policy != "ignore") {
       for (df in dfs_with_cols) {
@@ -576,26 +527,26 @@ check_data_error <- function(data, required_cols = NULL, na_policy = c("any", "a
         }
       }
     }
-    
+
     return(TRUE)
   }
-  
+
   stop_with_msg("Unsupported data type")
 }
 
 compute_padding <- function(labels, fontsize = 10, rot = 90) {
-  
+
   # Create text grob
   tg <- textGrob(labels,
                  gp = gpar(fontsize = fontsize),
                  rot = rot)
-  
+
   # Measure width
   max_width <- max(convertWidth(stringWidth(labels), "mm", valueOnly = TRUE))
-  
+
   # Add a little buffer (important)
   padding_mm <- max_width + 1
-  
+
   padding_mm
 }
 
@@ -615,7 +566,7 @@ plot_per_sample_grid <- function(lst, plot_fn, ncol = 2, ...) {
   })
   plots <- Filter(Negate(is.null), plots)
   if (length(plots) == 0) return(invisible(NULL))
-  
+
   pw <- patchwork::wrap_plots(plots, ncol = ncol)
   tryCatch(
     print(pw),
@@ -633,14 +584,14 @@ plot_per_sample_grid <- function(lst, plot_fn, ncol = 2, ...) {
 }
 
 #for report.Rmd
-plot_motif_grid <- function(lst, lengths, ncol = 3, 
-                            ptm_only = FALSE, 
+plot_motif_grid <- function(lst, lengths, ncol = 3,
+                            ptm_only = FALSE,
                             namespace = NULL) {
   length_panels <- lapply(lengths, function(L) {
-    
+
     sample_plots <- lapply(names(lst), function(nm) {
       df <- lst[[nm]]
-      
+
       # PTM filter — only modified peptides
       if (ptm_only) {
         df <- df[!is.na(df$PTM) & df$PTM != "", ]
@@ -648,11 +599,11 @@ plot_motif_grid <- function(lst, lengths, ncol = 3,
       } else {
         peptide_col <- "STRIPPED"
       }
-      
+
       df_L     <- df[df$LENGTH == L, ]
       peptides <- unique(df_L[[peptide_col]])
       peptides <- peptides[!is.na(peptides) & nchar(peptides) == L]
-      
+
       if (length(peptides) < 5) {
         return(
           ggplot() +
@@ -663,7 +614,7 @@ plot_motif_grid <- function(lst, lengths, ncol = 3,
             ggtitle(paste(nm, "• Length", L))
         )
       }
-      
+
       par(mar = c(1.5, 1.5, 2, 0.5))
       plot_seqlogo(
         peptides,
@@ -671,13 +622,13 @@ plot_motif_grid <- function(lst, lengths, ncol = 3,
         namespace = namespace
       )
     })
-    
+
     patchwork::wrap_plots(
       c(sample_plots),
       ncol = length(lst)
     )
   })
-  
+
   patchwork::wrap_plots(length_panels, ncol = 1)
 }
 
@@ -690,66 +641,66 @@ get_quantity_cols <- function(data_info) {
 
 #-----------Data handling/transformation functions------------------
 build_generic_schema <- function(schema) {
-  
+
   # Get all field names (peptide, peptidoform, etc.)
   fields <- unique(unlist(lapply(schema, names)))
-  
+
   generic <- list()
-  
+
   for (field in fields) {
     # Collect all candidates across software types
     combined <- unique(unlist(lapply(schema, function(x) x[[field]])))
     generic[[field]] <- combined
   }
-  
+
   return(generic)
 }
 
 register_custom_schema <- function(custom_schema    = NULL, custom_signature = NULL,replace_schema   = FALSE) {
   # Capture all_keys before any nulling — needed for filling missing keys
   all_keys <- names(column_schema[[1]])
-  
+
   if (!is.null(custom_schema)) {
-    
+
     if (replace_schema) {
       column_schema <<- list()  # empty list rather than NULL — safer for [[<- assignment
       message("Replaced default schema.")
     }
-    
+
     for (nm in names(custom_schema)) {
-      
+
       has_peptide  <- !is.null(custom_schema[[nm]]$PEPTIDE)  && length(custom_schema[[nm]]$PEPTIDE)  > 0
       has_stripped <- !is.null(custom_schema[[nm]]$STRIPPED) && length(custom_schema[[nm]]$STRIPPED) > 0
-      
+
       if (!has_peptide && !has_stripped) {
         stop(paste0(
           "Custom schema '", nm, "' must specify at least one of PEPTIDE or STRIPPED."
         ))
       }
-      
+
       # Fill missing keys silently with empty vectors
       complete_entry <- setNames(
         lapply(all_keys, function(k) c()),  # all keys start empty
         all_keys
       )
-      
+
       # Overwrite with user-provided values
       for (k in names(custom_schema[[nm]])) {
         complete_entry[[k]] <- custom_schema[[nm]][[k]]
       }
-      
+
       column_schema[[nm]] <<- complete_entry
       message(paste0("Added custom schema: '", nm, "'"))
     }
   }
-  
+
   if (!is.null(custom_signature)) {
-    
+
     if (replace_schema) {
       signature <<- list()  # same — empty list rather than NULL
       message("Replaced default signature.")
     }
-    
+
     for (nm in names(custom_signature)) {
       signature[[nm]] <<- custom_signature[[nm]]
       message(paste0("Registered custom signature: '", nm, "'"))
@@ -763,19 +714,19 @@ check_annotation_table <- function(df) {
   df <- distinct(df)
   colnames(df) <- tolower(colnames(df))
   header <- colnames(df)
-  
+
   # ── Required columns ──────────────────────────────────────────────────────
   if(!("name" %in% header && "source" %in% header)) {
     stop("Missing either Name or Source in Annotation Table")
   }
-  
+
   # The same source file cannot apply to multiple names, but multiple source file can apply to the same name (e.g. fragpipe psm.tsv)
   distinctmap <- all(tapply(df$name, df$source, function(x) length(unique(x)) == 1))
 
   if(!all(distinctmap)) {
     stop("Some 'source' files map to multiple 'name' values — each source must only map to one name.")
   }
-    
+
   if(ncol(df) == 2) {
     # if ncol is 2, we know it doesnt contain any optional info
     message("No condition, replicate or measurement info given. Proceed as default")
@@ -784,12 +735,12 @@ check_annotation_table <- function(df) {
 
   #now we need to check. It is possible to allow conditions based only on the sample name. However, in that case, one can just use the default grouping mechanis.
   #Only when one has multiple conditions associated to the same sample name does it become important to have the measurement.
-  
+
   has_measurement <- "measurement" %in% header
   condition_cols  <- grep("^condition", header, value = TRUE)
   replicate_cols  <- dplyr::intersect(c("biological_replicate", "technical_replicate"), header)
-  
-  
+
+
   # ── Type coercion ─────────────────────────────────────────────────────────
   if (length(condition_cols) > 0) {
     df[condition_cols] <- lapply(df[condition_cols], as.character)
@@ -797,11 +748,11 @@ check_annotation_table <- function(df) {
   if (length(replicate_cols) > 0) {
     df[replicate_cols] <- lapply(df[replicate_cols], as.character)
   }
-  
+
   # ── Measurement column ────────────────────────────────────────────────────
-  
+
   if(has_measurement) {
-    #measurement must be distinct. 
+    #measurement must be distinct.
     if(any(duplicated(df$measurement))){
       #if we find duplicates, then we can try to make them unique, by combining them with names.
       #This is under the assumption that for analysis of different samples, one can have the same measurement name. In that case, the sample name will make them distinct.
@@ -811,7 +762,7 @@ check_annotation_table <- function(df) {
         stop("Duplicate measurement names remain after prepending sample name.")
         }
     }
-    
+
   } else {
     message("no measurement column found.")
 
@@ -819,52 +770,52 @@ check_annotation_table <- function(df) {
       dplyr::select(all_of(c("name", condition_cols, replicate_cols))) %>%
       dplyr::group_by(name) %>%
       dplyr::summarise(n = n(), .groups = "drop") %>%
-      { 
+      {
         if (any(.$n > 1)) {
-          stop("Multiple condition + replicate rows identified for the same sample name. 
+          stop("Multiple condition + replicate rows identified for the same sample name.
                Without 'measurement' column, each name can only be assignet to one condition + replicate combination.
                Add a 'measurement' column to distinguish individual sources.")
         }
       }
   }
-  
+
   # ── Attach metadata as attributes for downstream use ──────────────────────
   attr(df, "replicate_cols") <- replicate_cols
   attr(df, "condition_cols") <- condition_cols
   attr(df, "has_measurement") <- has_measurement
-  
+
   df
-  
+
 }
 
 load_from_annotation <- function(annotation_df) {
-  
+
   annotation_df <- check_annotation_table(annotation_df)
-  
+
   split_df <- split(annotation_df, annotation_df$name)
-  
+
   data_list <- lapply(names(split_df), function(nm) {
-    
+
     sub_df <- split_df[[nm]]
-    
+
     sub_df <- unique(sub_df[, c("name", "source")])
-    
+
     dfs <- lapply(sub_df$source, function(path) {
-      
+
       # Normalise path
       path <- trimws(path)
       path <- gsub("\\\\", "/", path)
       path <- gsub("/+", "/", path)
       path <- normalizePath(path, winslash = "/", mustWork = FALSE)
-      
+
       if (!file.exists(path)) {
         stop(paste0("File not found for '", nm, "': ", path))
       }
-      
+
       ext <- tolower(tools::file_ext(path))
-      
+
       message(paste0("Loading '", nm, "' from: ", path, " (", ext, ")"))
-      
+
       switch(ext,
              csv     = read.csv(path,  stringsAsFactors = FALSE),
              tsv     = read.delim(path, stringsAsFactors = FALSE),
@@ -873,30 +824,30 @@ load_from_annotation <- function(annotation_df) {
              stop(paste0("Unsupported file type '.", ext, "' for '", nm, "'."))
       )
     })
-    
+
     # Combine all sources for this name
     dfs <- dplyr::bind_rows(dfs)
   })
-  
+
   names(data_list) <- names(split_df)
-  
+
   attr(data_list, "annotation") <- annotation_df
-  
+
   data_list
 }
 
 build_measurement_col_map <- function(data_list, annotation_df) {
   if (!isTRUE(attr(annotation_df, "has_measurement"))) return(NULL)
-  
+
   col_map <- list()
-  
+
   for (nm in unique(annotation_df$name)) {
     sub_ann <- annotation_df[annotation_df$name == nm, ]
     df_cols <- colnames(data_list[[nm]])
-    
+
     for (meas in sub_ann$measurement) {
       hits <- grep(tolower(meas), tolower(df_cols), value = TRUE, fixed = TRUE)
-      
+
       if (length(hits) == 0) {
         stop(paste0("Measurement '", meas, "' (sample '", nm, "') ",
                     "not found in any column of the data. ",
@@ -908,11 +859,11 @@ build_measurement_col_map <- function(data_list, annotation_df) {
                     paste(hits, collapse = ", "), ". ",
                     "Measurement names must be unique enough to identify exactly one column."))
       }
-      
+
       col_map[[meas]] <- list(name = nm, col = hits)
     }
   }
-  
+
   col_map
 }
 
@@ -925,36 +876,36 @@ build_measurement_col_map <- function(data_list, annotation_df) {
 # Returns a named logical vector: sample_name → TRUE/FALSE
 eval_condition_expr <- function(expr_terms, ann_df) {
   if (length(expr_terms) == 0) return(setNames(logical(0), character(0)))
-  
+
   # Keep all rows, no collapsing to unique sample
   sample_names <- unique(ann_df$name)
-  
+
   # Base mask for the first term
   t1 <- expr_terms[[1]]
-  
+
   # Evaluate value mask
   val_mask <- ann_df[[t1$col]] %in% t1$val
-  
+
   # Evaluate measurement mask if provided (case-insensitive)
   if (isTRUE(attr(ann_df, "has_measurement")) && !is.null(t1$measurement)) {
     meas_mask <- tolower(ann_df$measurement) %in% tolower(t1$measurement)
     val_mask <- val_mask & meas_mask
   }
-  
+
   # Create a result column per row instead of collapsing yet
   ann_df$result <- val_mask
-  
+
   # Process remaining terms
   if (length(expr_terms) > 1) {
     for (i in 2:length(expr_terms)) {
       t <- expr_terms[[i]]
       tmask <- ann_df[[t$col]] %in% t$val
-      
+
       if (isTRUE(attr(ann_df, "has_measurement")) && !is.null(t$measurement)) {
         meas_mask <- tolower(ann_df$measurement) %in% tolower(t$measurement)
         tmask <- tmask & meas_mask
       }
-      
+
       # Combine row-wise
       ann_df$result <- switch(t$op,
                               "AND" = ann_df$result & tmask,
@@ -964,7 +915,7 @@ eval_condition_expr <- function(expr_terms, ann_df) {
       )
     }
   }
-  
+
   out_cols <- c("name",
                 if (isTRUE(attr(ann_df, "has_measurement"))) "measurement",
                 "result")
@@ -972,26 +923,26 @@ eval_condition_expr <- function(expr_terms, ann_df) {
 }
 
 detect_software <- function(df, signature, fallback = "Generic") {
-  
+
   df_cols <- tolower(colnames(df))
-  
+
   matches <- sapply(names(signature), function(soft) {
     any(tolower(signature[[soft]]) %in% df_cols)
   })
-  
+
   n_matches <- sum(matches)
-  
+
   if (n_matches == 1) {
     detected <- names(matches)[matches]
     message("Detected software: ", detected)
     return(detected)
   }
-  
+
   if (n_matches > 1) {
     stop("Multiple software signatures detected: ",
          paste(names(matches)[matches], collapse = ", "))
   }
-  
+
   message("No signature detected. Using fallback: ", fallback)
   return(fallback)
 }
@@ -1005,7 +956,7 @@ find_transform_column <- function(df, candidates, name, exclude = character(0)) 
       colnames(df)[exact_match] <- name
       return(list(df = df, matched_column = original_name))
     }
-    
+
     # Case-insensitive fallback, excluding already-renamed columns
     match <- which(tolower(colnames(df)) == tolower(cand) & !colnames(df) %in% exclude)
     if (length(match) == 1) {
@@ -1017,7 +968,7 @@ find_transform_column <- function(df, candidates, name, exclude = character(0)) 
            paste(colnames(df)[match], collapse = ", "))
     }
   }
-  
+
   message(paste0("No matching column found for: ", name))
   return(NULL)
 }
@@ -1030,36 +981,36 @@ transform_columns <- function(df, schema, software, targets = c("STRIPPED", "PEP
     original_name = character(),
     stringsAsFactors = FALSE
   )
-  
+
   # Get the software-specific column map
   col_map <- schema[[software]]
-  
+
   # Limit to requested targets if provided
   if (!is.null(targets)) {
     col_map <- col_map[names(col_map) %in% targets]
   }
-  
+
   already_renamed <- character(0)
-  
+
   for (target_name in names(col_map)) {
     candidates <- col_map[[target_name]]
-    
+
     # Skip if no candidates defined
     if (length(candidates) == 0) next
-    
+
     res <- find_transform_column(df, candidates, target_name, exclude = already_renamed)
     if (is.null(res)) next
     df <- res$df
-    
+
     already_renamed <- c(already_renamed, target_name)
-    
+
     # Log the mapping
     mapping_log <- rbind(mapping_log,
                          data.frame(final_name = target_name,
                                     original_name = res$matched_column,
                                     stringsAsFactors = FALSE))
   }
-  
+
   return(list(df = df, log = mapping_log))
 }
 
@@ -1074,10 +1025,10 @@ get_midpoint <- function(x) { #this function retrieves the middle value given a 
   sapply(x, function(val) {
     # If already numeric, keep as-is
     if (is.numeric(val)) return(val)
-    
+
     # Convert to character
     val <- as.character(val)
-    
+
     # Check if it contains a "-"
     if (grepl("-", val)) {
       parts <- as.numeric(strsplit(val, "-")[[1]])
@@ -1091,22 +1042,22 @@ get_midpoint <- function(x) { #this function retrieves the middle value given a 
 aggregate_fragpipe_psm <- function(df) {
   #' We groupby the fragpipe psm.tsv according to file and modified.peptide
   #' We collapse by taking the row with maximum PeptideProphet.Probability or Probability.
-  
+
   df <- df %>%
     dplyr::mutate(
       RawFile = sub("\\.\\d+\\..*$", "", Spectrum)
     )
-  
+
   num_cols <- df %>%
     dplyr::select(where(is.numeric)) %>%
     names() %>%
     dplyr::setdiff(c("RawFile", "Modified.Peptide"))
-  
+
   char_cols <- df %>%
     dplyr::select(where(is.character)) %>%
     names() %>%
     dplyr::setdiff(c("RawFile", "Modified.Peptide", "Spectrum", "Spectrum.File"))
-  
+
   df %>%
     dplyr::group_by(RawFile, Modified.Peptide) %>%
     dplyr::slice_max(
@@ -1122,39 +1073,39 @@ column_schema$Generic <- build_generic_schema(column_schema)
 normalize_df <- function(df) {
   #Here we transform the data to only contain the minimum columns required for analysis and rename column names to work with code.
   #To unify columns, I make them all capitalized
-  
+
   #Initiate the dataframe used for mapping the original columns to the ones we need
   original <- data.frame(
     final_name = character(),
     original_name = character(),
     stringsAsFactors = FALSE
   )
-  
+
   software <- detect_software(df, signature)
-  
+
   #Since Fragpipe and PEAKS both contain "Peptide" column, but they mean different things, we need to differentiate them.
   if(software == "Fragpipe") {
     #Since we know it is a Fragpipe file, we can select only the column we are interested in improve speed of subsequent steps.
-    columns_to_keep <- c("Spectrum", "Peptide", "Peptide.Sequence", "Modified.Peptide", "Modified.Sequence", "Charge", "Charges", "Retention", "Observed.Mass", "Observed.M.Z", 
+    columns_to_keep <- c("Spectrum", "Peptide", "Peptide.Sequence", "Modified.Peptide", "Modified.Sequence", "Charge", "Charges", "Retention", "Observed.Mass", "Observed.M.Z",
                          "PeptideProphet.Probability", "Probability", "Intensity", "Ion.Mobility", "Protein", "Mapped.Proteins","Delta.Mass",
                          "Length", "Peptide.Length", "Assigned.Modifications") #Here include all Columns in peptide.tsv and psm.tsv that could be interesting
 
     columns_to_keep <- c(columns_to_keep, unlist(column_schema$Fragpipe, use.names = FALSE))
-    
+
     if(any(tolower(colnames(df)) == "peptide.sequence")) { #for combined_peptide.tsv, it follows a wide format similar to PEAKS. For Quantification, we use MaxLFQ.Intensity columns.
       columns_to_keep <- c(columns_to_keep, colnames(df)[grepl("maxlfq.intensity", tolower(colnames(df)))])
     }
-    
+
     df <- df %>% dplyr::select(any_of(columns_to_keep)) #Get the columns that actually exist.
-    
+
     #Here we detect the long format used in Frapipe psm.tsv file. So that we convert to wide format
     if(any(tolower(colnames(df)) == "modified.peptide")) { # Only psm.tsv has this column. in combined_modified_peptide.tsv this is called modified.sequence.
       #For the psm.tsv file, we need to convert from long format to wide format for the intensities and filter unique.
       df <- df %>% dplyr::mutate(Modified.Peptide = dplyr::coalesce(na_if(Modified.Peptide, ""), na_if(Peptide, "")))
-      
+
       #This function group_by on rawfile and modified.peptide.
       df <- aggregate_fragpipe_psm(df)
-      
+
       #Now we can get the intensity per sample in wide format
       df_wide <- df %>%
         dplyr::select(Modified.Peptide, RawFile, Intensity) %>%
@@ -1163,9 +1114,9 @@ normalize_df <- function(df) {
           values_from = Intensity,
           names_prefix = "Intensity." #Add prefix, so that these are easy to select for Area/Quantity calculations.
         )
-      
+
       df_wide$X.Spec <- rowSums(!is.na(df_wide[,-1])) #Add the info how many samples the peptide was found.
-      
+
       #Finally unique for the representative peptide, using the row with the best PeptideProphet.probability.
       df<- df %>%
         dplyr::group_by(Modified.Peptide) %>%
@@ -1176,34 +1127,34 @@ normalize_df <- function(df) {
         ) %>%
         dplyr::ungroup() %>%
         dplyr::select(-Intensity)
-      
+
       if (nrow(df) != nrow(df_wide)) {
         stop("Error: The number of rows in df and df_wide do not match!")
       }
-      
+
       df <- left_join(df, df_wide, by = "Modified.Peptide")
-      
+
     }
-    
+
     #Here we combine the Proteins and Mapped.Proteins together, to get all Accessions
     df <- df %>%
       dplyr::mutate(
         # Replace commas in Mapped.Protein with ;
         Mapped.Proteins = str_replace_all(Mapped.Proteins, ", ", ";"),
-        
+
         # Combine columns with ";" (remove empty strings to avoid ;;)
         Protein_Mapped.Proteins = str_trim(paste(Protein, Mapped.Proteins, sep = ";")),
-        
+
         # Remove duplicate ;;
         Protein_Mapped.Proteins = str_replace_all(Protein_Mapped.Proteins, ";+", ";"),
-        
+
         # Remove leading/trailing ; if any
         Protein_Mapped.Proteins = str_replace_all(Protein_Mapped.Proteins, "^;|;$", ""),
-        
+
         # Remove sp| from protein names
         Protein_Mapped.Proteins = str_replace_all(Protein_Mapped.Proteins, "sp\\|", "")
       )
-    
+
     if (any(tolower(colnames(df)) == "assigned.modifications")) {
       # Build the peptidoform from stripped seq + assigned mods (delta masses + positions)
       strip_col <- column_schema[[software]]$STRIPPED
@@ -1211,7 +1162,7 @@ normalize_df <- function(df) {
       df$Modified.Peptide  <- mapply(fragpipe_build_peptide,
                             df[[strip_col]], df$Assigned.Modifications,
                             USE.NAMES = FALSE)
-      
+
       res <- find_transform_column(df, column_schema[[software]][["PTM"]], "PTM")
       df  <- res$df
       # adjust the assigned.modification column for PTM.
@@ -1225,16 +1176,16 @@ normalize_df <- function(df) {
     } else {                                               # peptide.tsv / combined_peptide.tsv: no mods
       df$PTM      <- NA
     }
-    
+
   }
-  
+
   if(software == "DIANN_parquet") {
     columns_to_keep <- c("Run", "Modified.Sequence", "Stripped.Sequence", "Precursor.Charge", "Precursor.Mz", "Protein.Names", "RT", "IM", "Precursor.Quantity", "Q.Value")
-    
+
     columns_to_keep <- c(columns_to_keep, unlist(column_schema$DIANN_parquet, use.names = FALSE))
-    
+
     df <- df %>% dplyr::select(any_of(columns_to_keep))
-    
+
     df_wide <- df %>% dplyr::select(Modified.Sequence, Run, Precursor.Quantity) %>%
       pivot_wider(
         names_from  = Run,
@@ -1243,21 +1194,21 @@ normalize_df <- function(df) {
         values_fn = ~ if (all(is.na(.x))) NA_real_ else max(.x, na.rm = TRUE),
         values_fill = NA_real_
         )
-    
+
     df_top <- df %>%
       dplyr::group_by(Modified.Sequence) %>%
       dplyr::arrange(Q.Value, .by_group = TRUE) %>%
       dplyr::slice_head(n = 1) %>%
       ungroup()
-    
+
     df <- left_join(df_top %>% dplyr::select(-Run, -any_of("Precursor.Quantity")), df_wide, by = "Modified.Sequence")
-    
+
   }
-  
+
   if (software == "Spectronaut") {
-    
+
     df <- df %>% dplyr::select(any_of(c(unlist(column_schema$Spectronaut, use.names = FALSE))))
-    
+
     df_wide <- df %>% dplyr::select(EG.ModifiedPeptide, R.FileName, FG.Quantity) %>%
       tidyr::pivot_wider(
         names_from   = R.FileName,
@@ -1265,24 +1216,24 @@ normalize_df <- function(df) {
         names_prefix = "FG.Quantity.",
         values_fn    = ~ if (all(is.na(.x))) NA_real_ else max(.x, na.rm = TRUE),
         values_fill  = NA_real_)
-    
+
     df_top <- df %>%
       dplyr::group_by(EG.ModifiedPeptide) %>%
       dplyr::arrange(EG.Qvalue, .by_group = TRUE) %>%
       dplyr::slice_head(n = 1) %>%
       dplyr::ungroup()
-    
+
     df <- dplyr::left_join(df_top %>% dplyr::select(-R.FileName, -dplyr::any_of("FG.Quantity")),
                            df_wide, by = "EG.ModifiedPeptide")
-    
+
     df$EG.ModifiedPeptide <- gsub("^_+|_+$", "", df$EG.ModifiedPeptide)
   }
-  
+
   res <- transform_columns(df, column_schema, software)
-  
+
   df <- res$df
   original <- res$log
-  
+
   #-------------Derive missing columns if possible----------------
   #CHARGE
   if (!"CHARGE" %in% colnames(df)) {
@@ -1326,10 +1277,10 @@ normalize_df <- function(df) {
     original <- rbind(original, data.frame(final_name = "MASS", original_name = "[MZ * CHARGE]", stringsAsFactors = FALSE))
   }
 
-  
+
   if (all(c("X1.k0.Start", "X1.k0.End") %in% colnames(df))) { #Generate the X1.k0 from two columns in PEAKS 12 and 13 Studio.
     df$K0 <- rowMeans(df[, c("X1.k0.Start", "X1.k0.End")], na.rm = TRUE)
-    res <- find_transform_column(df, "K0", "K0") #PEAKS is fine, but if it is FragPipe, 
+    res <- find_transform_column(df, "K0", "K0") #PEAKS is fine, but if it is FragPipe,
     df <- res$df
     original <- bind_rows(original, data.frame(final_name="K0", original_name="X1.k0.Start, X1.k0.End"))
   } else {
@@ -1346,44 +1297,44 @@ normalize_df <- function(df) {
       original <- rbind(original, data.frame(final_name = "K0", original_name = "[no Ion Mobility column]", stringsAsFactors = FALSE))
     }
   }
-  
+
   #These two columns are the minimum required. If there is no PTM, PEPTIDE will simply be the same as STRIPPED.
-  if (!all(c("PEPTIDE", "STRIPPED") %in% colnames(df))) { 
+  if (!all(c("PEPTIDE", "STRIPPED") %in% colnames(df))) {
     stop(sprintf("Either PEPTIDE or STRIPPED column missing in one or more dataframes."))
   }
-  
+
   #-------------Quantity -----------------
   # 1. Check schema-defined candidates first (prefix match to capture multi-sample columns)
   schema_qty <- column_schema[[software]][["QUANTITY"]]
   sample <- integer(0)
-  
+
   if (length(schema_qty) > 0) {
     for (cand in schema_qty) {
       hits <- which(grepl(tolower(cand), tolower(colnames(df)), fixed = TRUE))
       if (length(hits) > 0) { sample <- hits; break }
     }
   }
-  
+
   # 2. Hard-coded fallbacks for DIANN pr/pr_matrix
   if (software %in% c("DIANN")) {
     sample <- which(grepl("^[a-z]\\.\\.", tolower(colnames(df)))) #this is the path to the file.
   }
-  
+
   if (length(sample) == 0) {
     warning("No quantity/intensity columns found. Define QUANTITY in your custom_schema.")
   }
-  
+
   original <- bind_rows(original, data.frame(final_name = "QUANTITY",
                                              original_name = list(colnames(df[, sample, drop = FALSE]))))
-  
+
   df$MAX_QUANTITY <- apply(df[, sample, drop = FALSE], 1, function(x) {
     if (all(is.na(x))) NA else max(x, na.rm = TRUE)
   })
-  
+
   #-------------Spectra -----------------
   schema_spec <- column_schema[[software]][["SPECTRA"]]
   spec <- integer(0)
-  
+
   if (length(schema_spec) > 0 && !identical(sort(schema_spec), sort(schema_qty))) {
     for (cand in schema_spec) {
       hits <- which(grepl(tolower(cand), tolower(colnames(df)), fixed = TRUE) &
@@ -1391,7 +1342,7 @@ normalize_df <- function(df) {
       if (length(hits) > 0) { spec <- hits; break }
     }
   }
-  
+
   if (software == "PEAKS") {
     if (any(startsWith(tolower(colnames(df)),"x.spec."))) {
       spec <- startsWith(tolower(colnames(df)),"x.spec.")
@@ -1410,16 +1361,16 @@ normalize_df <- function(df) {
     df[, spec][df[, spec] == 0] <- NA #For spectra column, the 0 actually means not identified. We need these to be converted to 0 to work with FragPipe format for data completeness plot.
     original <- bind_rows(original, data.frame(final_name="SPECTRA", original_name=colnames(df[, spec, drop = FALSE]), stringsAsFactors=FALSE))
   }
-  
+
   #-------------Finalize dataframe and generate mapping table-----------------
-  
+
   #Only keep cols that were found
   keep_cols <- original %>%
     dplyr::filter(!is.na(original_name)) %>%
     dplyr::filter(purrr::map_lgl(final_name, ~ is.character(.x) && length(.x) == 1)) %>% #This removes entries where the original column names are a list of strings. These are added separately.
     dplyr::pull(final_name)
   keep_cols <- c(keep_cols, colnames(df)[sample], colnames(df)[spec], "STRIPPED", "MAX_QUANTITY", "PTM")
-  
+
   #Now we can prepare the summary table since we have the columns to keep.
   original <- original %>% dplyr::mutate(coalesced = do.call(coalesce, across(-1))) %>% dplyr::select(1, coalesced) %>% dplyr::group_by(final_name) %>% dplyr::summarise(coalesced_list = list(coalesced), .groups = "drop")
 
@@ -1452,13 +1403,13 @@ split_measurements_to_samples <- function(dfs, quantity_cols, detected_only = TR
 # @param filters  Named list of slider values from input$*
 # @return         Filtered named list of data.frames
 apply_filters <- function(lst, filters) {
-  
+
   # Global NA policy for every range filter.
   # "include" = keep NA rows regardless of range
   # "exclude" = drop NA rows
   # "zero"    = treat NA as 0, then apply the range
   policy <- if (is.null(filters$na_policy)) "include" else filters$na_policy
-  
+
   range_keep <- function(df, col, rng) {
     if (is.null(rng) || !col %in% names(df) || length(rng) != 2) return(df)
     v <- df[[col]]
@@ -1467,7 +1418,7 @@ apply_filters <- function(lst, filters) {
     keep[is.na(keep)] <- identical(policy, "include")
     df[keep, , drop = FALSE]
   }
-  
+
   lapply(lst, function(df) {
     df <- range_keep(df, "LENGTH",       filters$length_range)
     df <- range_keep(df, "MAX_QUANTITY", filters$quantity_range)
@@ -1475,7 +1426,7 @@ apply_filters <- function(lst, filters) {
     df <- range_keep(df, "CHARGE",       filters$charge_range)
     df <- range_keep(df, "MASS",         filters$mass_range)
     df <- range_keep(df, "RT",           filters$RT_range)
-    
+
     # Remove all-NA rows
     df[rowSums(!is.na(df)) > 0, , drop = FALSE]
   })
@@ -1492,40 +1443,40 @@ make_range_slider_ui <- function(lst, col, input_id, label, step = NULL, digits 
     return(tags$div(style = "color: #b30000; font-style: italic;",
                     paste0("No ", col, " column in data.")))
   }
-  
+
   min_val <- min(sapply(lst, function(df) if (col %in% names(df)) min(df[[col]], na.rm = TRUE) else Inf),  na.rm = TRUE)
   max_val <- max(sapply(lst, function(df) if (col %in% names(df)) max(df[[col]], na.rm = TRUE) else -Inf), na.rm = TRUE)
-  
+
   if (!is.finite(min_val) || !is.finite(max_val) || min_val == max_val) max_val <- min_val + 1
-  
+
   if (!is.null(digits)) {
     min_val <- floor(min_val * 10^digits) / 10^digits
     max_val <- ceiling(max_val * 10^digits) / 10^digits
     if (is.null(step)) step <- 10^(-digits)
   }
-  
+
   # preserve the user's current selection across re-renders, clamped to the new range
   val <- if (length(current) == 2) pmin(pmax(current, min_val), max_val) else c(min_val, max_val)
-  
+
   sliderInput(input_id, label, min = min_val, max = max_val, value = val, step = step)
 }
 
 #This is for creating a matrix used for the group-based peptide heatmap
 prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_sets, col_map = NULL) {
-  
+
   peptides_all <- unique(unlist(group_peptide_sets))
   pep_mat <- matrix(NA_real_,
                     nrow = length(peptides_all),
                     ncol = length(groups),
                     dimnames = list(peptides_all, names(groups)))
-  
+
   for (g in names(groups)) {
     group_items      <- groups[[g]]
     allowed_peptides <- group_peptide_sets[[g]]
-    
+
     if (!is.null(col_map) && is.list(group_items) && !is.null(group_items$measurement)) {
-      
-      
+
+
       # Measurement mode: grp_items = list(name=c(...), measurement=c(...))
       measurements <- group_items$measurement
       names_vec    <- group_items$name
@@ -1543,9 +1494,9 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
         df_sub$Quantity[df_sub$Quantity == 0] <- NA #set 0 to NA
         df_sub
       }))
-      
+
       if (is.null(df_group) || nrow(df_group) == 0) next
-      
+
       agg <- df_group %>%
         dplyr::group_by(STRIPPED) %>%
         dplyr::summarise(value = max(Quantity, na.rm = TRUE), .groups = "drop")
@@ -1557,31 +1508,31 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
         if (length(cols) < 2) return(NULL)
         df[, cols, drop = FALSE]
       }))
-      
+
       if (is.null(df_group) || nrow(df_group) == 0) next
-      
+
       df_group <- df_group[df_group$STRIPPED %in% allowed_peptides, ]
-      
+
       # Vectorized row-wise max — avoids c_across row-by-row overhead
       qty_present  <- intersect(quantity_cols, colnames(df_group))
       qty_mat      <- as.matrix(df_group[, qty_present, drop = FALSE])
       df_group$value <- do.call(pmax, c(as.data.frame(qty_mat), list(na.rm = TRUE)))
-      
+
       agg <- df_group[, c("STRIPPED", "value")] |>
         dplyr::group_by(STRIPPED) |>
         dplyr::summarise(value = max(value, na.rm = TRUE), .groups = "drop")
     }
-    
+
     pep_mat[agg$STRIPPED, g] <- agg$value
   }
-  
+
   # Drop peptides not identified in any group (i.e. NA in both groups)
   pep_mat <- pep_mat[rowSums(!is.na(pep_mat)) > 0, , drop = FALSE]
-  
+
   pep_mat
 }
 
-## This is for heatmap generation of the grouped comparison where each column is a peptide. 
+## This is for heatmap generation of the grouped comparison where each column is a peptide.
 ## In cases of very large number of peptides, this is not possible to show, thus we "bin" them to improve visualization.
 ## The bins sizes are evenly distributed.
 bin_heatmap_columns <- function(mat, max_cols = 1000) {
@@ -1591,16 +1542,16 @@ bin_heatmap_columns <- function(mat, max_cols = 1000) {
   mat_imp <- mat
   mat_imp[is.na(mat_imp)] <- 0
   bin_map <- list() #this is for the interactive heatmap
-  
+
   presence_key   <- apply(mat_imp > 0, 2, function(x) paste(as.integer(x), collapse = ""))
   patterns       <- unique(presence_key)
   pattern_counts <- setNames(sapply(patterns, function(p) sum(presence_key == p)), patterns)
-  
+
   # Proportional allocation, immediately capped at actual peptide count
   pattern_bins <- pmax(1L, floor(k * pattern_counts / n))
   pattern_bins <- pmin(pattern_bins, pattern_counts)
   names(pattern_bins) <- patterns
-  
+
   # Redistribute remaining bins only to patterns that still have room
   remaining <- k - sum(pattern_bins)
   while (remaining > 0) {
@@ -1612,16 +1563,16 @@ bin_heatmap_columns <- function(mat, max_cols = 1000) {
     pattern_bins[add_to] <- pattern_bins[add_to] + 1L
     remaining <- remaining - n_add
   }
-  
+
   all_bins <- unlist(lapply(patterns, function(pat) {
     idx   <- which(presence_key == pat)
     n_pat <- length(idx)
     k_pat <- min(as.integer(pattern_bins[[pat]]), n_pat)
     if (is.na(k_pat) || k_pat < 1L) k_pat <- 1L
-    
+
     pep_names <- colnames(mat)[idx]
     mat_pat <- mat[, idx, drop = FALSE]
-    
+
     if (n_pat == 1 || k_pat == 1) {
       result <- rowMeans(mat_pat, na.rm = TRUE)
       result[is.nan(result)] <- NA
@@ -1630,16 +1581,16 @@ bin_heatmap_columns <- function(mat, max_cols = 1000) {
       return(list(matrix(result, ncol = 1,
                          dimnames = list(rownames(mat), paste0("bin_", pat, "_1")))))
     }
-    
+
     pc1 <- tryCatch(
       prcomp(t(mat_imp[, idx, drop = FALSE]), center = TRUE, scale. = FALSE)$x[, 1],
       error = function(e) seq_len(n_pat)
     )
-    
+
     ord       <- order(pc1)
     mat_pat <- mat_pat[, order(pc1), drop = FALSE]
     pep_names <- pep_names[ord]
-    
+
     bin_ids <- ceiling(seq_len(n_pat) * k_pat / n_pat)
     lapply(seq_len(k_pat), function(i) {
       cols <- which(bin_ids == i)
@@ -1650,69 +1601,69 @@ bin_heatmap_columns <- function(mat, max_cols = 1000) {
              dimnames = list(rownames(mat), paste0("bin_", pat, "_", i)))
     })
   }), recursive = FALSE)
-  
+
   result <- do.call(cbind, all_bins)
   attr(result, "bin_map") <- bin_map
   result
 }
 
 prepare_measurement_matrix <- function(lst, quantity_cols) {
-  
+
   peptides_all <- unique(unlist(lapply(lst, function(df) df$PEPTIDE)))
-  
+
   col_names <- unlist(lapply(names(lst), function(nm) {
     cols <- quantity_cols[quantity_cols %in% colnames(lst[[nm]])]
     if (length(cols)) paste0(nm, " | ", cols) else NULL
   }))
-  
+
   pep_mat <- matrix(NA_real_,
                     nrow = length(peptides_all),
                     ncol = length(col_names),
                     dimnames = list(peptides_all, col_names))
-  
+
   safe_max <- function(x) {
     x <- x[is.finite(x)]
     if (length(x) == 0) NA_real_ else max(x)
   }
-  
+
   for (nm in names(lst)) {
     df   <- lst[[nm]]
     cols <- dplyr::intersect(quantity_cols, colnames(df))
     if (length(cols) == 0 || !"PEPTIDE" %in% colnames(df)) next
-    
+
     df_sub <- df[, c("PEPTIDE", cols), drop = FALSE]
-    
+
     for (col in cols) {
       agg <- df_sub %>%
         dplyr::group_by(PEPTIDE) %>%
         dplyr::summarise(value = safe_max(.data[[col]]), .groups = "drop")
-      
+
       pep_mat[agg$PEPTIDE, paste0(nm, " | ", col)] <- agg$value
     }
   }
-  
+
   # Remove peptides with no finite measurements across any column
   pep_mat <- pep_mat[rowSums(is.finite(pep_mat)) > 0, , drop = FALSE]
-  
+
   pep_mat
 }
 
 #-----------Plotting functions------------------
 plot_unique_counts <- function(lst, column, y_label, transform_fn = identity, color = "default", quantity_cols = NULL) {
-  
+
   stats <- dplyr::bind_rows(lapply(names(lst), function(s) {
     df <- lst[[s]]
     if (!column %in% colnames(df)) return(NULL)
-    
+
     if (!is.null(quantity_cols)) {
       meas_cols <- intersect(quantity_cols, colnames(df))
-      
+
       if (length(meas_cols) == 0) {
         # No measurement columns in this sample — fall back to total unique count
         return(data.frame(Sample = s, Mean = length(unique(transform_fn(df[[column]]))),
                           Min = NA_real_, Max = NA_real_, stringsAsFactors = FALSE))
       }
-      
+
       counts <- sapply(meas_cols, function(m) {
         col <- df[[m]]
         detected <- if (any(is.na(col))) {
@@ -1722,7 +1673,7 @@ plot_unique_counts <- function(lst, column, y_label, transform_fn = identity, co
         }
         length(unique(transform_fn(df[[column]][detected])))
       })
-      
+
       data.frame(Sample = s, Mean = mean(counts), Min = min(counts), Max = max(counts),
                  stringsAsFactors = FALSE)
     } else {
@@ -1730,21 +1681,21 @@ plot_unique_counts <- function(lst, column, y_label, transform_fn = identity, co
                  Min = NA_real_, Max = NA_real_, stringsAsFactors = FALSE)
     }
   }))
-  
+
   if (is.null(stats) || nrow(stats) == 0) return(NULL)
-  
+
   stats$Sample <- factor(stats$Sample, levels = unique(stats$Sample))
-  
+
   fill_colors <- if (color == "default") NULL else viridis(nrow(stats), option = color)
-  
+
   has_range <- any(!is.na(stats$Min) & stats$Min != stats$Max)
-  
+
   p <- ggplot(stats, aes(x = Sample, y = Mean, fill = Sample)) +
     geom_col() +
     labs(x = "Sample", y = y_label) +
     theme_minimal() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
-  
+
   if (has_range) {
     p <- p +
       geom_errorbar(aes(ymin = Min, ymax = Max), width = 0.25, linewidth = 0.8) +
@@ -1753,25 +1704,25 @@ plot_unique_counts <- function(lst, column, y_label, transform_fn = identity, co
   } else {
     p <- p + geom_text(aes(label = round(Mean)), vjust = -0.3, size = 5)
   }
-  
+
   if (!is.null(fill_colors)) p <- p + scale_fill_manual(values = fill_colors)
   p
 }
 
 
 plot_histogram <- function(df, column, x_label, title_name = "RT plot", color = "default") {
-  
+
   # Create 1-minute bins (change to 60 if your data is in seconds)
   vals   <- df[[column]][is.finite(df[[column]])]
   breaks <- pretty(vals, n = 50)
 
-  
+
   if (color == "default") {
     color <- "grey35"  # ggplot will use default fill colors
   } else {
     color <- viridis(1, option = color)
   }
-  
+
   p <- ggplot(df, aes_string(x = column)) +   # <- use column, not data_col
     geom_histogram(
       breaks = breaks,
@@ -1784,7 +1735,7 @@ plot_histogram <- function(df, column, x_label, title_name = "RT plot", color = 
       y = "Count"
     ) +
     theme_minimal()
-  
+
   return(p)
 }
 
@@ -1799,7 +1750,7 @@ plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, 
     df$Sample <- name
     df
   }))
-  
+
   if (is.null(combined) || nrow(combined) == 0) {
     return(
       ggplot() +
@@ -1808,16 +1759,16 @@ plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, 
         theme_void()
     )
   }
-  
+
   combined$Sample <- factor(combined$Sample, levels = unique(combined$Sample))
-  
+
   # Convert to factor and optionally reverse levels
   if (rev_levels) {
     combined[[column]] <- factor(combined[[column]], levels = rev(sort(unique(combined[[column]]))))
   } else {
     combined[[column]] <- factor(combined[[column]], levels = sort(unique(combined[[column]])))
   }
-  
+
   if (color == "default") {
     color <- NULL  # ggplot will use default fill colors
   } else {
@@ -1830,7 +1781,7 @@ plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, 
       dplyr::group_by(Sample) %>%
       dplyr::mutate(perc = 100 * (n() / n())) %>%  # initially gives 100%, will correct below
       ungroup()
-    
+
     # Actually, we need % per factor level per sample
     perc_df <- combined %>%
       dplyr::group_by(Sample, !!sym(column)) %>%
@@ -1838,15 +1789,15 @@ plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, 
       dplyr::group_by(Sample) %>%
       dplyr::mutate(perc = 100 * count / sum(count)) %>%
       ungroup()
-    
+
     p <- ggplot(perc_df, aes(x = Sample, y = perc, fill = !!sym(column))) +
       geom_bar(stat = "identity", position = "stack") +
       geom_text_repel(aes(label = round(perc, 1)), position=position_stack(vjust = 0.5), direction="y") +
       labs(x = "Sample", y = "Percentage", fill = fill_label) +
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1))
-    
-    
+
+
   } else {
     # Default: count
     p <- ggplot(combined, aes_string(x = "Sample", fill = column)) +
@@ -1856,11 +1807,11 @@ plot_stacked_bar <- function(lst, column, fill_label = NULL, rev_levels = TRUE, 
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1))
   }
-  
+
   if (!is.null(color)) {
     p <- p + scale_fill_manual(values = color)
   }
-  
+
   return(p)
 }
 
@@ -1874,7 +1825,7 @@ plot_density <- function(lst, column, transform = NULL, x_label = NULL, alpha = 
   } else {
     setNames(viridis(n, option = color), names(lst))
   }
-  
+
   densities <- lapply(names(lst), function(sname) {
     vals <- lst[[sname]][[column]]
     if (!is.null(transform)) vals <- transform(vals)
@@ -1883,11 +1834,11 @@ plot_density <- function(lst, column, transform = NULL, x_label = NULL, alpha = 
     list(vals = vals, dens = density(vals))
   })
   names(densities) <- names(lst)
-  
+
   all_y_max <- max(sapply(densities, function(d) if (is.null(d)) 0 else max(d$dens$y)), na.rm = TRUE)
   row_h     <- all_y_max * 0.04
   rug_ys    <- setNames(-row_h * seq_len(n), names(lst))
-  
+
   p <- plotly::plot_ly()
   for (sname in names(lst)) {
     d <- densities[[sname]]
@@ -1900,7 +1851,7 @@ plot_density <- function(lst, column, transform = NULL, x_label = NULL, alpha = 
         hovertemplate = paste0("<b>", sname, "</b>: %{y:.4g}<extra></extra>")
       )
   }
-  
+
   if (show_rug) {
     p <- p %>% plotly::add_trace(
       x = d$vals, y = rep(rug_ys[[sname]], length(d$vals)),
@@ -1908,7 +1859,7 @@ plot_density <- function(lst, column, transform = NULL, x_label = NULL, alpha = 
       marker = list(symbol = "line-ns-open", size = 8, color = cols[[sname]], opacity = 0.5),
       legendgroup = sname, showlegend = FALSE, hoverinfo = "none")
   }
-  
+
   p %>% plotly::layout(
     xaxis = list(title = x_label),
     yaxis = list(
@@ -1951,13 +1902,13 @@ plot_violin <- function(lst, column, x_label = "Sample", y_label = NULL, title =
   } else {
     setNames(viridis(n, option = color), names(lst))
   }
-  
+
   all_vals <- unlist(lapply(lst, function(df) {
     vals <- df[[column]]
     vals[!is.na(vals) & is.finite(vals)]
   }))
   y_range <- range(all_vals, na.rm = TRUE)
-  
+
   p <- plotly::plot_ly()
   for (i in seq_along(lst)) {
     sname <- names(lst)[i]
@@ -1975,7 +1926,7 @@ plot_violin <- function(lst, column, x_label = "Sample", y_label = NULL, title =
       points = FALSE
     )
   }
-  
+
   p %>% plotly::layout(
     xaxis = list(title = x_label, tickangle = -45,
                  categoryorder = "array", categoryarray = names(lst)),
@@ -2005,14 +1956,14 @@ plot_violin_static <- function(lst, column, x_label = "Sample", y_label = NULL,
 
 plot_length_distribution <- function(lst, color = "default") {
   req(lst)
-  
+
   if (color == "default") {
     color <- NULL  # ggplot will use default fill colors
   } else {
     cols <- viridis(length(lst), option = color)
     color <- setNames(cols, names(lst))
   }
-  
+
   # Combine datasets into one long dataframe
   combined <- bind_rows(lapply(names(lst), function(name) {
     df <- lst[[name]]
@@ -2023,29 +1974,29 @@ plot_length_distribution <- function(lst, color = "default") {
     df
   }))
   req(nrow(combined) > 0)
-  
+
   combined$LENGTH <- as.numeric(combined$LENGTH)
   combined <- combined %>% dplyr::mutate(Length_bin = factor(LENGTH))
-  
+
   # Compute counts and percentages
   count_df <- combined %>% dplyr::count(Length_bin, Sample, name = "Count")
   percent_df <- count_df %>% dplyr::group_by(Sample) %>%
     dplyr::mutate(Percent = Count / sum(Count) * 100)
-  
+
   samples <- unique(count_df$Sample)
   n <- length(samples)
-  
+
   samples <- intersect(names(lst), unique(count_df$Sample))
-  
+
   fig <- plot_ly()
-  
+
   # --- Add COUNT traces first ---
   for (i in seq_along(samples)) {
     s <- samples[i]
     sub_c <- count_df[count_df$Sample == s, ]
     sub_p <- percent_df[percent_df$Sample == s, ]
     if (nrow(sub_c) == 0 || nrow(sub_p) == 0) next #checkpoint for when one sample has 0 data.
-    
+
     fig <- fig %>%
       add_bars(
         x = sub_c$Length_bin,
@@ -2061,14 +2012,14 @@ plot_length_distribution <- function(lst, color = "default") {
           "Sample: %{meta}<br>Length: %{x}<br>Count: %{y}<br>Percent: %{customdata}%<extra></extra>"
       )
   }
-  
+
   # --- Add PERCENT traces next ---
   for (i in seq_along(samples)) {
     s <- samples[i]
     sub_c <- count_df[count_df$Sample == s, ]
     sub_p <- percent_df[percent_df$Sample == s, ]
     if (nrow(sub_c) == 0 || nrow(sub_p) == 0) next #checkpoint for when one sample has 0 data.
-    
+
     fig <- fig %>%
       add_bars(
         x = sub_p$Length_bin,
@@ -2084,7 +2035,7 @@ plot_length_distribution <- function(lst, color = "default") {
           "Sample: %{meta}<br>Length: %{x}<br>Percent: %{y:.2f}%<br>Count: %{customdata}<extra></extra>"
       )
   }
-  
+
   # --- Layout and buttons ---
   fig <- fig %>%
     layout(
@@ -2121,19 +2072,19 @@ plot_length_distribution <- function(lst, color = "default") {
 }
 
 plot_length_range_per_measurement <- function(lst, quantity_cols, lo = 8, hi = 13, color = "default") {
-  
+
   stats <- dplyr::bind_rows(lapply(names(lst), function(s) {
     df <- lst[[s]]
     if (!"LENGTH" %in% colnames(df)) return(NULL)
-    
+
     meas_cols <- intersect(quantity_cols, colnames(df))
-    
+
     if (length(meas_cols) == 0) {
       pct <- mean(df$LENGTH >= lo & df$LENGTH <= hi, na.rm = TRUE) * 100
       return(data.frame(Sample = s, Mean = pct, Min = NA_real_, Max = NA_real_,
                         stringsAsFactors = FALSE))
     }
-    
+
     pcts <- sapply(meas_cols, function(m) {
       col      <- df[[m]]
       detected <- if (any(is.na(col))) !is.na(col) else col > 0
@@ -2141,28 +2092,28 @@ plot_length_range_per_measurement <- function(lst, quantity_cols, lo = 8, hi = 1
       if (nrow(rows) == 0) return(NA_real_)
       mean(rows$LENGTH >= lo & rows$LENGTH <= hi, na.rm = TRUE) * 100
     })
-    
+
     pcts <- pcts[!is.na(pcts)]
     if (length(pcts) == 0) return(NULL)
-    
+
     data.frame(Sample = s, Mean = mean(pcts), Min = min(pcts), Max = max(pcts),
                stringsAsFactors = FALSE)
   }))
-  
+
   if (is.null(stats) || nrow(stats) == 0) return(NULL)
-  
-  stats$Sample <- factor(stats$Sample, levels = unique(stats$Sample)) 
-  
+
+  stats$Sample <- factor(stats$Sample, levels = unique(stats$Sample))
+
   has_range <- any(!is.na(stats$Min) & stats$Min != stats$Max)
   fill_colors <- if (color == "default") NULL else viridis(nrow(stats), option = color)
-  
+
   p <- ggplot(stats, aes(x = Sample, y = Mean, fill = Sample)) +
     geom_col() +
     labs(x = "Sample", y = paste0("% peptides ", lo, "\u2013", hi, "mer")) +
     ylim(0, 115) +
     theme_minimal() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
-  
+
   if (has_range) {
     p <- p +
       geom_errorbar(aes(ymin = Min, ymax = Max), width = 0.25, linewidth = 0.8) +
@@ -2171,7 +2122,7 @@ plot_length_range_per_measurement <- function(lst, quantity_cols, lo = 8, hi = 1
   } else {
     p <- p + geom_text(aes(label = sprintf("%.1f%%", Mean)), vjust = -0.3, size = 5)
   }
-  
+
   if (!is.null(fill_colors)) p <- p + scale_fill_manual(values = fill_colors)
   p
 }
@@ -2180,12 +2131,12 @@ plot_length_range_per_measurement <- function(lst, quantity_cols, lo = 8, hi = 1
 plot_seqlogo <- function(peptides, title = "Motif", namespace = NULL) {
   peptides <- peptides[!is.na(peptides)]
   if (length(peptides) == 0) return(NULL)
-  
+
   L <- unique(nchar(peptides))
   if (length(L) != 1) return(NULL)  # must be same length
-  
+
   df <- data.frame(seq = peptides)
-  
+
   if (is.null(namespace)) {
     suppressWarnings(ggseqlogo(peptides, method = 'bits') +
       ggtitle(title) +
@@ -2238,7 +2189,7 @@ plot_charge_per_measurement <- function(lst, quantity_cols, column = "CHARGE",
     }
   }
   if (length(rows) == 0) return(NULL)
-  
+
   df_long <- do.call(rbind, rows)
   if (percentage) {
     df_long <- df_long %>%
@@ -2246,13 +2197,13 @@ plot_charge_per_measurement <- function(lst, quantity_cols, column = "CHARGE",
       dplyr::mutate(Count = 100 * Count / sum(Count)) %>%
       dplyr::ungroup()
   }
-  
+
   # Preserve sample order from lst, measurements in the order they appear
   meas_order <- unlist(lapply(names(lst), function(s) {
     intersect(quantity_cols, colnames(lst[[s]]))
   }))
   meas_order <- meas_order[meas_order %in% df_long$Measurement]
-  
+
   charges    <- sort(unique(df_long$Charge), decreasing = FALSE)
   n_ch       <- length(charges)
   plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
@@ -2262,7 +2213,7 @@ plot_charge_per_measurement <- function(lst, quantity_cols, column = "CHARGE",
   } else {
     setNames(viridis(n_ch, option = color), charges)
   }
-  
+
   meas_df <- data.frame(Measurement = meas_order, stringsAsFactors = FALSE)
   p <- plotly::plot_ly()
   for (ch in charges) {
@@ -2280,7 +2231,7 @@ plot_charge_per_measurement <- function(lst, quantity_cols, column = "CHARGE",
       hovertemplate = paste0(fill_label, " ", ch, ": %{y}<extra>%{x}</extra>")
     )
   }
-  
+
   # Sample group labels + dividers
   annotations <- list()
   shapes      <- list()
@@ -2307,7 +2258,7 @@ plot_charge_per_measurement <- function(lst, quantity_cols, column = "CHARGE",
       )
     }
   }
-  
+
   p %>% plotly::layout(
     barmode = "stack",
     font    = list(size = base_size),
@@ -2345,7 +2296,7 @@ plot_density_envelope <- function(lst, quantity_cols, column, x_label, color = "
     )
   }))
   if (is.null(result) || nrow(result) == 0) return(NULL)
-  
+
   samples    <- unique(result$Sample)
   n          <- length(samples)
   plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
@@ -2355,9 +2306,9 @@ plot_density_envelope <- function(lst, quantity_cols, column, x_label, color = "
   } else {
     setNames(viridis(n, option = color), samples)
   }
-  
+
   fmt <- function(x) formatC(x, digits = 3, format = "g")
-  
+
   p <- plotly::plot_ly()
   for (s in samples) {
     d     <- result[result$Sample == s, ]
@@ -2365,7 +2316,7 @@ plot_density_envelope <- function(lst, quantity_cols, column, x_label, color = "
     rgb_v <- col2rgb(col)[, 1]
     fill  <- sprintf("rgba(%d,%d,%d,0.15)", rgb_v[1], rgb_v[2], rgb_v[3])
     d$range_text <- paste0(fmt(d$ymin), " \u2013 ", fmt(d$ymax))
-    
+
     p <- p %>%
       plotly::add_ribbons(
         data = d, x = ~x, ymin = ~ymin, ymax = ~ymax,
@@ -2382,7 +2333,7 @@ plot_density_envelope <- function(lst, quantity_cols, column, x_label, color = "
         hovertemplate = paste0("<b>", s, "</b> mean: %{y:.4g}<extra></extra>")
       )
   }
-  
+
   p %>% plotly::layout(
     xaxis = list(title = x_label),
     yaxis = list(title = "Density", rangemode = "tozero"),
@@ -2401,19 +2352,19 @@ plot_violin_envelope <- function(lst, quantity_cols, column, x_label = "Sample",
   } else {
     setNames(viridis(n, option = color), names(lst))
   }
-  
+
   p <- plotly::plot_ly()
-  
+
   for (i in seq_along(lst)) {
     sname     <- names(lst)[i]
     df        <- lst[[sname]]
     meas_cols <- intersect(quantity_cols, colnames(df))
     if (length(meas_cols) == 0 || !column %in% colnames(df)) next
-    
+
     all_vals <- df[[column]][is.finite(df[[column]])]
     if (length(all_vals) < 2) next
     y_grid <- seq(min(all_vals), max(all_vals), length.out = 256)
-    
+
     dens_list <- Filter(Negate(is.null), lapply(meas_cols, function(m) {
       col_vals <- df[[m]]
       detected <- if (any(is.na(col_vals))) !is.na(col_vals) else col_vals > 0
@@ -2423,25 +2374,25 @@ plot_violin_envelope <- function(lst, quantity_cols, column, x_label = "Sample",
       approx(d$x, d$y, xout = y_grid)$y
     }))
     if (length(dens_list) == 0) next
-    
+
     dens_mat <- do.call(rbind, dens_list)
     mean_d   <- colMeans(dens_mat, na.rm = TRUE)
     min_d    <- apply(dens_mat, 2, min, na.rm = TRUE)
     max_d    <- apply(dens_mat, 2, max, na.rm = TRUE)
-    
+
     scale_f  <- 0.4 / max(max_d, na.rm = TRUE)
     mean_d   <- mean_d * scale_f
     min_d    <- min_d  * scale_f
     max_d    <- max_d  * scale_f
-    
+
     col   <- cols[[sname]]
     rgb_v <- col2rgb(col)[, 1]
     fill  <- sprintf("rgba(%d,%d,%d,0.2)", rgb_v[1], rgb_v[2], rgb_v[3])
-    
+
     # Mirrored polygon helpers
     violin_x <- function(d) c(i + d, i - rev(d))
     violin_y <- function()  c(y_grid, rev(y_grid))
-    
+
     p <- p %>%
       # Shaded envelope (max extent across measurements)
       plotly::add_trace(
@@ -2471,7 +2422,7 @@ plot_violin_envelope <- function(lst, quantity_cols, column, x_label = "Sample",
         hovertemplate = "<extra></extra>"
       )
   }
-  
+
   p %>% plotly::layout(
     xaxis = list(
       title    = x_label,
@@ -2487,15 +2438,15 @@ plot_violin_envelope <- function(lst, quantity_cols, column, x_label = "Sample",
 }
 
 plot_rt_histogram_range <- function(df, sample_name, quantity_cols, color = "steelblue") {
-  
+
   meas_cols <- intersect(quantity_cols, colnames(df))
-  
+
   all_rt <- df$RT[is.finite(df$RT)]
   if (length(all_rt) == 0) return(NULL)
-  
+
   vals   <- df[["RT"]][is.finite(df[["RT"]])]
   breaks <- pretty(vals, n = 50)
-  
+
   if (length(meas_cols) == 0) {
     counts <- list(data.frame(
       Mid   = hist(all_rt, breaks = breaks, plot = FALSE)$mids,
@@ -2511,13 +2462,13 @@ plot_rt_histogram_range <- function(df, sample_name, quantity_cols, color = "ste
       data.frame(Mid = h$mids, Count = h$counts)
     }))
   }
-  
+
   if (length(counts) == 0) return(NULL)
-  
+
   stats <- dplyr::bind_rows(counts) %>%
     dplyr::group_by(Mid) %>%
     dplyr::summarise(Mean = mean(Count), Min = min(Count), Max = max(Count), .groups = "drop")
-  
+
   ggplot(stats, aes(x = Mid)) +
     geom_col(aes(y = Mean), fill = color, alpha = 0.6, width = diff(breaks)[1] * 0.9) +
     geom_ribbon(aes(ymin = Min, ymax = Max), fill = color, alpha = 0.3) +
@@ -2531,17 +2482,17 @@ plot_rt_histogram_range <- function(df, sample_name, quantity_cols, color = "ste
 dynamic_range_subplot <- function(lst, data_col = "MAX_QUANTITY", ncol = 3, base_size = 13) {
   samples <- names(lst)[vapply(lst, function(df)
     nrow(df) >= 10 && data_col %in% colnames(df), logical(1))]
-  
+
   if (length(samples) == 0)
     return(plotly::plot_ly() %>% plotly::layout(
       title = "Not enough peptides to plot dynamic range",
       xaxis = list(visible = FALSE), yaxis = list(visible = FALSE)))
-  
+
   figs <- lapply(samples, function(sname) {
     df <- lst[[sname]]
     df[[data_col]][df[[data_col]] == 0] <- NA
     df <- df[!is.na(df[[data_col]]), , drop = FALSE]
-    
+
     if (nrow(df) == 0) {
       rank_v <- numeric(0); y_v <- numeric(0); hover <- character(0)
     } else {
@@ -2554,7 +2505,7 @@ dynamic_range_subplot <- function(lst, data_col = "MAX_QUANTITY", ncol = 3, base
       hover   <- paste0("<b>", disp_nm, "</b><br>", pep_vec, "<br>",
                         "log2(", data_col, "): ", round(y_v, 2), "<br>Rank: ", rank_v)
     }
-    
+
     plotly::plot_ly() %>%
       plotly::add_trace(type = "scattergl", mode = "markers",           # base
                         x = rank_v, y = y_v, text = hover, hoverinfo = "text",
@@ -2571,7 +2522,7 @@ dynamic_range_subplot <- function(lst, data_col = "MAX_QUANTITY", ncol = 3, base
                                 xref = "paper", yref = "paper", xanchor = "center", yanchor = "top",
                                 showarrow = FALSE, font = list(size = 11))))
   })
-  
+
   nrows <- ceiling(length(figs) / ncol)
   plotly::subplot(figs, nrows = nrows, shareX = FALSE, shareY = FALSE,
                   titleX = FALSE, titleY = FALSE,
@@ -2583,29 +2534,29 @@ dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", colo
   # Same inclusion rule the observer relies on for trace-index alignment
   df_list <- df_list[sapply(df_list, function(df)
     nrow(df) >= 10 && data_col %in% colnames(df))]
-  
+
   empty_msg <- function(msg)
     plotly::plot_ly() %>% plotly::layout(
       title = msg,
       xaxis = list(visible = FALSE), yaxis = list(visible = FALSE))
-  
+
   if (length(df_list) == 0)
     return(empty_msg("Not enough peptides to plot combined dynamic range"))
-  
+
   n_samples  <- length(df_list)
   plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
                   '#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52')
   cols <- if (color == "default") {
     setNames(plotly_pal[((seq_len(n_samples) - 1L) %% length(plotly_pal)) + 1L], names(df_list))
   } else setNames(viridis(n_samples, option = color), names(df_list))
-  
+
   p <- plotly::plot_ly()
   any_points <- FALSE
   for (sname in names(df_list)) {
     df <- df_list[[sname]]
     df[[data_col]][df[[data_col]] == 0] <- NA
     df <- df[!is.na(df[[data_col]]), , drop = FALSE]
-    
+
     if (nrow(df) == 0) {
       # keep an (empty) trace so indices stay aligned with the observer
       p <- p %>% plotly::add_trace(
@@ -2616,7 +2567,7 @@ dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", colo
       next
     }
     any_points <- TRUE
-    
+
     prot_vec <- if ("PROTEIN" %in% names(df)) df$PROTEIN else rep("", nrow(df))
     pep_vec  <- if ("PEPTIDE" %in% names(df)) df$PEPTIDE else rep("", nrow(df))
     rank_v   <- rank(-df[[data_col]], ties.method = "first")
@@ -2627,7 +2578,7 @@ dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", colo
     disp_nm  <- ifelse(gene_nm == prot_vec, prot_vec, paste0(gene_nm, "<br>", prot_vec))
     hover    <- paste0("<b>", sname, "</b><br>", disp_nm, "<br>", pep_vec, "<br>",
                        "log2(", data_col, "): ", round(y_v, 2), "<br>Rank: ", rank_v)
-    
+
     p <- p %>% plotly::add_trace(
       type = "scattergl", mode = "markers",
       x = rank_x, y = y_v, text = hover, hoverinfo = "text",
@@ -2635,7 +2586,7 @@ dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", colo
       name = sname, legendgroup = sname)
   }
   if (!any_points) return(empty_msg("No data points available to display"))
-  
+
   # Highlight traces — appended AFTER all sample traces (indices n_samples, n_samples+1)
   p <- p %>%
     plotly::add_trace(type = "scattergl", mode = "markers",
@@ -2644,7 +2595,7 @@ dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", colo
     plotly::add_trace(type = "scattergl", mode = "markers",
                       x = numeric(0), y = numeric(0), text = character(0), hoverinfo = "text",
                       marker = list(color = "#2CA02C", size = 8, symbol = "square"), name = "Peptide match")
-  
+
   x_title <- if (rank_mode == "relative") "Rank (percentile %)" else "Rank"
   p %>% plotly::layout(
     title = list(text = "Combined Dynamic Range for All Samples"),
@@ -2686,7 +2637,7 @@ dynamic_range_static <- function(lst, data_col = "MAX_QUANTITY", ncol = 3,
   df$hl <- .dr_hits(df, prot_query, pep_query)
   hits  <- df[!is.na(df$hl), ]
   cap   <- .dr_caption(prot_query, pep_query)
-  
+
   p <- ggplot(df, aes(Rank, y)) +
     geom_point(size = 0.4, alpha = 0.4, color = "steelblue") +
     facet_wrap(~ Sample, ncol = ncol, scales = "free") +
@@ -2708,25 +2659,25 @@ dynamic_range_combined_static <- function(df_list, data_col = "MAX_QUANTITY", co
   df <- dplyr::bind_rows(lapply(names(df_list), function(s) {
     r <- .dr_prep(df_list[[s]], data_col); if (is.null(r)) return(NULL); r$Sample <- s; r }))
   if (is.null(df) || !nrow(df)) return(ggplot() + theme_void())
-  
-  if (relative) { 
-    df <- df %>% 
-      dplyr::group_by(Sample) %>% 
-      dplyr::mutate( X = Rank / max(Rank) * 100 ) %>% 
-      dplyr::ungroup() 
-    x_label <- "Relative Rank (%)" 
-  } else { 
-        df$X <- df$Rank 
-        x_label <- "Rank" 
+
+  if (relative) {
+    df <- df %>%
+      dplyr::group_by(Sample) %>%
+      dplyr::mutate( X = Rank / max(Rank) * 100 ) %>%
+      dplyr::ungroup()
+    x_label <- "Relative Rank (%)"
+  } else {
+        df$X <- df$Rank
+        x_label <- "Rank"
         }
-  
+
   df$hl  <- .dr_hits(df, prot_query, pep_query)
   hits   <- df[!is.na(df$hl), ]
   n      <- length(unique(df$Sample))
   cap    <- .dr_caption(prot_query, pep_query)
-  
+
   sample_guide <- guide_legend(override.aes = list(size = 4, alpha = 1))   # big, opaque swatches
-  
+
   p <- ggplot(df, aes(X, y)) +
     geom_point(aes(color = Sample), size = 0.4, alpha = 0.4)
   if (color != "default")
@@ -2734,7 +2685,7 @@ dynamic_range_combined_static <- function(df_list, data_col = "MAX_QUANTITY", co
                                 guide = sample_guide)
   else
     p <- p + scale_color_discrete(name = "Sample", guide = sample_guide)
-  
+
   if (nrow(hits)) {
     p <- p +
       ggnewscale::new_scale_color() +
@@ -2742,7 +2693,7 @@ dynamic_range_combined_static <- function(df_list, data_col = "MAX_QUANTITY", co
       scale_color_manual(values = c("Protein match" = "red", "Peptide match" = "#2ca02c"),
                          name = "Highlight")
   }
-  
+
   p + labs(x = x_label, y = paste0("log2(", data_col, ")"), title = "Combined Dynamic Range",
            caption = if (nzchar(cap)) cap else NULL) +
     theme_minimal() +
@@ -2755,17 +2706,17 @@ plot_scatter_mz_k0_plotly <- function(lst, color = "default", ncol = 3, base_siz
   samples <- names(lst)[ok]
   if (length(samples) == 0)
     return(plotly::plotly_empty() %>% plotly::layout(title = "No m/z / 1/K0 data"))
-  
+
   charges <- sort(unique(unlist(lapply(lst[samples], function(df) df$CHARGE))))
   charges <- charges[!is.na(charges)]
   if (length(charges) == 0) charges <- NA
-  
+
   plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
                   '#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52')
   ccols <- if (color == "default")
     setNames(plotly_pal[((seq_along(charges) - 1) %% length(plotly_pal)) + 1], as.character(charges))
   else setNames(viridisLite::viridis(length(charges), option = color), as.character(charges))
-  
+
   figs <- lapply(seq_along(samples), function(si) {
     df <- lst[[samples[si]]]
     df <- df[is.finite(df$MZ) & is.finite(df$K0), , drop = FALSE]
@@ -2784,7 +2735,7 @@ plot_scatter_mz_k0_plotly <- function(lst, color = "default", ncol = 3, base_siz
       text = samples[si], x = 0.5, y = 1, xref = "paper", yref = "paper",
       xanchor = "center", yanchor = "bottom", showarrow = FALSE, font = list(size = 11))))
   })
-  
+
   fig <- plotly::subplot(figs, nrows = ceiling(length(figs) / ncol),
                          shareX = FALSE, shareY = FALSE,       # aligned axes + fewer ticks to draw
                          titleX = FALSE, titleY = FALSE,
@@ -2799,12 +2750,49 @@ plot_scatter_mz_k0_plotly <- function(lst, color = "default", ncol = 3, base_siz
                          margin = list(l = 50, b = 45, t = 40))
 }
 
+# Static (ggplot) counterpart of plot_scatter_mz_k0_plotly(), used by the HTML
+# report to keep file size small (interactive plotly widgets are heavy).
+plot_scatter_mz_k0_static <- function(lst, color = "default", ncol = 3, base_size = 13) {
+  ok <- vapply(lst, function(df)
+    !is.null(df) && nrow(df) > 0 && all(c("MZ", "K0") %in% colnames(df)), logical(1))
+  samples <- names(lst)[ok]
+  if (length(samples) == 0) return(NULL)
+
+  dat <- dplyr::bind_rows(lapply(samples, function(s) {
+    df <- lst[[s]]
+    df <- df[is.finite(df$MZ) & is.finite(df$K0), , drop = FALSE]
+    if (nrow(df) == 0) return(NULL)
+    data.frame(Sample = s, MZ = df$MZ, K0 = df$K0,
+               CHARGE = if ("CHARGE" %in% names(df)) df$CHARGE else NA,
+               stringsAsFactors = FALSE)
+  }))
+  if (is.null(dat) || nrow(dat) == 0) return(NULL)
+
+  dat$Sample <- factor(dat$Sample, levels = samples)   # preserve input order
+  dat$CHARGE <- factor(dat$CHARGE)
+
+  charges    <- levels(dat$CHARGE)
+  plotly_pal <- c('#636EFA','#EF553B','#00CC96','#AB63FA','#FFA15A',
+                  '#19D3F3','#FF6692','#B6E880','#FF97FF','#FECB52')
+  ccols <- if (color == "default")
+    setNames(plotly_pal[((seq_along(charges) - 1) %% length(plotly_pal)) + 1], charges)
+  else setNames(viridisLite::viridis(length(charges), option = color), charges)
+
+  ggplot2::ggplot(dat, ggplot2::aes(x = MZ, y = K0, color = CHARGE)) +
+    ggplot2::geom_point(size = 0.5, alpha = 0.5) +
+    ggplot2::facet_wrap(~ Sample, ncol = ncol) +
+    ggplot2::scale_color_manual(values = ccols, name = "Charge") +
+    ggplot2::labs(x = "m/z", y = "1/K0") +
+    ggplot2::theme_bw(base_size = base_size) +
+    ggplot2::guides(color = ggplot2::guide_legend(override.aes = list(size = 2, alpha = 1)))
+}
+
 plot_completeness <- function(lst, spectra_cols, percent = FALSE, title = "Data Completeness",color = "default") {
-  
+
   make_completeness <- function(df, spectra_cols) {
-    
+
     spectra_cols <- dplyr::intersect(spectra_cols, colnames(df))
-    
+
     df %>%
       transmute(
         Non_NA_Count = rowSums(across(all_of(spectra_cols), ~ {
@@ -2818,17 +2806,17 @@ plot_completeness <- function(lst, spectra_cols, percent = FALSE, title = "Data 
         Percent_Rank   = 100 * Rank / max(Rank)
       )
   }
-  
+
   ## color handling
   if (color == "default") {
     color <- NULL
   } else {
     color <- viridis(length(lst), option = color)
   }
-  
+
   df <- map(lst, make_completeness, spectra_cols = spectra_cols) %>%
     bind_rows(.id = "Sample")
-  
+
   if (percent) {
     p <- ggplot(df, aes(Percent_Rank, Percent_Non_NA, color = Sample)) +
       geom_line(linewidth = 1) +
@@ -2840,7 +2828,7 @@ plot_completeness <- function(lst, spectra_cols, percent = FALSE, title = "Data 
       ) +
       theme_minimal() +
       ylim(0,100)
-      
+
   } else {
     p <- ggplot(df, aes(Rank, Non_NA_Count, color = Sample)) +
       geom_line(linewidth = 1) +
@@ -2852,46 +2840,46 @@ plot_completeness <- function(lst, spectra_cols, percent = FALSE, title = "Data 
       ) +
       theme_minimal()
   }
-  
+
   if (!is.null(color)) {
     p <- p + scale_color_manual(values = color)
   }
-  
+
   return(p)
 }
 
-plot_upset <- function(data_list, min_size = 2, min_size_is_percent = TRUE, title = "Upset Plot", 
+plot_upset <- function(data_list, min_size = 2, min_size_is_percent = TRUE, title = "Upset Plot",
                        stripped = TRUE, min_degree = 1, n_intersections = 40, base_size = 13) {
-  
+
   # Extract peptides per dataset
   l <- purrr::imap(data_list, function(df, name) {
     peptides <- df[["PEPTIDE"]]
-    
+
     # Strip PTMs
     if (stripped) {
       peptides <- df[["STRIPPED"]]
     } else {
       peptides <- df[["PEPTIDE"]]
     }
-    
+
     unique(peptides)
   })
-  
+
   # Combined set of all peptides
   all_items <- unique(unlist(l))
-  
+
   # Binary membership matrix
   df <- lapply(l, function(x) all_items %in% x) |>
     as.data.frame()
   df$Item <- all_items
   df_upset <- dplyr::select(df, -Item)
-  
+
   # Convert min_size percent to actual number
   if (min_size_is_percent) {
     max_size <- nrow(df)
     min_size <- ceiling((min_size / 100) * max_size)
   }
-  
+
   # Upset plot
   p <- suppressWarnings(ComplexUpset::upset(
     df_upset,
@@ -2907,10 +2895,10 @@ plot_upset <- function(data_list, min_size = 2, min_size_is_percent = TRUE, titl
         text = list(size = base_size / 3.5))
     ),
     themes = ComplexUpset::upset_default_themes(
-      text = ggplot2::element_text(size = base_size)) 
+      text = ggplot2::element_text(size = base_size))
   ) + ggplot2::ggtitle(title) +
     ggplot2::theme(plot.title = ggplot2::element_text(size = base_size)))
-  
+
   return(p)
 }
 
@@ -2924,18 +2912,18 @@ compute_upset_intersections <- function(data_list, stripped = TRUE,
   })
   sets <- Filter(function(s) !is.null(s) && length(s) > 0, sets)
   if (length(sets) < 2) return(list())
-  
+
   all_items  <- unique(unlist(sets))
   if (length(all_items) == 0) return(list())
   sample_nms <- names(sets)
-  
+
   membership <- matrix(FALSE, nrow = length(all_items), ncol = length(sample_nms),
                        dimnames = list(all_items, sample_nms))
   for (s in sample_nms) membership[all_items %in% sets[[s]], s] <- TRUE
-  
+
   profiles       <- apply(membership, 1, function(row) paste(sample_nms[row], collapse = " & "))
   profile_groups <- split(all_items, profiles)
-  
+
   # Assign names BEFORE Filter so they survive filtering
   candidates        <- lapply(names(profile_groups), function(profile) {
     peps   <- profile_groups[[profile]]
@@ -2944,7 +2932,7 @@ compute_upset_intersections <- function(data_list, stripped = TRUE,
   })
   names(candidates) <- names(profile_groups)
   results           <- Filter(Negate(is.null), candidates)
-  
+
   results <- results[order(sapply(results, length), decreasing = TRUE)]
   if (length(results) > n_intersections) results <- results[seq_len(n_intersections)]
   results
@@ -2953,7 +2941,7 @@ compute_upset_intersections <- function(data_list, stripped = TRUE,
 plot_shared_peptide_interactive <- function(lst, color = "default",
                                             mode = c("count", "percent"),
                                             percent_type = c("min", "union"),
-                                            cluster_mode = "both") {
+                                            cluster_mode = "both", engine = "heatmaply") {
   mode <- match.arg(mode); percent_type <- match.arg(percent_type)
   peptides <- lapply(lst, function(df) unique(as.character(df$STRIPPED)))
   samples <- names(peptides); n <- length(samples)
@@ -2973,12 +2961,12 @@ plot_shared_peptide_interactive <- function(lst, color = "default",
   lims <- if (mode == "count") c(0, max(m, na.rm = TRUE)) else c(0, 100)
   if (diff(lims) == 0) lims <- c(0, 1)                      # guard degenerate scale
   plot_correlation_heatmap_interactive(m, color = color, cluster_mode = cluster_mode,
-                                       label = lab, limits = lims)
+                                       label = lab, limits = lims, engine = engine)
 }
 
 plot_pairwise_quant_correlation_interactive <- function(lst, method = "pearson",
                                                         min_shared = 2, color = "default",
-                                                        cluster_mode = "both") {
+                                                        cluster_mode = "both", engine = "heatmaply") {
   peptides <- lapply(lst, function(df)
     df %>% dplyr::select(STRIPPED, MAX_QUANTITY) %>%
       dplyr::group_by(STRIPPED) %>%
@@ -2993,7 +2981,7 @@ plot_pairwise_quant_correlation_interactive <- function(lst, method = "pearson",
   }
   plot_correlation_heatmap_interactive(m, color = color, cluster_mode = cluster_mode,
                                        label = paste(method, "correlation"),
-                                       limits = NULL)        # correlation → auto range (diag = 1)
+                                       limits = NULL, engine = engine)
 }
 bin_heatmap_columns <- function(mat, max_cols = 1000) {
   if (ncol(mat) <= max_cols) return(mat)
@@ -3056,14 +3044,14 @@ bin_heatmap_columns <- function(mat, max_cols = 1000) {
 plot_heatmap_interactive <- function(pep_mat, color = "default") {
   mat <- log10(pep_mat + 1)
   mat <- t(mat)
-  
+
   bin_map  <- NULL
   max_cols <- 1000L
   if (ncol(mat) > max_cols) {
     mat     <- bin_heatmap_columns(mat, max_cols = max_cols)
     bin_map <- attr(mat, "bin_map")
   }
-  
+
   # Row clustering
   clust_na0 <- function(x) { x2 <- x; x2[!is.finite(x2)] <- 0; dist(x2) }
   row_ord <- tryCatch({
@@ -3072,7 +3060,7 @@ plot_heatmap_interactive <- function(pep_mat, color = "default") {
     hc$order
   }, error = function(e) seq_len(nrow(mat)))
   mat <- mat[row_ord, , drop = FALSE]
-  
+
   # Build hover text matrix
   hover_mat <- matrix("", nrow = nrow(mat), ncol = ncol(mat),
                       dimnames = dimnames(mat))
@@ -3089,7 +3077,7 @@ plot_heatmap_interactive <- function(pep_mat, color = "default") {
     }
     hover_mat[, j] <- label
   }
-  
+
   # Color scale
   if (color == "default") {
     colorscale <- list(list(0, "lightyellow"), list(1, "red"))
@@ -3098,7 +3086,7 @@ plot_heatmap_interactive <- function(pep_mat, color = "default") {
     colorscale <- lapply(seq_along(cols) - 1,
                          function(i) list(i / (length(cols) - 1), cols[i + 1]))
   }
-  
+
   plotly::plot_ly(
     x         = colnames(mat),
     y         = rownames(mat),
@@ -3120,28 +3108,38 @@ plot_heatmap_interactive <- function(pep_mat, color = "default") {
 
 plot_correlation_heatmap_interactive <- function(cor_mat, color = "default",
                                                  cluster_mode = "both", groups = NULL,
-                                                 label = "Pearson", tick_limit = 60, limits = NULL) {
+                                                 label = "Pearson", tick_limit = 60, limits = NULL,
+                                                 engine = "heatmaply") {
+  if (identical(engine, "plotly"))
+    return(plot_correlation_heatmap_plotly(cor_mat, color = color, label = label,
+                                           cluster = (cluster_mode != "none"), limits = limits))
+
   n <- ncol(cor_mat)
   if (is.null(rownames(cor_mat))) rownames(cor_mat) <- colnames(cor_mat)
-  
+
   anchors <- if (color == "default") c("lightyellow", "orange", "red")
   else viridisLite::viridis(3, option = color)
   pal_vec   <- colorRampPalette(anchors)(256)
   show_tick <- n <= tick_limit
   side <- if (!is.null(groups)) data.frame(Sample = as.factor(groups)) else NULL
-  
+
   if (cluster_mode == "sample" && !is.null(groups)) {
     # order by sample; side-bar shows the blocks (Colv/Rowv FALSE → order preserved)
     ord     <- order(groups)
     cor_mat <- cor_mat[ord, ord, drop = FALSE]
     if (!is.null(side)) side <- side[ord, , drop = FALSE]
     dend <- "none"; Rowv <- FALSE; Colv <- FALSE
-    
+
   } else {
     dend <- switch(cluster_mode, both = "both", rows = "row",
                    columns = "column", none = "none", "both")
     if (cluster_mode == "both") {
-      d    <- stats::as.dendrogram(fastcluster::hclust(stats::dist(cor_mat), method = "complete"))
+      cm <- cor_mat
+      cm[!is.finite(cm)] <- 0
+      hc <- if (requireNamespace("fastcluster", quietly = TRUE))
+        fastcluster::hclust(stats::dist(cm), method = "complete")
+      else stats::hclust(stats::dist(cm), method = "complete")
+      d  <- stats::as.dendrogram(hc)
       Rowv <- d
       Colv <- d
     } else {
@@ -3149,13 +3147,13 @@ plot_correlation_heatmap_interactive <- function(cor_mat, color = "default",
       Colv <- dend %in% c("both", "column")
     }
   }
-  
+
   heatmaply::heatmaply(
     cor_mat,
     dendrogram      = dend, Rowv = Rowv, Colv = Colv,
     seriate         = "none",
     hclustfun       = fastcluster::hclust,
-    colors          = pal_vec, 
+    colors          = pal_vec,
     limits          = if (is.null(limits)) range(cor_mat, na.rm = TRUE) else limits,
     col_side_colors = side,
     showticklabels  = c(show_tick, show_tick),
@@ -3166,10 +3164,10 @@ plot_correlation_heatmap_interactive <- function(cor_mat, color = "default",
 plot_heatmap_plotly <- function(mat, color = "default", log_transform = FALSE, transpose = FALSE) {
   if (log_transform) mat <- log10(mat + 1)
   if (transpose)     mat <- t(mat)
-  
+
   clust_na0 <- function(x) { x2 <- x; x2[!is.finite(x2)] <- 0; dist(x2) }
   bin_map <- NULL; n_orig <- ncol(mat)
-  
+
   if (ncol(mat) > 1000L) {
     mat     <- bin_heatmap_columns(mat, max_cols = 1000L)
     bin_map <- attr(mat, "bin_map")
@@ -3181,7 +3179,7 @@ plot_heatmap_plotly <- function(mat, color = "default", log_transform = FALSE, t
   row_ord <- tryCatch(hclust(clust_na0(mat), method = "complete")$order,
                       error = function(e) seq_len(nrow(mat)))
   mat <- mat[row_ord, , drop = FALSE]
-  
+
   hover_mat <- matrix("", nrow = nrow(mat), ncol = ncol(mat))
   for (j in seq_len(ncol(mat))) {
     cn <- colnames(mat)[j]
@@ -3194,19 +3192,19 @@ plot_heatmap_plotly <- function(mat, color = "default", log_transform = FALSE, t
       hover_mat[, j] <- cn
     }
   }
-  
+
   if (color == "default") {
     cscale <- list(list(0, "lightyellow"), list(1, "red"))
   } else {
     vcols  <- viridis::viridis(10, option = color)
     cscale <- lapply(seq_along(vcols) - 1, function(i) list(i / (length(vcols) - 1), vcols[i + 1]))
   }
-  
+
   show_ticks <- ncol(mat) <= 150
   bin_note   <- if (!is.null(bin_map))
     paste0("Binned: ", n_orig, "\u2192", ncol(mat),
            " representative peptide bins. Hover columns for members.") else NULL
-  
+
   plotly::plot_ly(x = colnames(mat), y = rownames(mat), z = mat, text = hover_mat,
                   type = "heatmap", colorscale = cscale,
                   hovertemplate = "%{text}<extra></extra>",
@@ -3223,7 +3221,7 @@ pca_scatter_plotly <- function(pca, labels, groups = NULL, color = "default",
   imp <- summary(pca)$importance[2, ] * 100
   npc <- ncol(pca$x)
   use3d <- (dim == "3d") && npc >= 3
-  
+
   d <- data.frame(PC1 = pca$x[, 1], PC2 = pca$x[, 2],
                   PC3 = if (npc >= 3) pca$x[, 3] else 0,
                   Label = labels,
@@ -3235,7 +3233,7 @@ pca_scatter_plotly <- function(pca, labels, groups = NULL, color = "default",
   cols <- if (color == "default")
     setNames(plotly_pal[((seq_len(n_grp) - 1) %% length(plotly_pal)) + 1], glev)
   else setNames(viridisLite::viridis(n_grp, option = color), glev)
-  
+
   mode <- if (show_labels) "markers+text" else "markers"
   p <- plotly::plot_ly()
   for (g in glev) {
@@ -3290,7 +3288,7 @@ plot_binders_plotly <- function(df, color = "default", percent = TRUE, alleles =
   allele_cols <- mhc_allele_cols(df)
   if (!is.null(alleles) && length(alleles) > 0) allele_cols <- intersect(allele_cols, alleles)
   shiny::validate(shiny::need(length(allele_cols) > 0, "No alleles selected."))
-  
+
   minrank <- suppressWarnings(do.call(pmin, c(df[, allele_cols, drop = FALSE], na.rm = TRUE)))
   d <- data.frame(Set = df$Set, min = minrank) %>%
     dplyr::mutate(class = dplyr::case_when(
@@ -3300,7 +3298,7 @@ plot_binders_plotly <- function(df, color = "default", percent = TRUE, alleles =
       TRUE            ~ "Non-binder")) %>%
     dplyr::count(Set, class, name = "n") %>%
     dplyr::group_by(Set) %>% dplyr::mutate(percent = 100 * n / sum(n)) %>% dplyr::ungroup()
-  
+
   build_binder_stack(d, catcol = "Set", percent = percent, orientation = orientation)
 }
 
@@ -3319,7 +3317,7 @@ plot_binders_per_allele_plotly <- function(df, color = "default", percent = TRUE
   allele_cols <- mhc_allele_cols(df)
   if (!is.null(alleles) && length(alleles) > 0) allele_cols <- intersect(allele_cols, alleles)
   shiny::validate(shiny::need(length(allele_cols) > 0, "No alleles selected."))
-  
+
   long <- df %>%
     tidyr::pivot_longer(cols = dplyr::all_of(allele_cols),
                         names_to = "Allele", values_to = "Rank") %>%
@@ -3333,19 +3331,19 @@ plot_binders_per_allele_plotly <- function(df, color = "default", percent = TRUE
     dplyr::group_by(Set, Allele) %>%
     dplyr::mutate(percent = if (sum(n) > 0) 100 * n / sum(n) else 0) %>%
     dplyr::ungroup()
-  
+
   long$Allele <- factor(long$Allele, levels = allele_cols)
-  
+
   # facet variable vs. y-axis category
   if (facet_by == "sample") { facet_col <- "Set";    cat_col <- "Allele" }
   else                      { facet_col <- "Allele"; cat_col <- "Set"    }
-  
-  facets <- levels(droplevels(long[[facet_col]])) 
+
+  facets <- levels(droplevels(long[[facet_col]]))
   figs <- lapply(seq_along(facets), function(i)
     build_binder_stack(long[long[[facet_col]] == facets[i], , drop = FALSE],
                        catcol = cat_col, percent = percent, orientation = orientation,
                        show_legend = (i == 1), title = facets[i]))
-  
+
   if (orientation == "h") {
     plotly::subplot(figs, nrows = length(figs), shareX = TRUE, titleY = FALSE,
                     heights = subplot_heights(length(figs)))
@@ -3364,7 +3362,7 @@ build_binder_stack <- function(d, catcol, percent = TRUE, show_legend = TRUE,
   horiz  <- orientation == "h"
   valfmt <- if (percent) ".1f}%" else ".0f}"
   vtitle <- if (percent) "% of peptides" else "# peptides"
-  
+
   p <- plotly::plot_ly()
   for (cl in class_levels) {
     dc <- d[d$class == cl, , drop = FALSE]
@@ -3383,11 +3381,11 @@ build_binder_stack <- function(d, catcol, percent = TRUE, show_legend = TRUE,
         hovertemplate = paste0("%{x}<br>", cl, ": %{y:", valfmt, "<extra></extra>"))
     }
   }
-  
+
   cat_order <- if (is.factor(d[[catcol]])) levels(droplevels(d[[catcol]])) else unique(d[[catcol]])
   ax_cat <- list(title = "", tickangle = if (horiz) 0 else -45,
                  categoryorder = "array", categoryarray = cat_order)
-  
+
   ax_val <- list(title = vtitle)
   p %>% plotly::layout(
     barmode = "stack",
@@ -3408,8 +3406,8 @@ Colum_mapping_table <- function(df, max_chars = 20) {
   #' @param df data.frame to display
   #' @param max_chars integer, maximum number of characters to show before truncating. Avoid wide columns
   #' @return data.frame with HTML <span> for truncated display
-  #' 
-  
+  #'
+
   # Convert all columns to character, handling lists
   df_display <- lapply(df, function(col) {
     if (is.list(col)) {
@@ -3421,7 +3419,7 @@ Colum_mapping_table <- function(df, max_chars = 20) {
     }
   })
   df_display <- as.data.frame(df_display, stringsAsFactors = FALSE)
-  
+
   # Truncate and add hover function
   df_display[] <- lapply(df_display, function(col) {
     sapply(col, function(x) {
@@ -3434,7 +3432,7 @@ Colum_mapping_table <- function(df, max_chars = 20) {
       sprintf('<span title="%s">%s</span>', full, short)
     }, USE.NAMES = FALSE)
   })
-  
+
   df_display
 }
 
@@ -3442,7 +3440,7 @@ render_summary_pre <- function(lst, height = "800px", font_size = "10px") {
   summary_text <- lapply(lst, summary)
   summary_lines <- lapply(summary_text, function(x) paste(capture.output(x), collapse = "\n"))
   full_text <- paste(summary_lines, collapse = "\n\n")
-  
+
   tags$pre(full_text, style = paste0(
     "height:", height, ";",
     "overflow-y:auto;",
@@ -3452,10 +3450,10 @@ render_summary_pre <- function(lst, height = "800px", font_size = "10px") {
 }
 
 summarize_binders <- function(df) {
-  
+
   # Select only HLA columns
   hla_cols <- mhc_allele_cols(df)
-  
+
   df %>%
     dplyr::select(all_of(hla_cols)) %>%
     pivot_longer(cols = everything(), names_to = "Allele", values_to = "Affinity") %>%
@@ -3476,11 +3474,11 @@ summarize_binders <- function(df) {
 #calcualte group comparison statistics
 compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_peptides_g2,
                                      g1, g2, pep_col, quantity_cols, col_map = NULL, use_measurements = FALSE) {
-  
+
   grp_g1 <- groups[[g1]]
   grp_g2 <- groups[[g2]]
 
- 
+
   if (!use_measurements) {
     n_g1 <- sum(sapply(grp_g1, function(s) length(intersect(quantity_cols, colnames(lst[[s]])))))
     n_g2 <- sum(sapply(grp_g2, function(s) length(intersect(quantity_cols, colnames(lst[[s]])))))
@@ -3488,10 +3486,10 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
     n_g1 <- length(grp_g1)
     n_g2 <- length(grp_g2)
   }
-  
+
   use_limma <- FALSE
   #use_limma <- n_g1 == 1 || n_g2 == 1
-  
+
   # ── Build long-format data ──────────────────────────────────────────────────
   build_long <- function(grp_items, grp_name, allowed) {
     #this is the standard sample mode: if no annotation table measurement data is given.
@@ -3551,14 +3549,14 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
         dplyr::mutate(Quantity = replace(Quantity, Quantity == 0, NA),
                       Group = grp_name)
     }
-    
+
   }
-  
+
   df_long <- dplyr::bind_rows(
     build_long(grp_g1, g1, allowed_peptides_g1),
     build_long(grp_g2, g2, allowed_peptides_g2)
   )
-  
+
   if (nrow(df_long) == 0) return(NULL)
   if (!"Quantity" %in% colnames(df_long)) {
     warning(paste0("[compute_group_comp_stats] 'Quantity' column missing from df_long. ",
@@ -3566,7 +3564,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
                    "; colnames=[", paste(colnames(df_long), collapse = ", "), "]"))
     return(NULL)
   }
-  
+
   # Bail out if either group has no quantifiable data (all NA/zero after imputation)
   if (!any(is.finite(df_long$Quantity[df_long$Group == g1]))) {
     message(paste0("[compute_group_comp_stats] Group '", g1, "' has no finite quantities — skipping comparison."))
@@ -3576,7 +3574,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
     message(paste0("[compute_group_comp_stats] Group '", g2, "' has no finite quantities — skipping comparison."))
     return(NULL)
   }
-  
+
   # ── Means and FC ─────────────────────────────────────────────────────────────
   summary_df <- df_long %>%
     dplyr::group_by(.data[[pep_col]]) %>%
@@ -3588,30 +3586,30 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
       A       = 0.5 * (log2(Mean_G1 + 1) + log2(Mean_G2 + 1)),
       .groups = "drop"
     )
-  
-  
+
+
   # ── P-values ──────────────────────────────────────────────────────────────────
   safe_limma_pvals <- function(df_g1, df_g2, qty_g1, qty_g2, pep_col) {
     if (!requireNamespace("limma", quietly = TRUE))
       stop("Package 'limma' is required for n=1 testing. Install via BiocManager::install('limma')")
-    
+
     mat_g1 <- as.matrix(df_g1 %>% dplyr::select(any_of(qty_g1)) %>% log2())
     mat_g2 <- as.matrix(df_g2 %>% dplyr::select(any_of(qty_g2)) %>% log2())
-    
+
     # align peptide rows
     peps   <- intersect(df_g1[[pep_col]], df_g2[[pep_col]])
     mat_g1 <- mat_g1[df_g1[[pep_col]] %in% peps, , drop = FALSE]
     mat_g2 <- mat_g2[df_g2[[pep_col]] %in% peps, , drop = FALSE]
-    
+
     combined <- cbind(mat_g1, mat_g2)
     group    <- factor(c(rep("g1", ncol(mat_g1)), rep("g2", ncol(mat_g2))))
     design   <- model.matrix(~group)
-    
+
     fit  <- limma::lmFit(combined, design)
     fit  <- limma::eBayes(fit)
     limma::topTable(fit, coef = 2, number = Inf, sort.by = "none")$P.Value
   }
-  
+
   if (use_limma) {
     df_g1 <- df_long[df_long$Group == g1, ]
     df_g2 <- df_long[df_long$Group == g2, ]
@@ -3631,7 +3629,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
       )
     test_method <- "t-test"
   }
-  
+
   # ── Combine and adjust ────────────────────────────────────────────────────────
   dplyr::left_join(summary_df, pval_df, by = pep_col) %>%
     dplyr::mutate(
@@ -3651,7 +3649,7 @@ compute_binder_summary <- function(df, alleles = NULL, strong = 0.5, weak = 2) {
   if (!is.null(alleles) && length(alleles) > 0){
     allele_cols <- intersect(allele_cols, alleles)
   }
-  
+
   df %>%
     tidyr::pivot_longer(cols = dplyr::all_of(allele_cols), names_to = "Allele", values_to = "Rank") %>%
     dplyr::mutate(
@@ -3676,9 +3674,9 @@ compute_binder_summary <- function(df, alleles = NULL, strong = 0.5, weak = 2) {
 }
 
 group_euler_plot <- function(sets, color = "default") {
-  
+
   fit <- eulerr::euler(sets)
-  
+
   if (color != "default") {
     fills <- viridisLite::viridis(
       length(sets),
@@ -3690,7 +3688,7 @@ group_euler_plot <- function(sets, color = "default") {
       "RdBu"
     )[seq_along(sets)]
   }
-  
+
   plot(
     fit,
     labels = TRUE,
@@ -3708,27 +3706,27 @@ group_euler_plot <- function(sets, color = "default") {
 group_volcano_plot <- function(df,sel,plot_name) {
   # Check if groups have data
   shiny::validate(shiny::need(any(!is.na(df$log2FC)) && any(!is.na(df$negLog10AdjP_BH)), "have data, but no log2FC and p-values."))
-  
+
   if (is.null(sel)) sel <- NA_character_  # <- avoids length 0
-  
+
   # Add 'selected' column
   volc_df <- df %>%
     dplyr::mutate(selected = !is.na(sel) & PEPTIDE == sel)
-  
+
   # Split by significance for plotting
   ns_df        <- volc_df %>% dplyr::filter(Significance == "Not significant")
   sig_df       <- volc_df %>% dplyr::filter(Significance == "Significant", !selected)
   selected_df  <- volc_df %>% dplyr::filter(selected)
-  
+
   #Axis setting
   safe_max_neglogp <- suppressWarnings(max(df$negLog10AdjP_BH, na.rm = TRUE))
   safe_min_fc      <- suppressWarnings(min(df$log2FC,   na.rm = TRUE))
   safe_max_fc      <- suppressWarnings(max(df$log2FC,   na.rm = TRUE))
-  
+
   if (!is.finite(safe_max_neglogp)) safe_max_neglogp <- 1
   if (!is.finite(safe_min_fc))      safe_min_fc <- -1
   if (!is.finite(safe_max_fc))      safe_max_fc <- 1
-  
+
   #Plotting
   plot_ly(source = "group_diff") %>%
     add_trace(
@@ -3780,10 +3778,10 @@ group_volcano_plot <- function(df,sel,plot_name) {
 #group comparison: P-value Histogram
 group_p_histogram <- function(df,plot_name) {
   shiny::validate(shiny::need(any(!is.na(df$negLog10AdjP_BH)), "have data, but no p-values."))
-  
+
   pvals <- 10^(-df$negLog10AdjP_BH)
   pvals <- pvals[is.finite(pvals) & pvals >= 0 & pvals <= 1]
-  
+
   plot_ly(
     x = pvals,
     type = "histogram",
@@ -3817,7 +3815,7 @@ group_p_histogram <- function(df,plot_name) {
         )
       )
     )
-  
+
 }
 
 #group comparison: MA plot
@@ -3825,16 +3823,16 @@ group_MA_plot <- function(df,sel,plot_name) {
   shiny::validate(shiny::need(any(!is.na(df$negLog10AdjP_BH)), "have data, but no Average values."))
 
   if (is.null(sel)) sel <- NA_character_  # <- avoids length 0
-  
+
   # Add 'selected' column
   ma_df <- df %>%
     dplyr::mutate(selected = !is.na(sel) & PEPTIDE == sel)
-  
+
   # Split by significance for plotting
   ns_df        <- ma_df %>% dplyr::filter(Significance == "Not significant")
   sig_df       <- ma_df %>% dplyr::filter(Significance == "Significant", !selected)
   selected_df  <- ma_df %>% dplyr::filter(selected)
-  
+
   plot_ly(source = "group_diff") %>%
     add_trace(
       data = ns_df,
@@ -3882,9 +3880,9 @@ group_MA_plot <- function(df,sel,plot_name) {
 #group comparison: Ranked Fold Change
 group_rank_FC <- function(df,plot_name,sel) {
   shiny::validate(shiny::need(any(!is.na(df$negLog10AdjP_BH)), "have data, but no log2FC values."))
-  
+
   if (is.null(sel)) sel <- NA_character_
-  
+
   rank_df <- df %>%
     dplyr::filter(!is.na(log2FC)) %>%
     arrange(log2FC) %>%          # ascending; use desc(log2FC) if you prefer
@@ -3892,12 +3890,12 @@ group_rank_FC <- function(df,plot_name,sel) {
       rank = row_number(),
       selected = !is.na(sel) & PEPTIDE == sel
     )
-  
+
   selected_df <- rank_df %>% dplyr::filter(selected)
   rest_df     <- rank_df %>% dplyr::filter(!selected)
-  
+
   plot_ly(source = "group_diff") %>%
-    
+
     # All peptides
     add_trace(
       data = rest_df,
@@ -3909,7 +3907,7 @@ group_rank_FC <- function(df,plot_name,sel) {
       marker = list(color = "grey40", size = 6),
       hoverinfo = "none"
     ) %>%
-    
+
     # Selected peptide
     add_trace(
       data = selected_df,
@@ -3953,7 +3951,7 @@ group_FC_table <- function(df) {
       Significance
     ) %>%
     arrange(adj_pval_BH)
-  
+
   DT::datatable(
     table_df,
     rownames = FALSE,
@@ -4000,12 +3998,12 @@ group_MA_plot_static <- function(df, plot_name) {
 group_p_histogram_static <- function(df, plot_name) {
   pvals <- 10^(-df$negLog10AdjP_BH)
   pvals <- pvals[is.finite(pvals) & pvals >= 0 & pvals <= 1]
-  
+
   if (length(pvals) == 0) {
     return(ggplot() + annotate("text", x=.5, y=.5, label="No p-values available",
                                size=4, colour="grey50") + theme_void())
   }
-  
+
   ggplot(data.frame(pval = pvals), aes(x = pval)) +
     geom_histogram(bins = 50, fill = "grey40", colour = "white") +
     geom_vline(xintercept = 0.05, linetype = "dashed", colour = "red") +
@@ -4020,7 +4018,7 @@ group_rank_FC_static <- function(df, plot_name) {
     dplyr::filter(!is.na(log2FC)) %>%
     arrange(log2FC) %>%
     dplyr::mutate(rank = row_number())
-  
+
   ggplot(rank_df, aes(x = rank, y = log2FC, colour = Significance)) +
     geom_point(size = 1.5, alpha = 0.7) +
     scale_colour_manual(values = c(
@@ -4036,30 +4034,26 @@ group_rank_FC_static <- function(df, plot_name) {
 #------Grids and precomputation for Markdown report---------
 #The functions here are specifically for the Markdown report, where all plots in the grid tabs need to be precomputed. Opposite of Shiny reactive.
 generate_motif_grid <- function(lst, lengths = 7:20) {
-  library(ggplot2)
-  library(ggseqlogo)
-  library(patchwork)  # for arranging plots
-  
   # global legend
   global_legend_plot <- ggseqlogo::ggseqlogo("ACDEFGHIKLMNPQRSTVWY") +
     ggplot2::theme_minimal() +
     ggplot2::ggtitle("Amino Acid Colors")
-  
+
   length_plots <- list()
-  
+
   for (L in lengths) {
     plots_per_length <- list()
-    
+
     # Add the legend at the top
     plots_per_length[[1]] <- global_legend_plot
-    
+
     for (sample_name in names(lst)) {
       df <- lst[[sample_name]]
-      
+
       df_L <- df[df$LENGTH == L, ]
       peptides <- unique(df_L[["STRIPPED"]])
       peptides <- peptides[nchar(peptides) == L]
-      
+
       if (length(peptides) < 5) {
         p <- ggplot() +
           annotate("text", x = 0.5, y = 0.5,
@@ -4069,14 +4063,14 @@ generate_motif_grid <- function(lst, lengths = 7:20) {
       } else {
         p <- plot_seqlogo(peptides, title = paste(sample_name, "• Length", L))
       }
-      
+
       plots_per_length[[length(plots_per_length) + 1]] <- p
     }
-    
+
     # Combine horizontally with patchwork
     length_plots[[paste0("Length_", L)]] <- wrap_plots(plots_per_length, ncol = 3)
   }
-  
+
   length_plots
 }
 
@@ -4098,7 +4092,7 @@ run_netmhcpan <- function(peptides, allele, netmhcpan_cmd) {
   peptide_file <- tempfile(fileext = ".txt")
   output_file  <- tempfile(fileext = ".txt")
   writeLines(peptides, peptide_file)
-  
+
   if (isTRUE(netmhcpan_use_wsl)) {
     peptide_p <- trimws(system2("wsl", c("wslpath","-a", shQuote(peptide_file)), stdout = TRUE))
     out_p     <- trimws(system2("wsl", c("wslpath","-a", shQuote(output_file)),  stdout = TRUE))
@@ -4112,13 +4106,13 @@ run_netmhcpan <- function(peptides, allele, netmhcpan_cmd) {
                         "-l", "8,9,10,11", "-xls", "-xlsfile", output_file),
                       stdout = NULL)
   }
-  
+
   if (status != 0)
     stop("netMHCpan exited with status ", status,
          ". Check the executable: ", netmhcpan_cmd)
   if (!file.exists(output_file))
     stop("netMHCpan ran but produced no output file. Check the netMHCpan installation.")
-  
+
   output_file
 }
 
@@ -4126,7 +4120,7 @@ run_netmhciipan <- function(peptides, allele, cmd) {
   peptide_file <- tempfile(fileext = ".txt")
   output_file  <- tempfile(fileext = ".txt")
   writeLines(peptides, peptide_file)
-  
+
   if (isTRUE(netmhcpan_use_wsl)) {
     pf <- trimws(system2("wsl", c("wslpath","-a", shQuote(peptide_file)), stdout = TRUE))
     of <- trimws(system2("wsl", c("wslpath","-a", shQuote(output_file)),  stdout = TRUE))
@@ -4147,15 +4141,15 @@ parse_netmhc_output <- function(output_file) {
   res <- read.table(output_file, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
   sub <- tolower(as.character(unlist(res[1, ])))
   res <- res[-1, , drop = FALSE]
-  
+
   pep_i   <- which(sub == "peptide")[1]
   rank_is <- which(grepl("rank", sub))
   el      <- rank_is[grepl("el", sub[rank_is])]
   rank_i  <- if (length(el)) el[1] else rank_is[1]
-  
+
   if (is.na(pep_i) || !length(rank_i))
     stop("Could not locate Peptide / Rank columns in netMHCpan output.")
-  
+
   data.frame(Peptide = as.character(res[[pep_i]]),
              Rank    = as.numeric(res[[rank_i]]),
              stringsAsFactors = FALSE)
@@ -4165,14 +4159,14 @@ parse_netmhc_output <- function(output_file) {
 .uniprot_ids_to_entrez <- function(entry_names, batch = 80) {
   entry_names <- unique(entry_names[nzchar(entry_names)])
   if (!length(entry_names)) return(character(0))
-  
+
   chunks <- split(entry_names, ceiling(seq_along(entry_names) / batch))
   urls <- vapply(chunks, function(ch) {
     q <- paste0("(id:", ch, ")", collapse = " OR ")
     paste0("https://rest.uniprot.org/uniprotkb/stream?query=",
            utils::URLencode(q, reserved = TRUE), "&fields=xref_geneid&format=tsv")
   }, character(1))
-  
+
   pool <- curl::new_pool()
   out  <- character(0)
   for (u in urls) {
@@ -4200,7 +4194,7 @@ parse_netmhc_output <- function(output_file) {
   entries <- protein_vec %>% strsplit(";") %>% unlist() %>% trimws()
   entries <- unique(entries[nzchar(entries)])
   acc_pat <- "^([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})$"
-  
+
   accs <- entry_names <- bare <- character(0)
   for (e in entries) {
     parts <- trimws(strsplit(e, "\\|")[[1]]); parts <- parts[nzchar(parts)]
@@ -4210,24 +4204,24 @@ parse_netmhc_output <- function(output_file) {
     if (length(en)) { entry_names <- c(entry_names, en[1]); next }  # 2) entry name → UniProt API only
     if (length(parts)) bare <- c(bare, parts[1])                    # 3) bare token → real gene symbol
   }
-  
+
   bmap <- function(x, from) tryCatch(
     suppressWarnings(clusterProfiler::bitr(unique(x), from, "ENTREZID", org.Hs.eg.db)),
     error = function(e) NULL)
-  
+
   entrez <- character(0)
   if (length(accs)) { m <- bmap(accs, "UNIPROT"); if (!is.null(m)) entrez <- c(entrez, m$ENTREZID) }
   if (length(bare)) { m <- bmap(bare, "SYMBOL");  if (!is.null(m)) entrez <- c(entrez, m$ENTREZID) }
   if (length(entry_names) && use_api ) {
     if(curl::has_internet()){
-      entrez <- c(entrez, .resolve_entry_names(entry_names)) 
+      entrez <- c(entrez, .resolve_entry_names(entry_names))
     } else {
       shiny::showNotification(
         "Protein Symbols need UniProt online resolution, but there is no internet connection.",
         type = "error", duration = 4)
     }
   }
-  
+
   unique(entrez)
 }
 
@@ -4241,16 +4235,16 @@ run_go_enrichment <- function(df, universe = NULL, bg_note = "whole genome",
       plotly::layout(title = list(text = m, font = list(size = 12, color = "grey40")),
                      xaxis = list(visible = FALSE), yaxis = list(visible = FALSE))
   }
-  
+
   fg <- .protein_to_entrez(df$PROTEIN[!is.na(df$log2FC) & df$Significance == "Significant"])
   if (length(fg) == 0) return(msg("No significant proteins mapped to genes"))
-  
+
   ego <- clusterProfiler::enrichGO(
     gene = fg, OrgDb = org.Hs.eg.db, keyType = "ENTREZID",
     ont = ont, pAdjustMethod = "BH", universe = universe, readable = TRUE)
   if (is.null(ego) || nrow(as.data.frame(ego)) == 0)
     return(msg(paste0("No significant GO terms (background: ", bg_note, ")")))
-  
+
   sub <- paste0("GO:", ont, " \u2022 background: ", bg_note)
   if (static) clusterProfiler::dotplot(ego, showCategory = show_n) + ggplot2::labs(subtitle = sub)
   else        go_dotplot_plotly(ego, show_n, subtitle = sub)
@@ -4270,7 +4264,7 @@ go_dotplot_plotly <- function(ego, show_n = 15, subtitle = NULL) {
   hover <- paste0("<b>", as.character(d$Description), "</b><br>",
                   "Adj. p: ", signif(d$p.adjust, 3), "<br>",
                   "Count: ", d$Count, " (", d$GeneRatio, ")<br>Genes: ", genes)
-  
+
   plotly::plot_ly(d, x = ~ratio, y = ~Description, type = "scatter", mode = "markers",
                   marker = list(size = ~msize, color = ~neglp, colorscale = "Viridis",
                                 showscale = TRUE, colorbar = list(title = "-log10(adj p)")),
@@ -4287,7 +4281,7 @@ run_string <- function(df, score_threshold = 400, static = FALSE, max_ids = 500)
   ids <- df_sig$PROTEIN %>% strsplit("[;|]") %>% unlist() %>% trimws()
   ids <- unique(ids[nzchar(ids) & !grepl("_CONTA", ids)])     # drop contaminants
   if (length(ids) == 0) return(NULL)
-  
+
   # distinct, reportable error type when the query would be unusably large
   if (length(ids) > max_ids) {
     stop(structure(
@@ -4297,7 +4291,7 @@ run_string <- function(df, score_threshold = 400, static = FALSE, max_ids = 500)
         length(ids), max_ids),
         call = NULL)))
   }
-  
+
   # POST (not GET) so a long identifier list never overflows the URL
   res <- tryCatch(
     httr::POST("https://string-db.org/api/json/network",
@@ -4307,12 +4301,12 @@ run_string <- function(df, score_threshold = 400, static = FALSE, max_ids = 500)
                encode = "form"),
     error = function(e) NULL)
   if (is.null(res) || httr::http_error(res)) return(NULL)
-  
+
   data <- tryCatch(jsonlite::fromJSON(httr::content(res, "text", encoding = "UTF-8")),
                    error = function(e) NULL)
   if (is.null(data) || length(data) == 0 ||
       !all(c("preferredName_A", "preferredName_B", "score") %in% names(data))) return(NULL)
-  
+
   if (static) {  # report path — ggraph image
     g <- igraph::graph_from_data_frame(
       data[, c("preferredName_A", "preferredName_B", "score")], directed = FALSE)
@@ -4322,7 +4316,7 @@ run_string <- function(df, score_threshold = 400, static = FALSE, max_ids = 500)
              ggraph::geom_node_text(ggplot2::aes(label = name), repel = TRUE) +
              ggplot2::theme_void())
   }
-  
+
   # app path — interactive visNetwork
   nodes <- data.frame(id = unique(c(data$preferredName_A, data$preferredName_B)),
                       stringsAsFactors = FALSE)
@@ -4330,7 +4324,7 @@ run_string <- function(df, score_threshold = 400, static = FALSE, max_ids = 500)
   edges <- data.frame(from = data$preferredName_A, to = data$preferredName_B,
                       value = data$score, title = paste0("score: ", round(data$score, 3)),
                       stringsAsFactors = FALSE)
-  
+
   visNetwork::visNetwork(nodes, edges) %>%
     visNetwork::visIgraphLayout(layout = "layout_with_fr") %>%   # static positions, physics OFF
     visNetwork::visNodes(shape = "dot", size = 14,
