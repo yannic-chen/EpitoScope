@@ -16,7 +16,7 @@ Encoding: UTF-8
 LazyData: true
 biocViews:
 Depends:
-    R (>= 4.1)
+    R (>= 4.3)
 Imports:
     shiny,
     bs4Dash,

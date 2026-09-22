@@ -41,7 +41,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
     ovr2 <- if (is.null(input$netmhcIIpan_override)) "" else input$netmhcIIpan_override
 
     if (os == "Windows") {
-      wsl_ok <- tryCatch(!is.null(system2("wsl", "--status", stdout = TRUE, stderr = TRUE)),
+      wsl_ok <- tryCatch(!is.null(suppressWarnings(system2("wsl", "--status", stdout = TRUE, stderr = TRUE))),
                          error = function(e) FALSE)
       wsl_available(wsl_ok)
       netmhcpan_use_wsl <<- TRUE

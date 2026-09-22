@@ -163,7 +163,8 @@ resolve_netmhcpan <- function(use_wsl, override = "", exe = "netMHCpan") {
     if (nzchar(override)) return(if (exists_wsl(override)) override else "")
 
     hit <- tryCatch(
-      system2("wsl", paste0("command -v ", exe, " 2>/dev/null"), stdout = TRUE, stderr = FALSE),
+      uppressWarnings(
+      system2("wsl", paste0("command -v ", exe, " 2>/dev/null"), stdout = TRUE, stderr = FALSE)),
       error = function(e) character(0))
     hit <- trimws(hit[nzchar(hit)])
     if (length(hit)) return(tail(hit, 1))
