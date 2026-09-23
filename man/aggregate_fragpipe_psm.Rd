@@ -7,6 +7,9 @@ We collapse by taking the row with maximum PeptideProphet.Probability or Probabi
 \usage{
 aggregate_fragpipe_psm(df)
 }
+\arguments{
+\item{df}{A FragPipe \code{psm.tsv} data frame to aggregate by raw file and modified peptide.}
+}
 \description{
 We groupby the fragpipe psm.tsv according to file and modified.peptide
 We collapse by taking the row with maximum PeptideProphet.Probability or Probability.

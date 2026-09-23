@@ -13,6 +13,15 @@ check_data_error(
   na_policy = c("any", "all", "ignore")
 )
 }
+\arguments{
+\item{data}{A data frame or a named list of data frames to validate.}
+
+\item{required_cols}{A character vector of required column names.}
+
+\item{na_policy}{How strictly to handle missing values: \code{"ignore"} allows any \code{NA},
+\code{"all"} errors when all values in a required column are \code{NA}, and \code{"any"}
+errors when any value in a required column is \code{NA}.}
+}
 \description{
 na_policy determines how strict we allow NAs:
 ignore: the columns can have any number of NA
