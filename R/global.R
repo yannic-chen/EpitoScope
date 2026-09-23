@@ -469,15 +469,16 @@ aa_comp_from_peptides <- function(peptides) {
   100 * freq / sum(freq)
 }
 
+#' This is the default data check before each individual analysis to detemrine if the data exists to do the analysis.
 #' @noRd
 check_data_error <- function(data, required_cols = NULL, na_policy = c("any", "all", "ignore")) {
-  #'na_policy determines how strict we allow NAs:
-  #'         ignore: the columns can have any number of NA
-  #'         allL: only if all values in column are NA, break operation
-  #'         any: if even just one NA exist, break it.
-  #'
-  #'
-  #'
+  #na_policy determines how strict we allow NAs:
+  #         ignore: the columns can have any number of NA
+  #         allL: only if all values in column are NA, break operation
+  #         any: if even just one NA exist, break it.
+  #
+  #
+  #
   na_policy <- match.arg(na_policy)
 
   stop_with_msg <- function(msg) {
@@ -1041,10 +1042,11 @@ get_midpoint <- function(x) { #this function retrieves the middle value given a 
   })
 }
 
+#' Aggregate FragPipe PSM rows into peptidoforms.
 #' @noRd
 aggregate_fragpipe_psm <- function(df) {
-  #' We groupby the fragpipe psm.tsv according to file and modified.peptide
-  #' We collapse by taking the row with maximum PeptideProphet.Probability or Probability.
+  # We groupby the fragpipe psm.tsv according to file and modified.peptide
+  # We collapse by taking the row with maximum PeptideProphet.Probability or Probability.
 
   df <- df %>%
     dplyr::mutate(

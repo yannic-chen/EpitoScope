@@ -1,10 +1,12 @@
 #' Launch the EpitoScope Shiny application
+#'
 #' @param input_variable Optional pre-loaded annotation table. Default `NULL`.
 #' @param generate_pseudo_sequence Logical, passed to the server. Default `FALSE`.
 #' @param custom_schema,custom_signature Optional named lists to extend/replace the schema.
 #' @param replace_schema Logical; replace vs. extend the built-in schema.
 #' @param db_path SQLite results DB path. Defaults under [tools::R_user_dir()].
 #' @param ... Passed to [shiny::shinyApp()].
+#' @return A Shiny app object
 #' @export
 run_app <- function(input_variable = NULL,
                     generate_pseudo_sequence = FALSE,
