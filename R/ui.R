@@ -145,7 +145,7 @@ app_ui <- function() {bs4DashPage(
     document.querySelectorAll('.card').forEach(function(c){
       mo.observe(c, { attributes: true });
     });
-    // cards rendered later (renderUI) — observe on the fly
+    // cards rendered later (renderUI) - observe on the fly
     var bodyMo = new MutationObserver(function(muts){
       muts.forEach(function(m){
         m.addedNodes.forEach(function(n){
@@ -568,7 +568,7 @@ window.fitExportPaper = function(){
                                c("Whole genome" = "genome", "Detected proteins" = "detected", "Custom list" = "custom"),
                                selected = "genome", inline = TRUE),
                   conditionalPanel("input.go_background == 'custom'",
-                                   textAreaInput("go_custom_ids", "Custom background — UniProt IDs (space/comma/newline separated):",
+                                   textAreaInput("go_custom_ids", "Custom background - UniProt IDs (space/comma/newline separated):",
                                                  rows = 4, placeholder = "P04439\nP01889\n...")),
 
                   # --- warning box: only visible for detected/custom ---
@@ -775,13 +775,13 @@ window.fitExportPaper = function(){
       ),
 
       bs4TabItem(tabName = "SQL_query",
-                 bs4Card(title = "SQL help — click to expand", width = 12, collapsible = TRUE, collapsed = TRUE,
+                 bs4Card(title = "SQL help - click to expand", width = 12, collapsible = TRUE, collapsed = TRUE,
                          tags$p("A query reads: ", tags$code("SELECT columns FROM table WHERE conditions"), "."),
                          tags$b("Tables:"),
                          tags$ul(
-                           tags$li(tags$code("analyses"), " — one row per saved run."),
-                           tags$li(tags$code("sample_metadata"), " — per-measurement info, long form (field_name / field_value)."),
-                           tags$li(tags$code("peptides"), " — the data: STRIPPED, PROTEIN, quantity, SCORE, RT, MZ, LENGTH…")),
+                           tags$li(tags$code("analyses"), " - one row per saved run."),
+                           tags$li(tags$code("sample_metadata"), " - per-measurement info, long form (field_name / field_value)."),
+                           tags$li(tags$code("peptides"), " - the data: STRIPPED, PROTEIN, quantity, SCORE, RT, MZ, LENGTH...")),
                          tags$b("Try these:"),
                          tags$pre("SELECT * FROM analyses LIMIT 20;"),
                          tags$pre("SELECT DISTINCT field_name FROM sample_metadata;")
@@ -796,7 +796,7 @@ window.fitExportPaper = function(){
       ),
       bs4TabItem(tabName = "SQL_browser",
                  bs4Card(title = "Browse tables", width = 12,
-                         helpText("Pick a table to view its rows — filter and search the columns directly. ",
+                         helpText("Pick a table to view its rows - filter and search the columns directly. ",
                                   "For questions that combine tables, use ", tags$b("query SQL"), "."),
                          selectInput("browse_table", "Table:", choices = NULL),
                          DT::DTOutput("browse_result")

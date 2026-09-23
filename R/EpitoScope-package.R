@@ -37,5 +37,6 @@ utils::globalVariables(c(
   "adj_pval_BH", "adj_pval_Bonf", "allele", "coalesced", "final_name",
   "hl", "log2FC", "name", "negLog10AdjP_BH", "netMHCpan",
   "netmhcpan_use_wsl", "original_name", "peptide", "peptide_id", "perc",
-  "pval", "score", "selected", "value", "y"
+  "pval", "score", "selected", "value", "y",
+  "CHARGE", "K0", "LENGTH", "MAX_QUANTITY", "MZ", "PEPTIDE", "PTM", "STRIPPED"
 ))

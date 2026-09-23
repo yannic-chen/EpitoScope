@@ -150,8 +150,8 @@ signature <- list(
 )
 
 #-----------Helper functions------------------
-# Resolve the netMHCpan executable. Returns the command to run — an absolute path,
-# or a bare name found on PATH — or "" if not found. Pure: no reactives/inputs.
+# Resolve the netMHCpan executable. Returns the command to run - an absolute path,
+# or a bare name found on PATH - or "" if not found. Pure: no reactives/inputs.
 #   use_wsl  : TRUE on Windows (call through WSL), FALSE for native Linux/macOS
 #   override : optional explicit path; if given and valid, it wins
 resolve_netmhcpan <- function(use_wsl, override = "", exe = "netMHCpan") {
@@ -163,7 +163,7 @@ resolve_netmhcpan <- function(use_wsl, override = "", exe = "netMHCpan") {
     if (nzchar(override)) return(if (exists_wsl(override)) override else "")
 
     hit <- tryCatch(
-      uppressWarnings(
+      suppressWarnings(
       system2("wsl", paste0("command -v ", exe, " 2>/dev/null"), stdout = TRUE, stderr = FALSE)),
       error = function(e) character(0))
     hit <- trimws(hit[nzchar(hit)])
@@ -191,10 +191,10 @@ safe_reactive <- function(x) {
 safe_validate <- function(cond, message) {
   if (!cond) {
     if (isTRUE(getOption("knitr.in.progress"))) {
-      # In R Markdown → DO NOT STOP
+      # In R Markdown -> DO NOT STOP
       return(list(.skip = TRUE, message = message))
     } else {
-      # In Shiny → show validation message
+      # In Shiny -> show validation message
       shiny::validate(shiny::need(FALSE, message))
     }
   }
@@ -469,6 +469,7 @@ aa_comp_from_peptides <- function(peptides) {
   100 * freq / sum(freq)
 }
 
+#' @noRd
 check_data_error <- function(data, required_cols = NULL, na_policy = c("any", "all", "ignore")) {
   #'na_policy determines how strict we allow NAs:
   #'         ignore: the columns can have any number of NA
@@ -575,7 +576,7 @@ plot_per_sample_grid <- function(lst, plot_fn, ncol = 2, ...) {
       print(
         ggplot() +
           annotate("text", x = .5, y = .5,
-                   label = "Plot window too small — resize the Plots pane and regenerate.",
+                   label = "Plot window too small - resize the Plots pane and regenerate.",
                    size = 4, color = "grey40") +
           theme_void()
       )
@@ -593,7 +594,7 @@ plot_motif_grid <- function(lst, lengths, ncol = 3,
     sample_plots <- lapply(names(lst), function(nm) {
       df <- lst[[nm]]
 
-      # PTM filter — only modified peptides
+      # PTM filter - only modified peptides
       if (ptm_only) {
         df <- df[!is.na(df$PTM) & df$PTM != "", ]
         peptide_col <- "PTM_Pseudo"
@@ -612,14 +613,14 @@ plot_motif_grid <- function(lst, lengths, ncol = 3,
                      label = "Not enough peptides",
                      size = 3, color = "grey50") +
             theme_void() +
-            ggtitle(paste(nm, "• Length", L))
+            ggtitle(paste(nm, "- Length", L))
         )
       }
 
       par(mar = c(1.5, 1.5, 2, 0.5))
       plot_seqlogo(
         peptides,
-        title     = paste(nm, "• Length", L),
+        title     = paste(nm, "- Length", L),
         namespace = namespace
       )
     })
@@ -658,13 +659,13 @@ build_generic_schema <- function(schema) {
 }
 
 register_custom_schema <- function(custom_schema    = NULL, custom_signature = NULL,replace_schema   = FALSE) {
-  # Capture all_keys before any nulling — needed for filling missing keys
+  # Capture all_keys before any nulling - needed for filling missing keys
   all_keys <- names(column_schema[[1]])
 
   if (!is.null(custom_schema)) {
 
     if (replace_schema) {
-      column_schema <<- list()  # empty list rather than NULL — safer for [[<- assignment
+      column_schema <<- list()  # empty list rather than NULL - safer for [[<- assignment
       message("Replaced default schema.")
     }
 
@@ -698,7 +699,7 @@ register_custom_schema <- function(custom_schema    = NULL, custom_signature = N
   if (!is.null(custom_signature)) {
 
     if (replace_schema) {
-      signature <<- list()  # same — empty list rather than NULL
+      signature <<- list()  # same - empty list rather than NULL
       message("Replaced default signature.")
     }
 
@@ -716,7 +717,7 @@ check_annotation_table <- function(df) {
   colnames(df) <- tolower(colnames(df))
   header <- colnames(df)
 
-  # ── Required columns ──────────────────────────────────────────────────────
+  # -- Required columns --------------------------------------------------
   if(!("name" %in% header && "source" %in% header)) {
     stop("Missing either Name or Source in Annotation Table")
   }
@@ -725,7 +726,7 @@ check_annotation_table <- function(df) {
   distinctmap <- all(tapply(df$name, df$source, function(x) length(unique(x)) == 1))
 
   if(!all(distinctmap)) {
-    stop("Some 'source' files map to multiple 'name' values — each source must only map to one name.")
+    stop("Some 'source' files map to multiple 'name' values - each source must only map to one name.")
   }
 
   if(ncol(df) == 2) {
@@ -742,7 +743,7 @@ check_annotation_table <- function(df) {
   replicate_cols  <- dplyr::intersect(c("biological_replicate", "technical_replicate"), header)
 
 
-  # ── Type coercion ─────────────────────────────────────────────────────────
+  # -- Type coercion ---------------------------------------------------------
   if (length(condition_cols) > 0) {
     df[condition_cols] <- lapply(df[condition_cols], as.character)
   }
@@ -750,7 +751,7 @@ check_annotation_table <- function(df) {
     df[replicate_cols] <- lapply(df[replicate_cols], as.character)
   }
 
-  # ── Measurement column ────────────────────────────────────────────────────
+  # -- Measurement column ----------------------------------------------------
 
   if(has_measurement) {
     #measurement must be distinct.
@@ -780,7 +781,7 @@ check_annotation_table <- function(df) {
       }
   }
 
-  # ── Attach metadata as attributes for downstream use ──────────────────────
+  # -- Attach metadata as attributes for downstream use ----------------------
   attr(df, "replicate_cols") <- replicate_cols
   attr(df, "condition_cols") <- condition_cols
   attr(df, "has_measurement") <- has_measurement
@@ -871,10 +872,10 @@ build_measurement_col_map <- function(data_list, annotation_df) {
 
 # Evaluate a condition expression against an annotation data.frame.
 # expr_terms: list of list(col, val, op)
-#   col — condition column name
-#   val — character vector of selected values
-#   op  — NULL for first term; "AND", "OR", or "NOT" for subsequent terms
-# Returns a named logical vector: sample_name → TRUE/FALSE
+#   col - condition column name
+#   val - character vector of selected values
+#   op  - NULL for first term; "AND", "OR", or "NOT" for subsequent terms
+# Returns a named logical vector: sample_name -> TRUE/FALSE
 eval_condition_expr <- function(expr_terms, ann_df) {
   if (length(expr_terms) == 0) return(setNames(logical(0), character(0)))
 
@@ -1040,6 +1041,7 @@ get_midpoint <- function(x) { #this function retrieves the middle value given a 
   })
 }
 
+#' @noRd
 aggregate_fragpipe_psm <- function(df) {
   #' We groupby the fragpipe psm.tsv according to file and modified.peptide
   #' We collapse by taking the row with maximum PeptideProphet.Probability or Probability.
@@ -1239,7 +1241,7 @@ normalize_df <- function(df) {
   #CHARGE
   if (!"CHARGE" %in% colnames(df)) {
     df$CHARGE <- 0
-    message("Charge column missing → set to 0")
+    message("Charge column missing -> set to 0")
     original <- rbind(original, data.frame(final_name = "CHARGE", original_name = "[no CHARGE column]", stringsAsFactors = FALSE))
   } else {
     df$CHARGE <- sapply(as.character(df$CHARGE), function(x) {
@@ -1257,7 +1259,7 @@ normalize_df <- function(df) {
   #PEPTIDE
   if (!"PEPTIDE" %in% colnames(df)) {
     df$PEPTIDE <- df$STRIPPED
-    message("Peptidoform column missing: STRIPPED → PEPTIDE")
+    message("Peptidoform column missing: STRIPPED -> PEPTIDE")
     original <- rbind(original, data.frame(final_name = "PEPTIDE", original_name = "[= STRIPPED]", stringsAsFactors = FALSE))
   } else {
     uniq <- unique(df$PEPTIDE)
@@ -1268,13 +1270,13 @@ normalize_df <- function(df) {
   #LENGTH
   if (!"LENGTH" %in% colnames(df)) {
     df$LENGTH <- nchar(df$STRIPPED)
-    message("Length column missing → calculated from peptide")
+    message("Length column missing -> calculated from peptide")
     original <- rbind(original, data.frame(final_name = "LENGTH", original_name = "[Calculated]", stringsAsFactors = FALSE))
   }
   #M/Z
   if (!"MASS" %in% colnames(df) & "CHARGE" %in% colnames(df) & "MZ" %in% colnames(df)) {
     df$MASS <- df$MZ * df$CHARGE
-    message("Mass column missing → calculated from m/z and charge")
+    message("Mass column missing -> calculated from m/z and charge")
     original <- rbind(original, data.frame(final_name = "MASS", original_name = "[MZ * CHARGE]", stringsAsFactors = FALSE))
   }
 
@@ -1294,7 +1296,7 @@ normalize_df <- function(df) {
       }
     } else {
       df$K0 <- 0
-      message("Ion mobility column missing → set to 0")
+      message("Ion mobility column missing -> set to 0")
       original <- rbind(original, data.frame(final_name = "K0", original_name = "[no Ion Mobility column]", stringsAsFactors = FALSE))
     }
   }
@@ -1514,7 +1516,7 @@ prepare_peptide_matrix <- function(lst, groups, quantity_cols, group_peptide_set
 
       df_group <- df_group[df_group$STRIPPED %in% allowed_peptides, ]
 
-      # Vectorized row-wise max — avoids c_across row-by-row overhead
+      # Vectorized row-wise max - avoids c_across row-by-row overhead
       qty_present  <- intersect(quantity_cols, colnames(df_group))
       qty_mat      <- as.matrix(df_group[, qty_present, drop = FALSE])
       df_group$value <- do.call(pmax, c(as.data.frame(qty_mat), list(na.rm = TRUE)))
@@ -1660,7 +1662,7 @@ plot_unique_counts <- function(lst, column, y_label, transform_fn = identity, co
       meas_cols <- intersect(quantity_cols, colnames(df))
 
       if (length(meas_cols) == 0) {
-        # No measurement columns in this sample — fall back to total unique count
+        # No measurement columns in this sample - fall back to total unique count
         return(data.frame(Sample = s, Mean = length(unique(transform_fn(df[[column]]))),
                           Min = NA_real_, Max = NA_real_, stringsAsFactors = FALSE))
       }
@@ -1670,7 +1672,7 @@ plot_unique_counts <- function(lst, column, y_label, transform_fn = identity, co
         detected <- if (any(is.na(col))) {
           !is.na(col)       # NA = not found; 0 and >0 both mean found
         } else {
-          col > 0           # no NAs → 0 means not found
+          col > 0           # no NAs -> 0 means not found
         }
         length(unique(transform_fn(df[[column]][detected])))
       })
@@ -2588,7 +2590,7 @@ dynamic_range_plot_combined <- function(df_list, data_col = "MAX_QUANTITY", colo
   }
   if (!any_points) return(empty_msg("No data points available to display"))
 
-  # Highlight traces — appended AFTER all sample traces (indices n_samples, n_samples+1)
+  # Highlight traces - appended AFTER all sample traces (indices n_samples, n_samples+1)
   p <- p %>%
     plotly::add_trace(type = "scattergl", mode = "markers",
                       x = numeric(0), y = numeric(0), text = character(0), hoverinfo = "text",
@@ -3125,7 +3127,7 @@ plot_correlation_heatmap_interactive <- function(cor_mat, color = "default",
   side <- if (!is.null(groups)) data.frame(Sample = as.factor(groups)) else NULL
 
   if (cluster_mode == "sample" && !is.null(groups)) {
-    # order by sample; side-bar shows the blocks (Colv/Rowv FALSE → order preserved)
+    # order by sample; side-bar shows the blocks (Colv/Rowv FALSE -> order preserved)
     ord     <- order(groups)
     cor_mat <- cor_mat[ord, ord, drop = FALSE]
     if (!is.null(side)) side <- side[ord, , drop = FALSE]
@@ -3159,6 +3161,32 @@ plot_correlation_heatmap_interactive <- function(cor_mat, color = "default",
     col_side_colors = side,
     showticklabels  = c(show_tick, show_tick),
     key.title       = label)
+}
+
+# Plain-plotly correlation heatmap for the HTML report (heatmaply widgets
+# don't embed reliably in self-contained rmarkdown; plot_ly does).
+plot_correlation_heatmap_plotly <- function(cor_mat, color = "default",
+                                            label = "Pearson", cluster = TRUE, limits = NULL) {
+  if (isTRUE(cluster) && ncol(cor_mat) > 2) {
+    cm <- cor_mat; cm[!is.finite(cm)] <- 0                  # NaN-safe ordering
+    ord <- stats::hclust(stats::dist(cm), method = "complete")$order
+    cor_mat <- cor_mat[ord, ord, drop = FALSE]
+  }
+  anchors <- if (color == "default") c("lightyellow", "orange", "red")
+  else viridisLite::viridis(3, option = color)
+  cols <- grDevices::colorRampPalette(anchors)(11)
+  colorscale <- Map(function(i, c) list((i - 1) / (length(cols) - 1), c),
+                    seq_along(cols), cols)
+  rng <- if (is.null(limits)) range(cor_mat, na.rm = TRUE) else limits
+  if (length(rng) != 2 || any(!is.finite(rng)) || diff(rng) == 0) {   # avoid "axis scaling" crash
+    center <- if (any(is.finite(rng))) rng[is.finite(rng)][1] else 0
+    rng <- c(center - 0.5, center + 0.5)
+  }
+  plotly::plot_ly(x = colnames(cor_mat), y = rownames(cor_mat), z = cor_mat,
+                  type = "heatmap", colorscale = colorscale,
+                  zmin = rng[1], zmax = rng[2], colorbar = list(title = label)) %>%
+    plotly::layout(xaxis = list(tickangle = -45),
+                   yaxis = list(autorange = "reversed"))
 }
 
 #This is only for the html report, since it doesnt have the interactivity of shiny.
@@ -3425,7 +3453,7 @@ Colum_mapping_table <- function(df, max_chars = 20) {
   df_display[] <- lapply(df_display, function(col) {
     sapply(col, function(x) {
       short <- if (nchar(x, type = "width") > max_chars) {
-        paste0(substr(x, 1, max_chars), "…")
+        paste0(substr(x, 1, max_chars), "...")
       } else {
         x
       }
@@ -3491,7 +3519,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
   use_limma <- FALSE
   #use_limma <- n_g1 == 1 || n_g2 == 1
 
-  # ── Build long-format data ──────────────────────────────────────────────────
+  # -- Build long-format data --------------------------------------------------
   build_long <- function(grp_items, grp_name, allowed) {
     #this is the standard sample mode: if no annotation table measurement data is given.
     if (!use_measurements) {
@@ -3568,15 +3596,15 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
 
   # Bail out if either group has no quantifiable data (all NA/zero after imputation)
   if (!any(is.finite(df_long$Quantity[df_long$Group == g1]))) {
-    message(paste0("[compute_group_comp_stats] Group '", g1, "' has no finite quantities — skipping comparison."))
+    message(paste0("[compute_group_comp_stats] Group '", g1, "' has no finite quantities - skipping comparison."))
     return(NULL)
   }
   if (!any(is.finite(df_long$Quantity[df_long$Group == g2]))) {
-    message(paste0("[compute_group_comp_stats] Group '", g2, "' has no finite quantities — skipping comparison."))
+    message(paste0("[compute_group_comp_stats] Group '", g2, "' has no finite quantities - skipping comparison."))
     return(NULL)
   }
 
-  # ── Means and FC ─────────────────────────────────────────────────────────────
+  # -- Means and FC -------------------------------------------------------------
   summary_df <- df_long %>%
     dplyr::group_by(.data[[pep_col]]) %>%
     dplyr::summarise(
@@ -3589,7 +3617,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
     )
 
 
-  # ── P-values ──────────────────────────────────────────────────────────────────
+  # -- P-values ------------------------------------------------------------------
   safe_limma_pvals <- function(df_g1, df_g2, qty_g1, qty_g2, pep_col) {
     if (!requireNamespace("limma", quietly = TRUE))
       stop("Package 'limma' is required for n=1 testing. Install via BiocManager::install('limma')")
@@ -3631,7 +3659,7 @@ compute_group_comp_stats <- function(lst, groups, allowed_peptides_g1, allowed_p
     test_method <- "t-test"
   }
 
-  # ── Combine and adjust ────────────────────────────────────────────────────────
+  # -- Combine and adjust --------------------------------------------------------
   dplyr::left_join(summary_df, pval_df, by = pep_col) %>%
     dplyr::mutate(
       adj_pval_BH       = p.adjust(pval, method = "BH"),
@@ -4062,7 +4090,7 @@ generate_motif_grid <- function(lst, lengths = 7:20) {
                    size = 6, color = "red") +
           theme_void()
       } else {
-        p <- plot_seqlogo(peptides, title = paste(sample_name, "• Length", L))
+        p <- plot_seqlogo(peptides, title = paste(sample_name, "- Length", L))
       }
 
       plots_per_length[[length(plots_per_length) + 1]] <- p
@@ -4156,7 +4184,7 @@ parse_netmhc_output <- function(output_file) {
              stringsAsFactors = FALSE)
 }
 
-# UniProt entry-name → Entrez via synchronous stream endpoint. REST API didnt work.
+# UniProt entry-name -> Entrez via synchronous stream endpoint. REST API didnt work.
 .uniprot_ids_to_entrez <- function(entry_names, batch = 80) {
   entry_names <- unique(entry_names[nzchar(entry_names)])
   if (!length(entry_names)) return(character(0))
@@ -4186,7 +4214,7 @@ parse_netmhc_output <- function(output_file) {
 }
 
 ##----GO-term-------------
-# memoised: same protein set → resolved once per session (cache key = sorted-unique set)
+# memoised: same protein set -> resolved once per session (cache key = sorted-unique set)
 .resolve_entry_names <- memoise::memoise(
   function(ids) .uniprot_ids_to_entrez(sort(unique(ids))),
   cache = memoise::cache_filesystem("uniprot_cache"))
@@ -4200,10 +4228,10 @@ parse_netmhc_output <- function(output_file) {
   for (e in entries) {
     parts <- trimws(strsplit(e, "\\|")[[1]]); parts <- parts[nzchar(parts)]
     acc   <- parts[grepl(acc_pat, parts)]
-    if (length(acc)) { accs <- c(accs, acc[1]); next }              # 1) accession present → use it
+    if (length(acc)) { accs <- c(accs, acc[1]); next }              # 1) accession present -> use it
     en <- parts[grepl("_", parts)]
-    if (length(en)) { entry_names <- c(entry_names, en[1]); next }  # 2) entry name → UniProt API only
-    if (length(parts)) bare <- c(bare, parts[1])                    # 3) bare token → real gene symbol
+    if (length(en)) { entry_names <- c(entry_names, en[1]); next }  # 2) entry name -> UniProt API only
+    if (length(parts)) bare <- c(bare, parts[1])                    # 3) bare token -> real gene symbol
   }
 
   bmap <- function(x, from) tryCatch(
@@ -4308,7 +4336,7 @@ run_string <- function(df, score_threshold = 400, static = FALSE, max_ids = 500)
   if (is.null(data) || length(data) == 0 ||
       !all(c("preferredName_A", "preferredName_B", "score") %in% names(data))) return(NULL)
 
-  if (static) {  # report path — ggraph image
+  if (static) {  # report path - ggraph image
     g <- igraph::graph_from_data_frame(
       data[, c("preferredName_A", "preferredName_B", "score")], directed = FALSE)
     return(ggraph::ggraph(g, layout = "fr") +
@@ -4318,7 +4346,7 @@ run_string <- function(df, score_threshold = 400, static = FALSE, max_ids = 500)
              ggplot2::theme_void())
   }
 
-  # app path — interactive visNetwork
+  # app path - interactive visNetwork
   nodes <- data.frame(id = unique(c(data$preferredName_A, data$preferredName_B)),
                       stringsAsFactors = FALSE)
   nodes$label <- nodes$id

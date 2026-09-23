@@ -155,7 +155,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
   peptide_wide_unique <- reactive(NULL)
   annotation_provided <- reactiveVal(FALSE)
   annotation_df_r <- reactiveVal(NULL)
-  condition_groups_r <- reactiveVal(list())  # list(name → list(samples, expr))
+  condition_groups_r <- reactiveVal(list())  # list(name -> list(samples, expr))
   active_expr_r      <- reactiveVal(list())  # expression being built
   editing_group_r    <- reactiveVal(NULL)    # name of group being edited, or NULL
   measurement_col_map_r <- reactiveVal(NULL)
@@ -176,7 +176,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
       }
 
       if (is.data.frame(input_variable)) {
-        # Annotation table provided — load data from it
+        # Annotation table provided - load data from it
         loaded <- load_from_annotation(input_variable)
         annotation_provided(TRUE)
         raw_list_r(loaded)
@@ -737,7 +737,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
             shiny::validate(shiny::need(length(peptides) >= 5, "Not enough peptides. Need at least 5"))
 
             par(mar = c(1.5, 1.5, 2, 0.5))
-            plot_seqlogo(peptides,title = paste(sample_val, "• Length", length_val))
+            plot_seqlogo(peptides,title = paste(sample_val, "- Length", length_val))
           })
         })
       }
@@ -1091,13 +1091,13 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
       footer = modalButton("Close")
     ))
 
-    # Motif plot — one panel per length
+    # Motif plot - one panel per length
     output$upset_modal_motif <- renderPlot({
       if (length(lengths_present) == 0) {
         return(
           ggplot() +
             annotate("text", x = .5, y = .5,
-                     label = "No peptides with length 7–15 in this intersection.",
+                     label = "No peptides with length 7-15 in this intersection.",
                      size = 5, color = "grey40") +
             theme_void()
         )
@@ -1392,7 +1392,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
     req(length(cond_cols) > 0)
 
     tagList(
-      # ── Expression builder ──────────────────────────────────────────
+      # -- Expression builder ------------------------------------------
       tags$div(class = "well",
                tags$h6(tags$strong("Build expression")),
                fluidRow(
@@ -1409,7 +1409,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
                tags$h6(tags$strong("Sample mask preview:")),
                tableOutput("cond_mask_table")
       ),
-      # ── Save / update group ─────────────────────────────────────────
+      # -- Save / update group -----------------------------------------
       tags$div(class = "well",
                uiOutput("cond_edit_banner"),
                fluidRow(
@@ -1417,7 +1417,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
                  column(4, tags$br(), uiOutput("cond_save_btn_ui"))
                )
       ),
-      # ── Saved groups ────────────────────────────────────────────────
+      # -- Saved groups ------------------------------------------------
       uiOutput("cond_saved_groups_ui"),
       tableOutput("cond_membership_table")
     )
@@ -1982,7 +1982,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
       if (cn %in% names(hdata$bin_map)) hdata$bin_map[[cn]] else cn))
 
     if (length(pep_names) > 2000) {
-      showNotification(paste0(length(pep_names), " peptides in view — zoom in more."),
+      showNotification(paste0(length(pep_names), " peptides in view - zoom in more."),
                        type = "warning", duration = 8)
       return()
     }
@@ -2341,7 +2341,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
 
             plot_seqlogo(
               peptides,
-              title = paste(sample_val, "• Length", length_val),
+              title = paste(sample_val, "- Length", length_val),
               namespace = namespace
             )
           })
@@ -2381,9 +2381,9 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
 
         # Determine which peptides need prediction
         if (!(al_conversion %in% colnames(cache)[-1])) {
-          peptides_to_predict <- peptides       # new allele → predict all peptides
+          peptides_to_predict <- peptides       # new allele -> predict all peptides
         } else {
-          peptides_to_predict <- cache$Peptide[is.na(cache[[al_conversion]])]  # existing allele → only new peptides
+          peptides_to_predict <- cache$Peptide[is.na(cache[[al_conversion]])]  # existing allele -> only new peptides
           peptides_to_predict <- unique(peptides_to_predict[nchar(peptides_to_predict) %in% 8:11])
         }
 
@@ -2434,7 +2434,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
     req(cache, input$HLA_alleles_II)
 
     peptides <- unique(unlist(lapply(lst, `[[`, "STRIPPED"), use.names = FALSE))
-    peptides <- peptides[nchar(peptides) >= 9]          # class II: no 8–11 cap; core is 9mer
+    peptides <- peptides[nchar(peptides) >= 9]          # class II: no 8-11 cap; core is 9mer
     shiny::validate(shiny::need(length(peptides) > 0, "No peptides of suitable length."))
 
     withProgress(message = "Running netMHCIIpan predictions...", value = 0, {
@@ -2741,7 +2741,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
                 value = tryCatch(unname(Sys.info()[["user"]]), error = function(e) "")),
       textAreaInput("meta_description", "Run description / notes:", rows = 2),
       tags$hr(),
-      tags$b("Per-measurement metadata — double-click a cell to edit:"),
+      tags$b("Per-measurement metadata - double-click a cell to edit:"),
       rhandsontable::rHandsontableOutput("meta_edit_table"),
       footer = tagList(modalButton("Cancel"),
                        actionButton("confirm_save_db", "Save to database",
@@ -2889,7 +2889,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
     data_mod_map(dmm)
     software_r(loaded$software)
 
-    # annotation / grouping — route through the SAME validator as an upload
+    # annotation / grouping - route through the SAME validator as an upload
     ann <- if (!is.null(loaded$annotation))
       tryCatch(check_annotation_table(loaded$annotation), error = function(e) {
         showNotification(paste("Annotation rebuild skipped:", conditionMessage(e)),
@@ -3247,18 +3247,18 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
     lapply(motif_plot_length, function(L){
       force(L)                                   # capture L per closure
       list(
-        title  = paste("Sequence motif — length", L), engine = "ggplot",
+        title  = paste("Sequence motif - length", L), engine = "ggplot",
         build  = function(font, palette){
           lst <- processed_data_list()
           panel_grid(lst, function(df, s){
             peps <- unique(df$STRIPPED[df$LENGTH == L])
             if (length(peps) < 5) return(NULL)   # panel_grid drops NULLs
-            scale_font(plot_seqlogo(peps, title = paste(s, "• Length", L)), font)
+            scale_font(plot_seqlogo(peps, title = paste(s, "- Length", L)), font)
           })
         }
       )
     }),
-    paste0("motif_len_", motif_plot_length)      # keys: motif_len_7 … motif_len_20
+    paste0("motif_len_", motif_plot_length)      # keys: motif_len_7 ... motif_len_20
   )
   export_catalog <- c(export_catalog, motif_entries)
 
@@ -3274,7 +3274,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
   .exp-content-row { flex: 1 1 auto; min-height: 0; }
   .exp-controls { height: 100%; overflow-y: auto; min-height: 0; }
 
-  /* flex-centered paper — matches the JS (scale about center, no translate) */
+  /* flex-centered paper - matches the JS (scale about center, no translate) */
   .exp-preview-area {
     height: 100%; position: relative; overflow: hidden;
     display: flex; align-items: flex-start; justify-content: flex-start;
