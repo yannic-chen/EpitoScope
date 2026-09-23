@@ -44,13 +44,13 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
       wsl_ok <- tryCatch(!is.null(suppressWarnings(system2("wsl", "--status", stdout = TRUE, stderr = TRUE))),
                          error = function(e) FALSE)
       wsl_available(wsl_ok)
-      netmhcpan_use_wsl <<- TRUE
+      netmhcpan_use_wsl <- TRUE
       message("WSL available: ", wsl_ok)
       cmd <- if (wsl_ok) resolve_netmhcpan(TRUE, ovr) else ""
       cmd2 <- if (wsl_ok) resolve_netmhcpan(TRUE, ovr2, exe = "netMHCIIpan") else ""
     } else {
       wsl_available(NA)
-      netmhcpan_use_wsl <<- FALSE
+      netmhcpan_use_wsl <- FALSE
       cmd <- resolve_netmhcpan(FALSE, ovr)
       cmd2 <- resolve_netmhcpan(FALSE, ovr2, exe = "netMHCIIpan")
     }
