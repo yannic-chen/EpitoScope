@@ -1001,7 +1001,7 @@ app_server <- function(input, output, session, input_variable, generate_pseudo_s
     }
     groups <- sapply(colnames(cor_mat), get_group)
     plot_correlation_heatmap_interactive(cor_mat, color = palette,
-                                         cluster = input$cluster_mode_ea, groups = groups,
+                                         cluster_mode = input$cluster_mode_ea, groups = groups,
                                          label = "Pearson")
   }
 
