@@ -53,7 +53,6 @@ Imports:
     clusterProfiler,
     org.Hs.eg.db,
     rmarkdown,
-    knitr,
     grid,
     grDevices,
     stats,
@@ -64,11 +63,12 @@ Imports:
     viridisLite,
     scales,
     gtable,
-    htmltools,
     rlang,
     bslib,
     RColorBrewer
 Suggests:
+    knitr,
+    htmltools,
     fastcluster,
     testthat (>= 3.0.0)
 Roxygen: list(markdown = TRUE)

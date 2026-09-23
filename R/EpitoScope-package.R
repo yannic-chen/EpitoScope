@@ -7,6 +7,7 @@
 #' @import tidyr
 #' @rawNamespace import(ggplot2, except = c(last_plot))
 #' @import plotly
+#' @importFrom memoise memoise cache_filesystem
 #' @importFrom rlang .data .env sym
 #' @importFrom data.table := as.data.table
 #' @importFrom purrr imap imap_dfr map
