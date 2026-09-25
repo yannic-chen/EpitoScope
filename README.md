@@ -2,6 +2,8 @@
 
 [![R-CMD-check](https://github.com/yannic-chen/EpitoScope/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/yannic-chen/EpitoScope/actions/workflows/R-CMD-check.yaml)
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22959900.svg)](https://doi.org/10.5281/zenodo.22959900)
+
 Shiny App for visualization of immunopeptidomics data
 
 <img src="assets/Epitoscope.png" width="300">
