@@ -1,6 +1,6 @@
 Package: EpitoScope
 Title: Interactive QC, Visualization, and Immunogenicity Assessment of Immunopeptidomics Data
-Version: 0.9.0
+Version: 1.0.0
 Authors@R: 
     person("Yannic", "Chen", , "yannicchn@gmail.com", role = c("aut", "cre"))
 Description: An interactive R/Shiny application that unifies quality control,

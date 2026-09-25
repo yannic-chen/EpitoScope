@@ -1,4 +1,7 @@
 # EpitoScope
+
+[![R-CMD-check](https://github.com/yannic-chen/EpitoScope/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/yannic-chen/EpitoScope/actions/workflows/R-CMD-check.yaml)
+
 Shiny App for visualization of immunopeptidomics data
 
 <img src="assets/Epitoscope.png" width="300">
@@ -7,8 +10,13 @@ Shiny App for visualization of immunopeptidomics data
 - [Features](#features)
 - [Installation](#installation)
   - [WSL and netMHCpan](#wsl-and-netmhcpan)
+    - [Installing WSL on Windows](#installing-wsl-on-windows)
+    - [Installing netMHCpan on WSL](#installing-netmhcpan-on-wsl)
 - [Usage](#usage)
-- [Troubleshooting](#troubleshooting)
+  - [Adding custom schema](#adding-custom-schema)
+  - [Loading from annotation table](#loading-from-annotation-table)
+- [License](#license)
+- [Roadmap](#wip)
 
 ## Features
 - Interactive visualization of immunopeptidomics datasets.
